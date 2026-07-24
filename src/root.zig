@@ -5,6 +5,7 @@ const parser = @import("parser.zig");
 pub const Expr = ast.Expr;
 pub const Node = ast.Node;
 pub const NodeId = ast.NodeId;
+pub const Metrics = @import("metrics.zig").Metrics;
 
 pub fn expr(comptime source: []const u8) Expr {
     return parser.parse(source);

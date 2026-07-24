@@ -74,6 +74,11 @@ pub const Expr = struct {
         @setEvalBranchQuota(1_000_000);
         return @import("rendering.zig").render(self);
     }
+
+    pub fn metrics(comptime self: Expr) @import("metrics.zig").Metrics {
+        @setEvalBranchQuota(5_000_000);
+        return @import("metrics.zig").measure(self);
+    }
 };
 
 pub fn equal(
