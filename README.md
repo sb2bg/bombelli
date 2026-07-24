@@ -97,7 +97,6 @@ interned nodes, structural sharing, and scalable compile-time storage.
 zig build test
 zig build run
 zig build stress
-zig build jacobian
 ```
 
 Bombelli uses only Zig's standard library and targets Zig 0.16.0.

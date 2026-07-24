@@ -132,11 +132,8 @@ return px * (qy * rz - qz * ry)
     + pz * (qx * ry - qy * rx);
 ```
 
-The repository includes the complete runnable example:
-
-```sh
-zig build jacobian
-```
+The repository includes the
+[complete companion example](../../examples/jacobian_counterexample.zig).
 
 It prints:
 
