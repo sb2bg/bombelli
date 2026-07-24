@@ -67,6 +67,27 @@ test "chain rule" {
     }
 }
 
+test "multi-stage gradient renders as clean arithmetic" {
+    const gradient = comptime expr(
+        "ln(1 + x^2 * y^2) + exp(sin(x * y))",
+    ).diff(.x).simplify();
+
+    try std.testing.expectEqualStrings(
+        "2 * x * y^2 / (1 + x^2 * y^2) + y * cos(x * y) * exp(sin(x * y))",
+        comptime gradient.render(),
+    );
+
+    const x = 1.25;
+    const y = 0.75;
+    const expected = 2.0 * x * y * y / (1.0 + x * x * y * y) +
+        y * @cos(x * y) * @exp(@sin(x * y));
+    try std.testing.expectApproxEqAbs(
+        expected,
+        gradient.eval(.{ .x = x, .y = y }),
+        1e-12,
+    );
+}
+
 test "different variables" {
     const f = comptime expr("x^2 * y + y^2");
     const dx = comptime f.diff(.x).simplify();

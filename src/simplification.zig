@@ -89,39 +89,70 @@ fn simplifySub(result: *ast.Expr, left: ast.NodeId, right: ast.NodeId) ast.NodeI
     return result.addNode(.{ .sub = .{ .left = left, .right = right } });
 }
 
-fn simplifyMul(result: *ast.Expr, original_left: ast.NodeId, original_right: ast.NodeId) ast.NodeId {
-    var left = original_left;
-    var right = original_right;
+fn simplifyMul(result: *ast.Expr, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
+    var factors: [ast.max_nodes]ast.NodeId = undefined;
+    var factor_count: usize = 0;
+    collectFactors(result, left, &factors, &factor_count);
+    collectFactors(result, right, &factors, &factor_count);
 
-    if (isZero(result, left) or isZero(result, right)) return integer(result, 0);
-    if (isOne(result, left)) return right;
-    if (isOne(result, right)) return left;
-    if (foldBinary(result, .mul, left, right)) |folded| return folded;
+    var coefficient: ?ast.NodeId = null;
+    var symbolic_count: usize = 0;
+    for (factors[0..factor_count]) |factor| {
+        if (isZero(result, factor)) return integer(result, 0);
+        if (isOne(result, factor)) continue;
 
-    if (less(result.*, right, left)) {
-        const temporary = left;
-        left = right;
-        right = temporary;
-    }
-
-    if (isConstant(result, left)) {
-        switch (result.node(right)) {
-            .mul => |nested| {
-                if (isConstant(result, nested.left)) {
-                    const coefficient = foldBinary(result, .mul, left, nested.left).?;
-                    if (isZero(result, coefficient)) return integer(result, 0);
-                    if (isOne(result, coefficient)) return nested.right;
-                    return result.addNode(.{ .mul = .{
-                        .left = coefficient,
-                        .right = nested.right,
-                    } });
-                }
-            },
-            else => {},
+        if (isConstant(result, factor)) {
+            coefficient = if (coefficient) |current|
+                foldBinary(result, .mul, current, factor).?
+            else
+                factor;
+        } else {
+            factors[symbolic_count] = factor;
+            symbolic_count += 1;
         }
     }
 
-    return result.addNode(.{ .mul = .{ .left = left, .right = right } });
+    var index: usize = 1;
+    while (index < symbolic_count) : (index += 1) {
+        const factor = factors[index];
+        var insertion = index;
+        while (insertion > 0 and less(result.*, factor, factors[insertion - 1])) {
+            factors[insertion] = factors[insertion - 1];
+            insertion -= 1;
+        }
+        factors[insertion] = factor;
+    }
+
+    var product: ?ast.NodeId = if (coefficient) |value|
+        if (isOne(result, value)) null else value
+    else
+        null;
+    for (factors[0..symbolic_count]) |factor| {
+        product = if (product) |current|
+            result.addNode(.{ .mul = .{ .left = current, .right = factor } })
+        else
+            factor;
+    }
+
+    return product orelse integer(result, 1);
+}
+
+fn collectFactors(
+    expression: *const ast.Expr,
+    id: ast.NodeId,
+    factors: *[ast.max_nodes]ast.NodeId,
+    count: *usize,
+) void {
+    switch (expression.node(id)) {
+        .mul => |binary| {
+            collectFactors(expression, binary.left, factors, count);
+            collectFactors(expression, binary.right, factors, count);
+        },
+        else => {
+            factors[count.*] = id;
+            count.* += 1;
+        },
+    }
 }
 
 fn simplifyDiv(result: *ast.Expr, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
