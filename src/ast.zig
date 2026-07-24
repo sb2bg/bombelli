@@ -1,7 +1,8 @@
 const std = @import("std");
 
-pub const max_nodes = 512;
-pub const NodeId = u16;
+pub const construction_node_limit = 1024;
+pub const NodeId = u32;
+pub const invalid_node: NodeId = std.math.maxInt(NodeId);
 
 pub const Binary = struct {
     left: NodeId,
@@ -30,39 +31,21 @@ pub const Node = union(enum) {
 };
 
 pub const Expr = struct {
-    nodes: [max_nodes]Node = [_]Node{.{ .integer = 0 }} ** max_nodes,
-    len: usize = 0,
-    root: NodeId = 0,
+    nodes: []const Node,
+    root: NodeId,
     source: []const u8,
-
-    pub fn init(source: []const u8) Expr {
-        return .{ .source = source };
-    }
-
-    pub fn addNode(self: *Expr, new_node: Node) NodeId {
-        if (self.len == max_nodes) {
-            @compileError(std.fmt.comptimePrint(
-                "Bombelli expression exceeds the AST capacity of {d} nodes",
-                .{max_nodes},
-            ));
-        }
-        const id: NodeId = @intCast(self.len);
-        self.nodes[self.len] = new_node;
-        self.len += 1;
-        return id;
-    }
 
     pub fn node(self: Expr, id: NodeId) Node {
         return self.nodes[@intCast(id)];
     }
 
     pub fn diff(comptime self: Expr, comptime variable: anytype) Expr {
-        @setEvalBranchQuota(1_000_000);
+        @setEvalBranchQuota(5_000_000);
         return @import("differentiation.zig").differentiate(self, @tagName(variable));
     }
 
     pub fn simplify(comptime self: Expr) Expr {
-        @setEvalBranchQuota(1_000_000);
+        @setEvalBranchQuota(5_000_000);
         return @import("simplification.zig").simplify(self);
     }
 
@@ -76,10 +59,32 @@ pub const Expr = struct {
     }
 
     pub fn metrics(comptime self: Expr) @import("metrics.zig").Metrics {
-        @setEvalBranchQuota(5_000_000);
+        @setEvalBranchQuota(10_000_000);
         return @import("metrics.zig").measure(self);
     }
 };
+
+pub fn nodeEqual(left: Node, right: Node) bool {
+    if (std.meta.activeTag(left) != std.meta.activeTag(right)) return false;
+
+    return switch (left) {
+        .integer => |value| value == right.integer,
+        .float => |value| @as(u64, @bitCast(value)) ==
+            @as(u64, @bitCast(right.float)),
+        .symbol => |name| std.mem.eql(u8, name, right.symbol),
+        .add => |binary| binaryEqual(binary, right.add),
+        .sub => |binary| binaryEqual(binary, right.sub),
+        .mul => |binary| binaryEqual(binary, right.mul),
+        .div => |binary| binaryEqual(binary, right.div),
+        .pow => |power| power.base == right.pow.base and
+            power.exponent == right.pow.exponent,
+        .negate => |child| child == right.negate,
+        .sin => |child| child == right.sin,
+        .cos => |child| child == right.cos,
+        .exp => |child| child == right.exp,
+        .ln => |child| child == right.ln,
+    };
+}
 
 pub fn equal(
     comptime left_expr: Expr,
@@ -93,7 +98,8 @@ pub fn equal(
 
     return switch (left) {
         .integer => |value| value == right.integer,
-        .float => |value| value == right.float,
+        .float => |value| @as(u64, @bitCast(value)) ==
+            @as(u64, @bitCast(right.float)),
         .symbol => |name| std.mem.eql(u8, name, right.symbol),
         .add => |binary| equalBinary(left_expr, binary, right_expr, right.add),
         .sub => |binary| equalBinary(left_expr, binary, right_expr, right.sub),
@@ -107,6 +113,10 @@ pub fn equal(
         .exp => |child| equal(left_expr, child, right_expr, right.exp),
         .ln => |child| equal(left_expr, child, right_expr, right.ln),
     };
+}
+
+fn binaryEqual(left: Binary, right: Binary) bool {
+    return left.left == right.left and left.right == right.right;
 }
 
 fn equalBinary(

@@ -1,150 +1,146 @@
 const std = @import("std");
 const ast = @import("ast.zig");
-
-const BinaryKind = enum { add, sub, mul, div };
+const build = @import("builder.zig");
 
 pub fn differentiate(comptime expression: ast.Expr, comptime variable: []const u8) ast.Expr {
-    var result = ast.Expr.init(expression.source);
-    result.root = differentiateNode(&result, expression, expression.root, variable);
-    return result;
-}
-
-fn differentiateNode(
-    result: *ast.Expr,
-    comptime expression: ast.Expr,
-    id: ast.NodeId,
-    comptime variable: []const u8,
-) ast.NodeId {
-    return switch (expression.node(id)) {
-        .integer, .float => integer(result, 0),
-        .symbol => |name| integer(result, if (std.mem.eql(u8, name, variable)) 1 else 0),
-        .negate => |child| result.addNode(.{
-            .negate = differentiateNode(result, expression, child, variable),
-        }),
-        .add => |binary| binaryNode(
-            result,
-            .add,
-            differentiateNode(result, expression, binary.left, variable),
-            differentiateNode(result, expression, binary.right, variable),
-        ),
-        .sub => |binary| binaryNode(
-            result,
-            .sub,
-            differentiateNode(result, expression, binary.left, variable),
-            differentiateNode(result, expression, binary.right, variable),
-        ),
-        .mul => |binary| blk: {
-            const left_derivative = differentiateNode(result, expression, binary.left, variable);
-            const right_copy = cloneNode(result, expression, binary.right);
-            const left_copy = cloneNode(result, expression, binary.left);
-            const right_derivative = differentiateNode(result, expression, binary.right, variable);
-            const first = binaryNode(result, .mul, left_derivative, right_copy);
-            const second = binaryNode(result, .mul, left_copy, right_derivative);
-            break :blk binaryNode(result, .add, first, second);
-        },
-        .div => |binary| blk: {
-            const left_derivative = differentiateNode(result, expression, binary.left, variable);
-            const right_copy_one = cloneNode(result, expression, binary.right);
-            const left_copy = cloneNode(result, expression, binary.left);
-            const right_derivative = differentiateNode(result, expression, binary.right, variable);
-            const first = binaryNode(result, .mul, left_derivative, right_copy_one);
-            const second = binaryNode(result, .mul, left_copy, right_derivative);
-            const numerator = binaryNode(result, .sub, first, second);
-            const right_copy_two = cloneNode(result, expression, binary.right);
-            const denominator = result.addNode(.{ .pow = .{
-                .base = right_copy_two,
-                .exponent = 2,
-            } });
-            break :blk binaryNode(result, .div, numerator, denominator);
-        },
-        .pow => |power| blk: {
-            if (power.exponent == 0) break :blk integer(result, 0);
-            const coefficient = integer(result, @intCast(power.exponent));
-            const base = cloneNode(result, expression, power.base);
-            const reduced_power = result.addNode(.{ .pow = .{
-                .base = base,
-                .exponent = power.exponent - 1,
-            } });
-            const derivative = differentiateNode(result, expression, power.base, variable);
-            const coefficient_times_power = binaryNode(result, .mul, coefficient, reduced_power);
-            break :blk binaryNode(result, .mul, coefficient_times_power, derivative);
-        },
-        .sin => |child| blk: {
-            const child_copy = cloneNode(result, expression, child);
-            const cosine = result.addNode(.{ .cos = child_copy });
-            const derivative = differentiateNode(result, expression, child, variable);
-            break :blk binaryNode(result, .mul, cosine, derivative);
-        },
-        .cos => |child| blk: {
-            const child_copy = cloneNode(result, expression, child);
-            const sine = result.addNode(.{ .sin = child_copy });
-            const negative_sine = result.addNode(.{ .negate = sine });
-            const derivative = differentiateNode(result, expression, child, variable);
-            break :blk binaryNode(result, .mul, negative_sine, derivative);
-        },
-        .exp => |child| blk: {
-            const child_copy = cloneNode(result, expression, child);
-            const exponential = result.addNode(.{ .exp = child_copy });
-            const derivative = differentiateNode(result, expression, child, variable);
-            break :blk binaryNode(result, .mul, exponential, derivative);
-        },
-        .ln => |child| blk: {
-            const derivative = differentiateNode(result, expression, child, variable);
-            const child_copy = cloneNode(result, expression, child);
-            break :blk binaryNode(result, .div, derivative, child_copy);
-        },
+    var builder = build.Builder{};
+    var context = Context{
+        .builder = &builder,
+        .expression = expression,
+        .variable = variable,
     };
+    const root = context.derivative(expression.root);
+    return builder.finish(root, expression.source);
 }
 
-fn cloneNode(result: *ast.Expr, comptime expression: ast.Expr, id: ast.NodeId) ast.NodeId {
-    return switch (expression.node(id)) {
-        .integer => |value| result.addNode(.{ .integer = value }),
-        .float => |value| result.addNode(.{ .float = value }),
-        .symbol => |name| result.addNode(.{ .symbol = name }),
-        .add => |binary| cloneBinary(result, expression, .add, binary),
-        .sub => |binary| cloneBinary(result, expression, .sub, binary),
-        .mul => |binary| cloneBinary(result, expression, .mul, binary),
-        .div => |binary| cloneBinary(result, expression, .div, binary),
-        .pow => |power| result.addNode(.{ .pow = .{
-            .base = cloneNode(result, expression, power.base),
-            .exponent = power.exponent,
-        } }),
-        .negate => |child| result.addNode(.{ .negate = cloneNode(result, expression, child) }),
-        .sin => |child| result.addNode(.{ .sin = cloneNode(result, expression, child) }),
-        .cos => |child| result.addNode(.{ .cos = cloneNode(result, expression, child) }),
-        .exp => |child| result.addNode(.{ .exp = cloneNode(result, expression, child) }),
-        .ln => |child| result.addNode(.{ .ln = cloneNode(result, expression, child) }),
-    };
-}
+const Context = struct {
+    builder: *build.Builder,
+    expression: ast.Expr,
+    variable: []const u8,
+    clone_cache: [ast.construction_node_limit]ast.NodeId =
+        [_]ast.NodeId{ast.invalid_node} ** ast.construction_node_limit,
+    derivative_cache: [ast.construction_node_limit]ast.NodeId =
+        [_]ast.NodeId{ast.invalid_node} ** ast.construction_node_limit,
 
-fn cloneBinary(
-    result: *ast.Expr,
-    comptime expression: ast.Expr,
-    comptime kind: BinaryKind,
-    binary: ast.Binary,
-) ast.NodeId {
-    return binaryNode(
-        result,
-        kind,
-        cloneNode(result, expression, binary.left),
-        cloneNode(result, expression, binary.right),
-    );
-}
+    fn derivative(self: *Context, id: ast.NodeId) ast.NodeId {
+        const index: usize = @intCast(id);
+        if (self.derivative_cache[index] != ast.invalid_node) {
+            return self.derivative_cache[index];
+        }
 
-fn integer(result: *ast.Expr, value: i64) ast.NodeId {
-    return result.addNode(.{ .integer = value });
-}
+        const result = switch (self.expression.node(id)) {
+            .integer, .float => self.builder.integer(0),
+            .symbol => |name| self.builder.integer(
+                if (std.mem.eql(u8, name, self.variable)) 1 else 0,
+            ),
+            .negate => |child| self.builder.negate(self.derivative(child)),
+            .add => |binary| self.builder.add(
+                self.derivative(binary.left),
+                self.derivative(binary.right),
+            ),
+            .sub => |binary| self.builder.sub(
+                self.derivative(binary.left),
+                self.derivative(binary.right),
+            ),
+            .mul => |binary| blk: {
+                const left_derivative = self.derivative(binary.left);
+                const right_copy = self.clone(binary.right);
+                const left_copy = self.clone(binary.left);
+                const right_derivative = self.derivative(binary.right);
+                const first = self.builder.mul(left_derivative, right_copy);
+                const second = self.builder.mul(left_copy, right_derivative);
+                break :blk self.builder.add(first, second);
+            },
+            .div => |binary| blk: {
+                const left_derivative = self.derivative(binary.left);
+                const right_copy = self.clone(binary.right);
+                const left_copy = self.clone(binary.left);
+                const right_derivative = self.derivative(binary.right);
+                const first = self.builder.mul(left_derivative, right_copy);
+                const second = self.builder.mul(left_copy, right_derivative);
+                const numerator = self.builder.sub(first, second);
+                const denominator = self.builder.power(right_copy, 2);
+                break :blk self.builder.div(numerator, denominator);
+            },
+            .pow => |power| blk: {
+                if (power.exponent == 0) break :blk self.builder.integer(0);
+                const coefficient = self.builder.integer(@intCast(power.exponent));
+                const base = self.clone(power.base);
+                const reduced_power = self.builder.power(base, power.exponent - 1);
+                const base_derivative = self.derivative(power.base);
+                const coefficient_times_power = self.builder.mul(
+                    coefficient,
+                    reduced_power,
+                );
+                break :blk self.builder.mul(
+                    coefficient_times_power,
+                    base_derivative,
+                );
+            },
+            .sin => |child| blk: {
+                const child_copy = self.clone(child);
+                const cosine = self.builder.cosine(child_copy);
+                break :blk self.builder.mul(cosine, self.derivative(child));
+            },
+            .cos => |child| blk: {
+                const child_copy = self.clone(child);
+                const sine = self.builder.sine(child_copy);
+                const negative_sine = self.builder.negate(sine);
+                break :blk self.builder.mul(negative_sine, self.derivative(child));
+            },
+            .exp => |child| blk: {
+                const child_copy = self.clone(child);
+                const exponential = self.builder.exponential(child_copy);
+                break :blk self.builder.mul(exponential, self.derivative(child));
+            },
+            .ln => |child| self.builder.div(
+                self.derivative(child),
+                self.clone(child),
+            ),
+        };
 
-fn binaryNode(
-    result: *ast.Expr,
-    comptime kind: BinaryKind,
-    left: ast.NodeId,
-    right: ast.NodeId,
-) ast.NodeId {
-    return switch (kind) {
-        .add => result.addNode(.{ .add = .{ .left = left, .right = right } }),
-        .sub => result.addNode(.{ .sub = .{ .left = left, .right = right } }),
-        .mul => result.addNode(.{ .mul = .{ .left = left, .right = right } }),
-        .div => result.addNode(.{ .div = .{ .left = left, .right = right } }),
-    };
-}
+        self.derivative_cache[index] = result;
+        return result;
+    }
+
+    fn clone(self: *Context, id: ast.NodeId) ast.NodeId {
+        const index: usize = @intCast(id);
+        if (self.clone_cache[index] != ast.invalid_node) {
+            return self.clone_cache[index];
+        }
+
+        const result = switch (self.expression.node(id)) {
+            .integer => |value| self.builder.integer(value),
+            .float => |value| self.builder.float(value),
+            .symbol => |name| self.builder.symbol(name),
+            .add => |binary| self.builder.add(
+                self.clone(binary.left),
+                self.clone(binary.right),
+            ),
+            .sub => |binary| self.builder.sub(
+                self.clone(binary.left),
+                self.clone(binary.right),
+            ),
+            .mul => |binary| self.builder.mul(
+                self.clone(binary.left),
+                self.clone(binary.right),
+            ),
+            .div => |binary| self.builder.div(
+                self.clone(binary.left),
+                self.clone(binary.right),
+            ),
+            .pow => |power| self.builder.power(
+                self.clone(power.base),
+                power.exponent,
+            ),
+            .negate => |child| self.builder.negate(self.clone(child)),
+            .sin => |child| self.builder.sine(self.clone(child)),
+            .cos => |child| self.builder.cosine(self.clone(child)),
+            .exp => |child| self.builder.exponential(self.clone(child)),
+            .ln => |child| self.builder.logarithm(self.clone(child)),
+        };
+
+        self.clone_cache[index] = result;
+        return result;
+    }
+};

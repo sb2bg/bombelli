@@ -1,5 +1,9 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const build = @import("builder.zig");
+
+const BinaryOperation = enum { add, sub, mul, div };
+const Function = enum { sin, cos, exp, ln };
 
 pub fn simplify(comptime expression: ast.Expr) ast.Expr {
     var current = expression;
@@ -12,98 +16,115 @@ pub fn simplify(comptime expression: ast.Expr) ast.Expr {
 }
 
 fn simplifyOnce(comptime expression: ast.Expr) ast.Expr {
-    var result = ast.Expr.init(expression.source);
-    result.root = simplifyNode(&result, expression, expression.root);
-    return result;
-}
-
-fn simplifyNode(result: *ast.Expr, comptime expression: ast.Expr, id: ast.NodeId) ast.NodeId {
-    return switch (expression.node(id)) {
-        .integer => |value| result.addNode(.{ .integer = value }),
-        .float => |value| result.addNode(.{ .float = value }),
-        .symbol => |name| result.addNode(.{ .symbol = name }),
-        .add => |binary| simplifyAdd(
-            result,
-            simplifyNode(result, expression, binary.left),
-            simplifyNode(result, expression, binary.right),
-        ),
-        .sub => |binary| simplifySub(
-            result,
-            simplifyNode(result, expression, binary.left),
-            simplifyNode(result, expression, binary.right),
-        ),
-        .mul => |binary| simplifyMul(
-            result,
-            simplifyNode(result, expression, binary.left),
-            simplifyNode(result, expression, binary.right),
-        ),
-        .div => |binary| simplifyDiv(
-            result,
-            simplifyNode(result, expression, binary.left),
-            simplifyNode(result, expression, binary.right),
-        ),
-        .pow => |power| simplifyPower(
-            result,
-            simplifyNode(result, expression, power.base),
-            power.exponent,
-        ),
-        .negate => |child| simplifyNegate(
-            result,
-            simplifyNode(result, expression, child),
-        ),
-        .sin => |child| simplifyFunction(
-            result,
-            .sin,
-            simplifyNode(result, expression, child),
-        ),
-        .cos => |child| simplifyFunction(
-            result,
-            .cos,
-            simplifyNode(result, expression, child),
-        ),
-        .exp => |child| simplifyFunction(
-            result,
-            .exp,
-            simplifyNode(result, expression, child),
-        ),
-        .ln => |child| simplifyFunction(
-            result,
-            .ln,
-            simplifyNode(result, expression, child),
-        ),
+    var builder = build.Builder{};
+    var context = Context{
+        .builder = &builder,
+        .expression = expression,
     };
+    const root = context.simplifyNode(expression.root);
+    return builder.finish(root, expression.source);
 }
 
-fn simplifyAdd(result: *ast.Expr, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
-    if (isZero(result, left)) return right;
-    if (isZero(result, right)) return left;
-    if (foldBinary(result, .add, left, right)) |folded| return folded;
-    return result.addNode(.{ .add = .{ .left = left, .right = right } });
+const Context = struct {
+    builder: *build.Builder,
+    expression: ast.Expr,
+    cache: [ast.construction_node_limit]ast.NodeId =
+        [_]ast.NodeId{ast.invalid_node} ** ast.construction_node_limit,
+
+    fn simplifyNode(self: *Context, id: ast.NodeId) ast.NodeId {
+        const index: usize = @intCast(id);
+        if (self.cache[index] != ast.invalid_node) return self.cache[index];
+
+        const result = switch (self.expression.node(id)) {
+            .integer => |value| self.builder.integer(value),
+            .float => |value| self.builder.float(value),
+            .symbol => |name| self.builder.symbol(name),
+            .add => |binary| simplifyAdd(
+                self.builder,
+                self.simplifyNode(binary.left),
+                self.simplifyNode(binary.right),
+            ),
+            .sub => |binary| simplifySub(
+                self.builder,
+                self.simplifyNode(binary.left),
+                self.simplifyNode(binary.right),
+            ),
+            .mul => |binary| simplifyMul(
+                self.builder,
+                self.simplifyNode(binary.left),
+                self.simplifyNode(binary.right),
+            ),
+            .div => |binary| simplifyDiv(
+                self.builder,
+                self.simplifyNode(binary.left),
+                self.simplifyNode(binary.right),
+            ),
+            .pow => |power| simplifyPower(
+                self.builder,
+                self.simplifyNode(power.base),
+                power.exponent,
+            ),
+            .negate => |child| simplifyNegate(
+                self.builder,
+                self.simplifyNode(child),
+            ),
+            .sin => |child| simplifyFunction(
+                self.builder,
+                .sin,
+                self.simplifyNode(child),
+            ),
+            .cos => |child| simplifyFunction(
+                self.builder,
+                .cos,
+                self.simplifyNode(child),
+            ),
+            .exp => |child| simplifyFunction(
+                self.builder,
+                .exp,
+                self.simplifyNode(child),
+            ),
+            .ln => |child| simplifyFunction(
+                self.builder,
+                .ln,
+                self.simplifyNode(child),
+            ),
+        };
+
+        self.cache[index] = result;
+        return result;
+    }
+};
+
+fn simplifyAdd(builder: *build.Builder, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
+    if (isZero(builder, left)) return right;
+    if (isZero(builder, right)) return left;
+    if (foldBinary(builder, .add, left, right)) |folded| return folded;
+    return builder.add(left, right);
 }
 
-fn simplifySub(result: *ast.Expr, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
-    if (isZero(result, right)) return left;
-    if (ast.equal(result.*, left, result.*, right)) return integer(result, 0);
-    if (foldBinary(result, .sub, left, right)) |folded| return folded;
-    if (isZero(result, left)) return simplifyNegate(result, right);
-    return result.addNode(.{ .sub = .{ .left = left, .right = right } });
+fn simplifySub(builder: *build.Builder, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
+    if (isZero(builder, right)) return left;
+    if (left == right) return builder.integer(0);
+    if (foldBinary(builder, .sub, left, right)) |folded| return folded;
+    if (isZero(builder, left)) return simplifyNegate(builder, right);
+    return builder.sub(left, right);
 }
 
-fn simplifyMul(result: *ast.Expr, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
-    var factors: [ast.max_nodes]ast.NodeId = undefined;
+fn simplifyMul(builder: *build.Builder, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
+    var factors: [ast.construction_node_limit]ast.NodeId = undefined;
     var factor_count: usize = 0;
-    collectFactors(result, left, &factors, &factor_count);
-    collectFactors(result, right, &factors, &factor_count);
+    collectFactors(builder, left, &factors, &factor_count);
+    collectFactors(builder, right, &factors, &factor_count);
 
     var coefficient: ?ast.NodeId = null;
     var symbolic_count: usize = 0;
     for (factors[0..factor_count]) |factor| {
-        if (isZero(result, factor)) return integer(result, 0);
-        if (isOne(result, factor)) continue;
+        if (isZero(builder, factor)) return builder.integer(0);
+        if (isOne(builder, factor)) continue;
 
-        if (isConstant(result, factor)) {
+        if (isConstant(builder, factor)) {
             coefficient = if (coefficient) |current|
-                foldBinary(result, .mul, current, factor).?
+                foldBinary(builder, .mul, current, factor).?
             else
                 factor;
         } else {
@@ -116,7 +137,7 @@ fn simplifyMul(result: *ast.Expr, left: ast.NodeId, right: ast.NodeId) ast.NodeI
     while (index < symbolic_count) : (index += 1) {
         const factor = factors[index];
         var insertion = index;
-        while (insertion > 0 and less(result.*, factor, factors[insertion - 1])) {
+        while (insertion > 0 and less(builder, factor, factors[insertion - 1])) {
             factors[insertion] = factors[insertion - 1];
             insertion -= 1;
         }
@@ -124,29 +145,29 @@ fn simplifyMul(result: *ast.Expr, left: ast.NodeId, right: ast.NodeId) ast.NodeI
     }
 
     var product: ?ast.NodeId = if (coefficient) |value|
-        if (isOne(result, value)) null else value
+        if (isOne(builder, value)) null else value
     else
         null;
     for (factors[0..symbolic_count]) |factor| {
         product = if (product) |current|
-            result.addNode(.{ .mul = .{ .left = current, .right = factor } })
+            builder.mul(current, factor)
         else
             factor;
     }
 
-    return product orelse integer(result, 1);
+    return product orelse builder.integer(1);
 }
 
 fn collectFactors(
-    expression: *const ast.Expr,
+    builder: *const build.Builder,
     id: ast.NodeId,
-    factors: *[ast.max_nodes]ast.NodeId,
+    factors: *[ast.construction_node_limit]ast.NodeId,
     count: *usize,
 ) void {
-    switch (expression.node(id)) {
+    switch (builder.node(id)) {
         .mul => |binary| {
-            collectFactors(expression, binary.left, factors, count);
-            collectFactors(expression, binary.right, factors, count);
+            collectFactors(builder, binary.left, factors, count);
+            collectFactors(builder, binary.right, factors, count);
         },
         else => {
             factors[count.*] = id;
@@ -155,40 +176,40 @@ fn collectFactors(
     }
 }
 
-fn simplifyDiv(result: *ast.Expr, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
-    if (isZero(result, left)) return integer(result, 0);
-    if (isOne(result, right)) return left;
-    if (foldBinary(result, .div, left, right)) |folded| return folded;
-    return result.addNode(.{ .div = .{ .left = left, .right = right } });
+fn simplifyDiv(builder: *build.Builder, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
+    if (isZero(builder, left)) return builder.integer(0);
+    if (isOne(builder, right)) return left;
+    if (foldBinary(builder, .div, left, right)) |folded| return folded;
+    return builder.div(left, right);
 }
 
-fn simplifyPower(result: *ast.Expr, base: ast.NodeId, exponent: u32) ast.NodeId {
-    if (exponent == 0) return integer(result, 1);
+fn simplifyPower(builder: *build.Builder, base: ast.NodeId, exponent: u32) ast.NodeId {
+    if (exponent == 0) return builder.integer(1);
     if (exponent == 1) return base;
 
-    return switch (result.node(base)) {
-        .integer => |value| integer(result, integerPower(value, exponent)),
-        .float => |value| float(result, floatPower(value, exponent)),
-        else => result.addNode(.{ .pow = .{ .base = base, .exponent = exponent } }),
+    return switch (builder.node(base)) {
+        .integer => |value| builder.integer(integerPower(value, exponent)),
+        .float => |value| normalizedFloat(builder, floatPower(value, exponent)),
+        else => builder.power(base, exponent),
     };
 }
 
-fn simplifyNegate(result: *ast.Expr, child: ast.NodeId) ast.NodeId {
-    return switch (result.node(child)) {
-        .integer => |value| integer(result, -value),
-        .float => |value| float(result, -value),
+fn simplifyNegate(builder: *build.Builder, child: ast.NodeId) ast.NodeId {
+    return switch (builder.node(child)) {
+        .integer => |value| builder.integer(-value),
+        .float => |value| normalizedFloat(builder, -value),
         .negate => |grandchild| grandchild,
-        else => result.addNode(.{ .negate = child }),
+        else => builder.negate(child),
     };
 }
 
 fn simplifyFunction(
-    result: *ast.Expr,
-    comptime function: enum { sin, cos, exp, ln },
+    builder: *build.Builder,
+    comptime function: Function,
     child: ast.NodeId,
 ) ast.NodeId {
-    if (constantValue(result, child)) |value| {
-        return float(result, switch (function) {
+    if (constantValue(builder, child)) |value| {
+        return normalizedFloat(builder, switch (function) {
             .sin => @sin(value),
             .cos => @cos(value),
             .exp => @exp(value),
@@ -197,42 +218,45 @@ fn simplifyFunction(
     }
 
     return switch (function) {
-        .sin => result.addNode(.{ .sin = child }),
-        .cos => result.addNode(.{ .cos = child }),
-        .exp => result.addNode(.{ .exp = child }),
-        .ln => result.addNode(.{ .ln = child }),
+        .sin => builder.sine(child),
+        .cos => builder.cosine(child),
+        .exp => builder.exponential(child),
+        .ln => builder.logarithm(child),
     };
 }
 
 fn foldBinary(
-    result: *ast.Expr,
-    comptime operation: enum { add, sub, mul, div },
+    builder: *build.Builder,
+    comptime operation: BinaryOperation,
     left: ast.NodeId,
     right: ast.NodeId,
 ) ?ast.NodeId {
-    const left_node = result.node(left);
-    const right_node = result.node(right);
+    const left_node = builder.node(left);
+    const right_node = builder.node(right);
 
     if (left_node == .integer and right_node == .integer) {
         const a = left_node.integer;
         const b = right_node.integer;
         return switch (operation) {
-            .add => integer(result, a + b),
-            .sub => integer(result, a - b),
-            .mul => integer(result, a * b),
+            .add => builder.integer(a + b),
+            .sub => builder.integer(a - b),
+            .mul => builder.integer(a * b),
             .div => if (b == 0)
                 null
             else if (@rem(a, b) == 0)
-                integer(result, @divExact(a, b))
+                builder.integer(@divExact(a, b))
             else
-                float(result, @as(f64, @floatFromInt(a)) / @as(f64, @floatFromInt(b))),
+                normalizedFloat(
+                    builder,
+                    @as(f64, @floatFromInt(a)) / @as(f64, @floatFromInt(b)),
+                ),
         };
     }
 
-    const a = constantValue(result, left) orelse return null;
-    const b = constantValue(result, right) orelse return null;
+    const a = constantValue(builder, left) orelse return null;
+    const b = constantValue(builder, right) orelse return null;
     if (operation == .div and b == 0.0) return null;
-    return float(result, switch (operation) {
+    return normalizedFloat(builder, switch (operation) {
         .add => a + b,
         .sub => a - b,
         .mul => a * b,
@@ -240,42 +264,38 @@ fn foldBinary(
     });
 }
 
-fn constantValue(expression: *const ast.Expr, id: ast.NodeId) ?f64 {
-    return switch (expression.node(id)) {
+fn constantValue(builder: *const build.Builder, id: ast.NodeId) ?f64 {
+    return switch (builder.node(id)) {
         .integer => |value| @floatFromInt(value),
         .float => |value| value,
         else => null,
     };
 }
 
-fn isConstant(expression: *const ast.Expr, id: ast.NodeId) bool {
-    return constantValue(expression, id) != null;
+fn isConstant(builder: *const build.Builder, id: ast.NodeId) bool {
+    return constantValue(builder, id) != null;
 }
 
-fn isZero(expression: *const ast.Expr, id: ast.NodeId) bool {
-    return switch (expression.node(id)) {
+fn isZero(builder: *const build.Builder, id: ast.NodeId) bool {
+    return switch (builder.node(id)) {
         .integer => |value| value == 0,
         .float => |value| value == 0.0,
         else => false,
     };
 }
 
-fn isOne(expression: *const ast.Expr, id: ast.NodeId) bool {
-    return switch (expression.node(id)) {
+fn isOne(builder: *const build.Builder, id: ast.NodeId) bool {
+    return switch (builder.node(id)) {
         .integer => |value| value == 1,
         .float => |value| value == 1.0,
         else => false,
     };
 }
 
-fn integer(result: *ast.Expr, value: i64) ast.NodeId {
-    return result.addNode(.{ .integer = value });
-}
-
-fn float(result: *ast.Expr, value: f64) ast.NodeId {
-    if (value == 0.0) return integer(result, 0);
-    if (value == 1.0) return integer(result, 1);
-    return result.addNode(.{ .float = value });
+fn normalizedFloat(builder: *build.Builder, value: f64) ast.NodeId {
+    if (value == 0.0) return builder.integer(0);
+    if (value == 1.0) return builder.integer(1);
+    return builder.float(value);
 }
 
 fn integerPower(base: i64, exponent: u32) i64 {
@@ -300,9 +320,11 @@ fn floatPower(base: f64, exponent: u32) f64 {
     return result;
 }
 
-fn less(comptime expression: ast.Expr, left: ast.NodeId, right: ast.NodeId) bool {
-    const left_node = expression.node(left);
-    const right_node = expression.node(right);
+fn less(builder: *const build.Builder, left: ast.NodeId, right: ast.NodeId) bool {
+    if (left == right) return false;
+
+    const left_node = builder.node(left);
+    const right_node = builder.node(right);
     const left_rank = rank(left_node);
     const right_rank = rank(right_node);
     if (left_rank != right_rank) return left_rank < right_rank;
@@ -319,24 +341,22 @@ fn less(comptime expression: ast.Expr, left: ast.NodeId, right: ast.NodeId) bool
             else => false,
         },
         .symbol => |name| std.mem.order(u8, name, right_node.symbol) == .lt,
-        .pow => |power| less(expression, power.base, right_node.pow.base),
-        .mul => |binary| lessBinary(expression, binary, right_node.mul),
-        .sin => |child| less(expression, child, right_node.sin),
-        .cos => |child| less(expression, child, right_node.cos),
-        .exp => |child| less(expression, child, right_node.exp),
-        .ln => |child| less(expression, child, right_node.ln),
-        .negate => |child| less(expression, child, right_node.negate),
-        .add => |binary| lessBinary(expression, binary, right_node.add),
-        .sub => |binary| lessBinary(expression, binary, right_node.sub),
-        .div => |binary| lessBinary(expression, binary, right_node.div),
+        .pow => |power| less(builder, power.base, right_node.pow.base),
+        .mul => |binary| lessBinary(builder, binary, right_node.mul),
+        .sin => |child| less(builder, child, right_node.sin),
+        .cos => |child| less(builder, child, right_node.cos),
+        .exp => |child| less(builder, child, right_node.exp),
+        .ln => |child| less(builder, child, right_node.ln),
+        .negate => |child| less(builder, child, right_node.negate),
+        .add => |binary| lessBinary(builder, binary, right_node.add),
+        .sub => |binary| lessBinary(builder, binary, right_node.sub),
+        .div => |binary| lessBinary(builder, binary, right_node.div),
     };
 }
 
-fn lessBinary(comptime expression: ast.Expr, left: ast.Binary, right: ast.Binary) bool {
-    if (ast.equal(expression, left.left, expression, right.left)) {
-        return less(expression, left.right, right.right);
-    }
-    return less(expression, left.left, right.left);
+fn lessBinary(builder: *const build.Builder, left: ast.Binary, right: ast.Binary) bool {
+    if (left.left == right.left) return less(builder, left.right, right.right);
+    return less(builder, left.left, right.left);
 }
 
 fn rank(node: ast.Node) u8 {

@@ -1,41 +1,44 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const build = @import("builder.zig");
 const diagnostic = @import("diagnostic.zig");
 const lexer = @import("lexer.zig");
 
 pub fn parse(comptime source: []const u8) ast.Expr {
-    @setEvalBranchQuota(1_000_000);
-    var parser = Parser.init(source);
-    return parser.parse();
+    @setEvalBranchQuota(5_000_000);
+    var builder = build.Builder{};
+    var parser = Parser.init(source, &builder);
+    const root = parser.parse();
+    return builder.finish(root, source);
 }
 
 const Parser = struct {
     source: []const u8,
     lexer: lexer.Lexer,
     current: lexer.Token,
-    expression: ast.Expr,
+    builder: *build.Builder,
 
-    fn init(source: []const u8) Parser {
+    fn init(source: []const u8, builder: *build.Builder) Parser {
         var tokenizer = lexer.Lexer.init(source);
         const first = tokenizer.next();
         return .{
             .source = source,
             .lexer = tokenizer,
             .current = first,
-            .expression = ast.Expr.init(source),
+            .builder = builder,
         };
     }
 
-    fn parse(self: *Parser) ast.Expr {
+    fn parse(self: *Parser) ast.NodeId {
         if (self.current.kind == .eof) {
             diagnostic.fail(self.source, 0, "expected an expression");
         }
 
-        self.expression.root = self.parseAddition();
+        const root = self.parseAddition();
         if (self.current.kind != .eof) {
             diagnostic.fail(self.source, self.current.start, "unexpected trailing token");
         }
-        return self.expression;
+        return root;
     }
 
     fn parseAddition(self: *Parser) ast.NodeId {
@@ -45,9 +48,9 @@ const Parser = struct {
             self.advance();
             const right = self.parseMultiplication();
             left = if (operator == .plus)
-                self.expression.addNode(.{ .add = .{ .left = left, .right = right } })
+                self.builder.add(left, right)
             else
-                self.expression.addNode(.{ .sub = .{ .left = left, .right = right } });
+                self.builder.sub(left, right);
         }
         return left;
     }
@@ -59,9 +62,9 @@ const Parser = struct {
             self.advance();
             const right = self.parseUnary();
             left = if (operator == .star)
-                self.expression.addNode(.{ .mul = .{ .left = left, .right = right } })
+                self.builder.mul(left, right)
             else
-                self.expression.addNode(.{ .div = .{ .left = left, .right = right } });
+                self.builder.div(left, right);
         }
         return left;
     }
@@ -69,7 +72,7 @@ const Parser = struct {
     fn parseUnary(self: *Parser) ast.NodeId {
         if (self.current.kind == .minus) {
             self.advance();
-            return self.expression.addNode(.{ .negate = self.parseUnary() });
+            return self.builder.negate(self.parseUnary());
         }
         return self.parsePower();
     }
@@ -88,10 +91,7 @@ const Parser = struct {
         const exponent = std.fmt.parseInt(u32, self.tokenText(token), 10) catch
             diagnostic.fail(self.source, token.start, "power exponent is too large");
         self.advance();
-        return self.expression.addNode(.{ .pow = .{
-            .base = base,
-            .exponent = exponent,
-        } });
+        return self.builder.power(base, exponent);
     }
 
     fn parsePrimary(self: *Parser) ast.NodeId {
@@ -101,13 +101,13 @@ const Parser = struct {
                 self.advance();
                 const value = std.fmt.parseInt(i64, self.tokenText(token), 10) catch
                     diagnostic.fail(self.source, token.start, "integer literal is out of range");
-                break :blk self.expression.addNode(.{ .integer = value });
+                break :blk self.builder.integer(value);
             },
             .float => blk: {
                 self.advance();
                 const value = std.fmt.parseFloat(f64, self.tokenText(token)) catch
                     diagnostic.fail(self.source, token.start, "invalid floating-point literal");
-                break :blk self.expression.addNode(.{ .float = value });
+                break :blk self.builder.float(value);
             },
             .identifier => self.parseIdentifier(),
             .left_paren => blk: {
@@ -129,7 +129,7 @@ const Parser = struct {
         self.advance();
 
         if (self.current.kind != .left_paren) {
-            return self.expression.addNode(.{ .symbol = name });
+            return self.builder.symbol(name);
         }
 
         const function_kind: Function = if (std.mem.eql(u8, name, "sin"))
@@ -151,10 +151,10 @@ const Parser = struct {
         self.advance();
 
         return switch (function_kind) {
-            .sin => self.expression.addNode(.{ .sin = argument }),
-            .cos => self.expression.addNode(.{ .cos = argument }),
-            .exp => self.expression.addNode(.{ .exp = argument }),
-            .ln => self.expression.addNode(.{ .ln = argument }),
+            .sin => self.builder.sine(argument),
+            .cos => self.builder.cosine(argument),
+            .exp => self.builder.exponential(argument),
+            .ln => self.builder.logarithm(argument),
         };
     }
 

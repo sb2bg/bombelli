@@ -200,3 +200,20 @@ test "commutative multiplication puts coefficients first" {
     const simplified = comptime expr("x * 3").simplify();
     try std.testing.expectEqualStrings("3 * x", comptime simplified.render());
 }
+
+test "expressions retain one node per repeated subtree" {
+    const repeated = comptime expr("sin(x * y) + sin(x * y)");
+    const metrics = comptime repeated.metrics();
+
+    try std.testing.expectEqual(@as(usize, 5), metrics.stored_nodes);
+    try std.testing.expectEqual(metrics.stored_nodes, metrics.reachable_nodes);
+    try std.testing.expectEqual(
+        metrics.reachable_nodes,
+        metrics.unique_structural_nodes,
+    );
+    try std.testing.expectEqual(@as(usize, 0), metrics.duplicateOccurrences());
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        metrics.unreachableConstructionNodes(),
+    );
+}

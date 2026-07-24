@@ -1,7 +1,7 @@
 const ast = @import("ast.zig");
 
 pub const Metrics = struct {
-    capacity: usize,
+    construction_limit: usize,
     backing_bytes: usize,
     stored_nodes: usize,
     reachable_nodes: usize,
@@ -17,8 +17,8 @@ pub const Metrics = struct {
 };
 
 pub fn measure(comptime expression: ast.Expr) Metrics {
-    var visited = [_]bool{false} ** ast.max_nodes;
-    var reachable: [ast.max_nodes]ast.NodeId = undefined;
+    var visited = [_]bool{false} ** ast.construction_node_limit;
+    var reachable: [ast.construction_node_limit]ast.NodeId = undefined;
     var reachable_count: usize = 0;
     collectReachable(
         expression,
@@ -28,7 +28,7 @@ pub fn measure(comptime expression: ast.Expr) Metrics {
         &reachable_count,
     );
 
-    var unique: [ast.max_nodes]ast.NodeId = undefined;
+    var unique: [ast.construction_node_limit]ast.NodeId = undefined;
     var unique_count: usize = 0;
     for (reachable[0..reachable_count]) |candidate| {
         var found = false;
@@ -45,9 +45,9 @@ pub fn measure(comptime expression: ast.Expr) Metrics {
     }
 
     return .{
-        .capacity = ast.max_nodes,
-        .backing_bytes = @sizeOf(ast.Expr),
-        .stored_nodes = expression.len,
+        .construction_limit = ast.construction_node_limit,
+        .backing_bytes = @sizeOf(ast.Expr) + expression.nodes.len * @sizeOf(ast.Node),
+        .stored_nodes = expression.nodes.len,
         .reachable_nodes = reachable_count,
         .unique_structural_nodes = unique_count,
     };
@@ -56,8 +56,8 @@ pub fn measure(comptime expression: ast.Expr) Metrics {
 fn collectReachable(
     comptime expression: ast.Expr,
     id: ast.NodeId,
-    visited: *[ast.max_nodes]bool,
-    reachable: *[ast.max_nodes]ast.NodeId,
+    visited: *[ast.construction_node_limit]bool,
+    reachable: *[ast.construction_node_limit]ast.NodeId,
     count: *usize,
 ) void {
     const index: usize = @intCast(id);
