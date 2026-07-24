@@ -48,4 +48,25 @@ pub fn build(b: *std.Build) void {
     run_example.step.dependOn(b.getInstallStep());
     const run_step = b.step("run", "Run the Bombelli example");
     run_step.dependOn(&run_example.step);
+
+    const jacobian_example = b.addExecutable(.{
+        .name = "bombelli-jacobian-counterexample",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/jacobian_counterexample.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "bombelli", .module = bombelli },
+            },
+        }),
+    });
+    b.installArtifact(jacobian_example);
+
+    const run_jacobian_example = b.addRunArtifact(jacobian_example);
+    run_jacobian_example.step.dependOn(b.getInstallStep());
+    const jacobian_step = b.step(
+        "jacobian",
+        "Check the three-dimensional Jacobian counterexample",
+    );
+    jacobian_step.dependOn(&run_jacobian_example.step);
 }
