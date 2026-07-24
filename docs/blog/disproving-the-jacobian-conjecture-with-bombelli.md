@@ -288,18 +288,21 @@ complete verification wants:
 
 It also wants a representation that can survive serious algebra.
 
-Bombelli's current fixed-capacity tree representation duplicates repeated
-subexpressions. New stress measurements make the cost visible. For a
-ten-factor product, the derivative contains 255 reachable node occurrences but
-only 58 structurally unique subexpressions. Roughly 77% of the representation
-is duplication. A twenty-factor derivative exhausts the current 512-node
-capacity.
+Bombelli originally stored copied trees in a fixed 512-node array. Stress
+measurements made the cost visible: a ten-factor product derivative contained
+255 reachable nodes but only 58 structurally unique subexpressions. Roughly 77%
+of the representation was duplication, and a twenty-factor derivative
+exhausted the array.
 
-The next architectural milestone is therefore a shared, node-indexed arena with
-hash-consed constructors and memoized transformations. Expressions should be
-DAGs, not copied trees. Polynomial-specific storage, n-ary sums and products,
-factored forms, and code-generation common-subexpression elimination will still
-be needed for genuine expression swell.
+That boundary drove the next architecture. Bombelli now stores an exactly sized,
+node-indexed DAG. Hash-consed constructors reuse equivalent nodes, while
+differentiation and simplification memoize work by `NodeId`. The twenty-factor
+derivative now fits in 118 stored nodes, all unique and reachable; its simplified
+form uses 96.
+
+That does not abolish genuine expression swell. Polynomial-specific storage,
+n-ary sums and products, factored forms, and code-generation
+common-subexpression elimination will still be needed as the mathematics grows.
 
 The Jacobian example makes the distinction concrete:
 

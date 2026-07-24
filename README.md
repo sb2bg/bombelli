@@ -77,13 +77,15 @@ clear at the call site and should compile into straightforward machine code.
 ## Design
 
 A hand-written lexer and recursive-descent parser build an immutable,
-index-based AST. Differentiation and fixed-point simplification rebuild that
-AST at compile time. Because `eval` takes the expression as a compile-time
-receiver, Zig resolves the recursive symbolic dispatch while compiling.
+node-indexed DAG. Every node goes through a hash-consing builder, so repeated
+subexpressions share one `NodeId`. Differentiation and simplification memoize
+their recursive work, then retain only the reachable nodes in an exactly sized
+result.
 
-The current fixed-capacity representation keeps the implementation compact and
-auditable. As expressions and transformations grow, it will evolve toward
-interned nodes, structural sharing, and scalable compile-time storage.
+Because `eval` takes the expression as a compile-time receiver, Zig resolves
+the recursive symbolic dispatch while compiling. The temporary construction
+workspace has a guarded limit; the stored expression does not carry that
+capacity and grows only with its unique, reachable nodes.
 
 ## Writing
 

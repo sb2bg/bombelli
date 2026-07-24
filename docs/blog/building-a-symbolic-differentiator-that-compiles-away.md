@@ -174,8 +174,10 @@ library covering most corners of mathematics that programmers regularly need.
 The symbolic core will grow to include canonical algebra, exact integers and
 rationals, polynomial and rational-function operations, factoring, assumptions,
 rewriting, equation solving, limits, series, and symbolic integration.
-Structural sharing and node interning will allow those transformations to scale
-well beyond today's compact fixed-capacity representation.
+Structural sharing, node interning, and memoized transformations provide the
+base those larger operations need. The next scaling work is about genuine
+mathematical growth: polynomial-specific forms, n-ary operations, factored
+representations, and code-generation common-subexpression elimination.
 
 Calculus should extend naturally from one derivative to partial derivatives,
 gradients, Jacobians, Hessians, vector calculus, differential equations, and
