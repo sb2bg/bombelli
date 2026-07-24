@@ -42,7 +42,7 @@ pub const Expr = struct {
     pub fn addNode(self: *Expr, new_node: Node) NodeId {
         if (self.len == max_nodes) {
             @compileError(std.fmt.comptimePrint(
-                "Bombelli expression exceeds the pilot AST capacity of {d} nodes",
+                "Bombelli expression exceeds the AST capacity of {d} nodes",
                 .{max_nodes},
             ));
         }

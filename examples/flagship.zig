@@ -1,20 +1,23 @@
 const std = @import("std");
 const bombelli = @import("bombelli");
 
-const dx = bombelli
-    .expr("sin(x * y) + x^3")
+const response_gradient = bombelli
+    .expr("ln(1 + x^2 * y^2) + exp(sin(x * y))")
     .diff(.x)
     .simplify();
 
-pub export fn bombelli_evaluate(x: f64, y: f64) f64 {
-    return dx.eval(.{ .x = x, .y = y });
+pub fn responseGradient(x: f64, y: f64) f64 {
+    return response_gradient.eval(.{ .x = x, .y = y });
 }
 
-pub fn main() !void {
-    const value = bombelli_evaluate(2.0, 3.0);
+pub fn main() void {
+    const x = 1.25;
+    const y = 0.75;
 
-    std.debug.print("{s}\nvalue at x=2, y=3: {d}\n", .{
-        comptime dx.render(),
-        value,
+    std.debug.print("{s}\nvalue at x={d}, y={d}: {d}\n", .{
+        comptime response_gradient.render(),
+        x,
+        y,
+        responseGradient(x, y),
     });
 }

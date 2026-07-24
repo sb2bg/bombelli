@@ -32,6 +32,6 @@ pub fn build(b: *std.Build) void {
 
     const run_example = b.addRunArtifact(example);
     run_example.step.dependOn(b.getInstallStep());
-    const run_step = b.step("run", "Run the flagship example");
+    const run_step = b.step("run", "Run the Bombelli example");
     run_step.dependOn(&run_example.step);
 }

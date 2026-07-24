@@ -2,67 +2,88 @@
 
 > A compile-time symbolic mathematics library for Zig.
 
-Bombelli is a pilot, not a complete computer algebra system. It demonstrates a
-Zig-native API in which parsing, differentiation, and simplification happen at
-compile time, while evaluation specializes to direct arithmetic with no
-allocation, runtime parsing, or runtime symbolic data traversal.
+Write the expression you mean. Bombelli parses, transforms, and simplifies it
+at compile time, then leaves only the arithmetic your program needs at runtime.
 
 ```zig
-const std = @import("std");
 const bombelli = @import("bombelli");
 
-const f = bombelli.expr("sin(x * y) + x^3");
-const derivative = f.diff(.x);
-const dx = derivative.simplify();
+const response_gradient = bombelli
+    .expr("ln(1 + x^2 * y^2) + exp(sin(x * y))")
+    .diff(.x)
+    .simplify();
 
-test "symbolic derivative" {
-    const source = comptime dx.render();
-    try std.testing.expectEqualStrings(
-        "y * cos(x * y) + 3 * x^2",
-        source,
-    );
-
-    const result = dx.eval(.{ .x = 2.0, .y = 3.0 });
-    const expected = 3.0 * @cos(6.0) + 12.0;
-    try std.testing.expectApproxEqAbs(expected, result, 1e-12);
+pub fn responseGradient(x: f64, y: f64) f64 {
+    return response_gradient.eval(.{ .x = x, .y = y });
 }
 ```
 
-File-scope constants are already evaluated at compile time, so Zig 0.16 rejects
-an explicit `comptime` there as redundant. In function scope, the operations can
-be chained with an explicit `comptime`:
+Bombelli renders the derivative as:
+
+```text
+2 * x * y^2 / (1 + x^2 * y^2) + y * cos(x * y) * exp(sin(x * y))
+```
+
+No runtime parser, allocator, symbolic tree walk, or virtual machine is involved.
+The evaluator specializes to the operations in that transformed expression.
+
+## API
+
+Expressions can be transformed in a single compile-time chain:
 
 ```zig
-test {
-    const dx = comptime bombelli
-        .expr("sin(x * y) + x^3")
-        .diff(.x)
-        .simplify();
-    _ = dx;
-}
+const derivative = comptime bombelli
+    .expr("sin(x * y) + x^3")
+    .diff(.x)
+    .simplify();
+
+const source = comptime derivative.render();
+const value = derivative.eval(.{ .x = 2.0, .y = 3.0 });
 ```
 
-## Supported syntax
+File-scope constants are already evaluated at compile time, so the explicit
+`comptime` keyword is only needed when building expressions in function scope.
+`diff` accepts Zig enum-literal syntax, and `eval` accepts a struct whose fields
+provide the expression's symbols.
 
-The pilot supports integer and floating-point literals, identifier symbols,
-parentheses, unary negation, `+`, `-`, `*`, `/`, non-negative integer powers,
-and the functions `sin`, `cos`, `exp`, and `ln`. Power binds more tightly than
-unary negation, so `-x^2` means `-(x^2)`.
+## Expressions
 
-`eval` accepts a struct whose field names match the expression's symbols.
-Integer and floating-point field values are converted to `f64`. Missing or
-non-numeric fields produce compile-time diagnostics.
+Bombelli currently supports:
 
-## Implementation
+- Integer and floating-point literals
+- Symbols with Zig identifier syntax
+- Parentheses and unary negation
+- Addition, subtraction, multiplication, and division
+- Non-negative integer powers
+- `sin`, `cos`, `exp`, and `ln`
+- Symbolic differentiation and deterministic simplification
+- Compile-time rendering and allocation-free `f64` evaluation
 
-The hand-written lexer and recursive-descent parser build an immutable,
-fixed-capacity AST represented by node indices. Differentiation and
-simplification rebuild that AST at compile time. `eval` requires its expression
-receiver at compile time, so recursive AST dispatch is resolved during
-specialization and only the resulting arithmetic remains at runtime.
+Power binds more tightly than unary negation, so `-x^2` means `-(x^2)`.
+Invalid syntax and missing evaluation fields produce compile errors with focused
+diagnostics.
 
-The fixed node capacity is deliberately simple and auditable for the pilot. It
-is not suitable for large expressions or advanced algebraic transformations.
+## Direction
+
+Bombelli is growing into a complete, practical mathematics library for Zig. The
+long-term goal is one coherent system spanning symbolic algebra, calculus,
+linear algebra, exact and approximate arithmetic, complex mathematics,
+equations and solvers, transforms and series, probability and statistics,
+discrete mathematics, and efficient numerical evaluation.
+
+That breadth will grow around the same core idea: mathematical code should be
+clear at the call site and should compile into straightforward machine code.
+
+## Design
+
+A hand-written lexer and recursive-descent parser build an immutable,
+index-based AST. Differentiation and fixed-point simplification rebuild that
+AST at compile time. Because `eval` takes the expression as a compile-time
+receiver, Zig resolves the recursive symbolic dispatch while compiling.
+
+The current fixed-capacity representation keeps the implementation compact and
+auditable. As expressions and transformations grow, it will evolve toward
+interned nodes, structural sharing, and scalable compile-time storage.
 
 ## Commands
 
