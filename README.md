@@ -85,11 +85,19 @@ The current fixed-capacity representation keeps the implementation compact and
 auditable. As expressions and transformations grow, it will evolve toward
 interned nodes, structural sharing, and scalable compile-time storage.
 
+## Writing
+
+- [Building a Symbolic Differentiator That Compiles Away Completely in Zig](docs/blog/building-a-symbolic-differentiator-that-compiles-away.md)
+- [Disproving the Jacobian Conjecture with Bombelli](docs/blog/disproving-the-jacobian-conjecture-with-bombelli.md)
+- [Expression-growth baseline](docs/architecture/stress-baseline.md)
+
 ## Commands
 
 ```sh
 zig build test
 zig build run
+zig build stress
+zig build jacobian
 ```
 
 Bombelli uses only Zig's standard library and targets Zig 0.16.0.
