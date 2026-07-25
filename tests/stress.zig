@@ -32,6 +32,34 @@ const factored_source = bombelli.expr(
 );
 const factored_simplified = factored_source.simplify();
 
+const coupled_functions = bombelli.exprVector(.{
+    "sin(x*y + z*w) + x^2 + y*z",
+    "sin(x*y + z*w)*x + exp(y + z)",
+    "sin(x*y + z*w)*y + z^2",
+    "sin(x*y + z*w)*z + w^2",
+});
+const coupled_jacobian = coupled_functions
+    .jacobian(.{ .x, .y, .z, .w })
+    .simplify();
+
+const large_sum_source = bombelli.expr(
+    "a01 + a02 + a03 + a04 + a05 + a06 + a07 + a08 + " ++
+        "a09 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + " ++
+        "a17 + a18 + a19 + a20 + a21 + a22 + a23 + a24 + " ++
+        "a25 + a26 + a27 + a28 + a29 + a30 + a31 + a32 + " ++
+        "a33 + a34 + a35 + a36 + a37 + a38 + a39 + a40 + " ++
+        "a41 + a42 + a43 + a44 + a45 + a46 + a47 + a48",
+);
+const large_sum_simplified = large_sum_source.simplify();
+
+const large_product_source = bombelli.expr(
+    "a01 * a02 * a03 * a04 * a05 * a06 * a07 * a08 * " ++
+        "a09 * a10 * a11 * a12 * a13 * a14 * a15 * a16 * " ++
+        "a17 * a18 * a19 * a20 * a21 * a22 * a23 * a24 * " ++
+        "a25 * a26 * a27 * a28 * a29 * a30 * a31 * a32",
+);
+const large_product_simplified = large_product_source.simplify();
+
 test "twenty-factor product fits in the compact DAG" {
     const source = comptime product_source.metrics();
     const derivative = comptime product_derivative.metrics();
@@ -113,11 +141,54 @@ test "large repeated products stay factored" {
     try std.testing.expect(simplified.construction_peak_nodes <= source.node_count);
 }
 
+test "coupled multi-root Jacobian remains shared and within measured capacity" {
+    const functions = comptime coupled_functions.metrics();
+    const jacobian = comptime coupled_jacobian.metrics();
+
+    report("coupled-4x4", "functions", functions);
+    report("coupled-4x4", "jacobian", jacobian);
+    try expectMeasuredVector(4, functions);
+    try std.testing.expect(jacobian.node_count > functions.node_count);
+    try std.testing.expect(jacobian.construction_peak_nodes < 512);
+}
+
+test "large canonical sums and products use proportional operand storage" {
+    const sum_source = comptime large_sum_source.metrics();
+    const sum = comptime large_sum_simplified.metrics();
+    const product_source_metrics = comptime large_product_source.metrics();
+    const product = comptime large_product_simplified.metrics();
+
+    report("canonical-sum-48", "source", sum_source);
+    report("canonical-sum-48", "simplified", sum);
+    report("canonical-product-32", "source", product_source_metrics);
+    report("canonical-product-32", "simplified", product);
+
+    try expectMeasuredExpression(sum_source);
+    try expectMeasuredExpression(sum);
+    try expectMeasuredExpression(product_source_metrics);
+    try expectMeasuredExpression(product);
+    try std.testing.expectEqual(@as(usize, 48), sum.operand_count);
+    try std.testing.expectEqual(@as(usize, 32), product.operand_count);
+    try std.testing.expect(sum.construction_peak_nodes < 256);
+    try std.testing.expect(product.construction_peak_nodes < 256);
+}
+
 fn expectMeasuredExpression(metrics: bombelli.Metrics) !void {
     try std.testing.expect(metrics.node_count > 0);
     try std.testing.expect(metrics.construction_peak_nodes >= metrics.node_count);
     try std.testing.expectEqual(
         @sizeOf(bombelli.Expr) +
+            metrics.node_count * @sizeOf(bombelli.Node) +
+            metrics.operand_count * @sizeOf(bombelli.NodeId),
+        metrics.backing_bytes,
+    );
+}
+
+fn expectMeasuredVector(comptime N: usize, metrics: bombelli.Metrics) !void {
+    try std.testing.expect(metrics.node_count > 0);
+    try std.testing.expect(metrics.construction_peak_nodes >= metrics.node_count);
+    try std.testing.expectEqual(
+        @sizeOf(bombelli.ExprVector(N)) +
             metrics.node_count * @sizeOf(bombelli.Node) +
             metrics.operand_count * @sizeOf(bombelli.NodeId),
         metrics.backing_bytes,

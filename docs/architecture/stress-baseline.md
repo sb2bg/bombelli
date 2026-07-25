@@ -68,6 +68,31 @@ headroom in the guarded 1,024-node workspace. That evidence does not justify an
 unbounded builder rewrite today. Persisted storage remains proportional to the
 result rather than the temporary construction limit.
 
+## Exact, n-ary, and multi-root remeasurement
+
+After exact rationals, rational powers, canonical n-ary addition and
+multiplication, multi-root programs, and substitution landed, the stress suite
+was expanded before reconsidering construction storage. N-ary operand lists are
+stored as exact-size comptime-backed slices and therefore do not consume a
+second fixed-capacity construction arena. Metrics now report both nodes and
+operand edges.
+
+| Case | Phase | Nodes | Operand edges | Construction peak | Headroom | Backing bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Coupled 4-output functions | Source | 22 | 0 | 22 | 1,002 | 808 |
+| Coupled 4×4 Jacobian | Simplified | 40 | 64 | 40 | 984 | 1,880 |
+| Canonical 48-term sum | Source | 95 | 0 | 95 | 929 | 3,088 |
+| Canonical 48-term sum | Simplified | 49 | 48 | 95 | 929 | 1,808 |
+| Canonical 32-factor product | Source | 63 | 0 | 63 | 961 | 2,064 |
+| Canonical 32-factor product | Simplified | 33 | 32 | 63 | 961 | 1,232 |
+
+The twenty-factor derivative remains the largest construction peak at 118
+nodes. The new workloads therefore still leave 906 nodes of measured headroom,
+and finished storage is proportional to actual nodes plus actual n-ary operand
+edges. A segmented or otherwise scalable node builder remains the next response
+if later polynomial, system-solving, or integration workloads materially close
+that gap; globally enlarging the fixed array is not the planned response.
+
 The ten-factor derivative gives a direct before-and-after comparison: its
 stored representation fell from 255 nodes to the same 58 unique nodes the old
 measurement had exposed.
