@@ -76,10 +76,20 @@ inline fn evaluateNodes(comptime nodes: []const ast.Node, values: anytype) [node
             .symbol => |name| symbolValue(name, values),
             .add => |binary| results[@intCast(binary.left)] +
                 results[@intCast(binary.right)],
+            .add_nary => |operands| blk: {
+                var sum: f64 = 0.0;
+                inline for (operands) |child| sum += results[@intCast(child)];
+                break :blk sum;
+            },
             .sub => |binary| results[@intCast(binary.left)] -
                 results[@intCast(binary.right)],
             .mul => |binary| results[@intCast(binary.left)] *
                 results[@intCast(binary.right)],
+            .mul_nary => |operands| blk: {
+                var product: f64 = 1.0;
+                inline for (operands) |child| product *= results[@intCast(child)];
+                break :blk product;
+            },
             .div => |binary| results[@intCast(binary.left)] /
                 results[@intCast(binary.right)],
             .pow => |power| integerPower(

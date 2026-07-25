@@ -2,6 +2,7 @@ const ast = @import("ast.zig");
 
 pub const Metrics = struct {
     node_count: usize,
+    operand_count: usize,
     construction_peak_nodes: usize,
     backing_bytes: usize,
 
@@ -18,8 +19,11 @@ pub fn measure(comptime expression: ast.Expr) Metrics {
     );
     return .{
         .node_count = expression.nodes.len,
+        .operand_count = operandCount(expression.nodes),
         .construction_peak_nodes = expression.construction_peak_nodes,
-        .backing_bytes = @sizeOf(ast.Expr) + expression.nodes.len * @sizeOf(ast.Node),
+        .backing_bytes = @sizeOf(ast.Expr) +
+            expression.nodes.len * @sizeOf(ast.Node) +
+            operandBytes(expression.nodes),
     };
 }
 
@@ -34,9 +38,11 @@ pub fn measureVector(
     );
     return .{
         .node_count = expression.nodes.len,
+        .operand_count = operandCount(expression.nodes),
         .construction_peak_nodes = expression.construction_peak_nodes,
         .backing_bytes = @sizeOf(ast.ExprVector(N)) +
-            expression.nodes.len * @sizeOf(ast.Node),
+            expression.nodes.len * @sizeOf(ast.Node) +
+            operandBytes(expression.nodes),
     };
 }
 
@@ -58,9 +64,11 @@ pub fn measureMatrix(
     );
     return .{
         .node_count = expression.nodes.len,
+        .operand_count = operandCount(expression.nodes),
         .construction_peak_nodes = expression.construction_peak_nodes,
         .backing_bytes = @sizeOf(ast.ExprMatrix(R, C)) +
-            expression.nodes.len * @sizeOf(ast.Node),
+            expression.nodes.len * @sizeOf(ast.Node) +
+            operandBytes(expression.nodes),
     };
 }
 
@@ -115,6 +123,9 @@ fn validateChildren(
             validateChild(binary.left, parent_index);
             validateChild(binary.right, parent_index);
         },
+        .add_nary, .mul_nary => |operands| {
+            for (operands) |child| validateChild(child, parent_index);
+        },
         .pow => |power| validateChild(power.base, parent_index),
         .negate, .sin, .cos, .tan, .atan, .abs, .exp, .ln => |child| {
             validateChild(child, parent_index);
@@ -146,9 +157,27 @@ fn markReachable(
             markReachable(nodes, binary.left, reachable);
             markReachable(nodes, binary.right, reachable);
         },
+        .add_nary, .mul_nary => |operands| {
+            for (operands) |child| markReachable(nodes, child, reachable);
+        },
         .pow => |power| markReachable(nodes, power.base, reachable),
         .negate, .sin, .cos, .tan, .atan, .abs, .exp, .ln => |child| {
             markReachable(nodes, child, reachable);
         },
     }
+}
+
+fn operandBytes(comptime nodes: []const ast.Node) usize {
+    return operandCount(nodes) * @sizeOf(ast.NodeId);
+}
+
+fn operandCount(comptime nodes: []const ast.Node) usize {
+    var count: usize = 0;
+    for (nodes) |node| {
+        count += switch (node) {
+            .add_nary, .mul_nary => |operands| operands.len,
+            else => 0,
+        };
+    }
+    return count;
 }

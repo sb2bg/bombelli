@@ -84,6 +84,7 @@ fn renderBare(
                 renderChild(expression, binary.right, .add_right, rendered),
             },
         ),
+        .add_nary => |operands| renderNaryAdd(expression, operands, rendered),
         .sub => |binary| std.fmt.comptimePrint(
             "{s} - {s}",
             .{
@@ -98,6 +99,7 @@ fn renderBare(
                 renderChild(expression, binary.right, .mul_right, rendered),
             },
         ),
+        .mul_nary => |operands| renderNaryMul(expression, operands, rendered),
         .div => |binary| std.fmt.comptimePrint(
             "{s} / {s}",
             .{
@@ -133,6 +135,136 @@ fn renderBare(
         .abs => |child| renderFunction(expression, "abs", child, rendered),
         .exp => |child| renderFunction(expression, "exp", child, rendered),
         .ln => |child| renderFunction(expression, "ln", child, rendered),
+    };
+}
+
+fn renderNaryAdd(
+    comptime expression: ast.Expr,
+    comptime operands: []const ast.NodeId,
+    comptime rendered: []const []const u8,
+) []const u8 {
+    var result = renderChild(expression, operands[0], .add_left, rendered);
+    inline for (operands[1..]) |child| {
+        if (negativeMagnitude(expression, child, rendered)) |magnitude| {
+            result = std.fmt.comptimePrint("{s} - {s}", .{ result, magnitude });
+        } else {
+            result = std.fmt.comptimePrint(
+                "{s} + {s}",
+                .{ result, renderChild(expression, child, .add_right, rendered) },
+            );
+        }
+    }
+    return result;
+}
+
+fn renderNaryMul(
+    comptime expression: ast.Expr,
+    comptime operands: []const ast.NodeId,
+    comptime rendered: []const []const u8,
+) []const u8 {
+    const first_node = expression.node(operands[0]);
+    if (first_node == .rational) {
+        const coefficient = first_node.rational;
+        var product = renderChild(expression, operands[1], .mul_right, rendered);
+        inline for (operands[2..]) |child| {
+            product = std.fmt.comptimePrint(
+                "{s} * {s}",
+                .{ product, renderChild(expression, child, .mul_right, rendered) },
+            );
+        }
+        const numerator_magnitude: u64 = @intCast(if (coefficient.numerator < 0)
+            -@as(i128, coefficient.numerator)
+        else
+            coefficient.numerator);
+        const signed_product = if (numerator_magnitude == 1)
+            if (coefficient.numerator < 0)
+                std.fmt.comptimePrint("-{s}", .{product})
+            else
+                product
+        else
+            std.fmt.comptimePrint(
+                "{d} * {s}",
+                .{ coefficient.numerator, product },
+            );
+        return std.fmt.comptimePrint(
+            "{s} / {d}",
+            .{ signed_product, coefficient.denominator },
+        );
+    }
+
+    var result = renderChild(expression, operands[0], .mul_left, rendered);
+    inline for (operands[1..]) |child| {
+        result = std.fmt.comptimePrint(
+            "{s} * {s}",
+            .{ result, renderChild(expression, child, .mul_right, rendered) },
+        );
+    }
+    return result;
+}
+
+fn negativeMagnitude(
+    comptime expression: ast.Expr,
+    comptime child: ast.NodeId,
+    comptime rendered: []const []const u8,
+) ?[]const u8 {
+    return switch (expression.node(child)) {
+        .negate => |grandchild| renderChild(
+            expression,
+            grandchild,
+            .sub_right,
+            rendered,
+        ),
+        .integer => |value| if (value < 0 and value != std.math.minInt(i64))
+            std.fmt.comptimePrint("{d}", .{-value})
+        else
+            null,
+        .rational => |value| if (value.numerator < 0 and
+            value.numerator != std.math.minInt(i64))
+            std.fmt.comptimePrint(
+                "{d}/{d}",
+                .{ -value.numerator, value.denominator },
+            )
+        else
+            null,
+        .mul_nary => |operands| blk: {
+            const coefficient_node = expression.node(operands[0]);
+            const rational_coefficient = coefficient_node == .rational and
+                coefficient_node.rational.numerator < 0;
+            const integer_coefficient = coefficient_node == .integer and
+                coefficient_node.integer < 0;
+            if (!rational_coefficient and !integer_coefficient) break :blk null;
+
+            const numerator: i64 = if (rational_coefficient)
+                coefficient_node.rational.numerator
+            else
+                coefficient_node.integer;
+            if (numerator == std.math.minInt(i64)) break :blk null;
+            const magnitude_numerator = -numerator;
+            var magnitude = if (magnitude_numerator == 1)
+                renderChild(expression, operands[1], .mul_right, rendered)
+            else
+                std.fmt.comptimePrint(
+                    "{d} * {s}",
+                    .{
+                        magnitude_numerator,
+                        renderChild(expression, operands[1], .mul_right, rendered),
+                    },
+                );
+            inline for (operands[2..]) |factor| {
+                magnitude = std.fmt.comptimePrint(
+                    "{s} * {s}",
+                    .{ magnitude, renderChild(expression, factor, .mul_right, rendered) },
+                );
+            }
+            break :blk if (rational_coefficient)
+                std.fmt.comptimePrint(
+                    "{s} / {d}",
+                    .{ magnitude, coefficient_node.rational.denominator },
+                )
+            else
+                magnitude;
+        },
+        else => null,
     };
 }
 
@@ -195,8 +327,8 @@ fn needsParentheses(node: ast.Node, context: Context) bool {
 
 fn nodePrecedence(node: ast.Node) u8 {
     return switch (node) {
-        .add, .sub => 10,
-        .mul, .div => 20,
+        .add, .add_nary, .sub => 10,
+        .mul, .mul_nary, .div => 20,
         .negate => 30,
         .pow => 40,
         .integer => |value| if (value < 0) 30 else 50,

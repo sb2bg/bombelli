@@ -69,16 +69,42 @@ const Context = struct {
                 self.simplifyNode(binary.right),
                 self.expression.source,
             ),
+            .add_nary => |operands| blk: {
+                var simplified: [ast.construction_node_limit]ast.NodeId = undefined;
+                for (operands, 0..) |child, operand_index| {
+                    simplified[operand_index] = self.simplifyNode(child);
+                }
+                break :blk canonicalAdd(
+                    self.builder,
+                    simplified[0..operands.len],
+                    self.expression.source,
+                );
+            },
             .sub => |binary| simplifySub(
                 self.builder,
                 self.simplifyNode(binary.left),
                 self.simplifyNode(binary.right),
                 self.expression.source,
             ),
-            .mul => |binary| self.simplifyMul(
-                self.simplifyNode(binary.left),
-                self.simplifyNode(binary.right),
+            .mul => |binary| canonicalMul(
+                self.builder,
+                &.{
+                    self.simplifyNode(binary.left),
+                    self.simplifyNode(binary.right),
+                },
+                self.expression.source,
             ),
+            .mul_nary => |operands| blk: {
+                var simplified: [ast.construction_node_limit]ast.NodeId = undefined;
+                for (operands, 0..) |child, operand_index| {
+                    simplified[operand_index] = self.simplifyNode(child);
+                }
+                break :blk canonicalMul(
+                    self.builder,
+                    simplified[0..operands.len],
+                    self.expression.source,
+                );
+            },
             .div => |binary| simplifyDiv(
                 self.builder,
                 self.simplifyNode(binary.left),
@@ -143,143 +169,7 @@ const Context = struct {
         self.cache[index] = result;
         return result;
     }
-
-    fn simplifyMul(self: *Context, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
-        const node_len = self.builder.len;
-        var factor_workspace = [_]u32{0} ** node_len;
-        if (!addFactorWeight(&factor_workspace, left, 1) or
-            !addFactorWeight(&factor_workspace, right, 1))
-        {
-            return orderedMul(self.builder, left, right);
-        }
-
-        // Builder ids are topological: every child id is lower than its parent.
-        // Propagating multiplicities in reverse order therefore visits each DAG
-        // node once, even when its number of tree occurrences is exponential.
-        var index = node_len;
-        while (index > 0) {
-            index -= 1;
-            const weight = factor_workspace[index];
-            if (weight == 0) continue;
-
-            switch (self.builder.nodes[index]) {
-                .mul => |binary| {
-                    factor_workspace[index] = 0;
-                    if (!addFactorWeight(&factor_workspace, binary.left, weight) or
-                        !addFactorWeight(&factor_workspace, binary.right, weight))
-                    {
-                        return orderedMul(self.builder, left, right);
-                    }
-                },
-                .pow => |power| {
-                    if (power.exponent.denominator != 1 or
-                        power.exponent.numerator <= 0 or
-                        power.exponent.numerator > std.math.maxInt(u32))
-                    {
-                        continue;
-                    }
-                    factor_workspace[index] = 0;
-                    const weighted_exponent = checkedU32Mul(
-                        weight,
-                        @intCast(power.exponent.numerator),
-                    ) orelse return orderedMul(self.builder, left, right);
-                    if (!addFactorWeight(
-                        &factor_workspace,
-                        power.base,
-                        weighted_exponent,
-                    )) {
-                        return orderedMul(self.builder, left, right);
-                    }
-                },
-                else => {},
-            }
-        }
-
-        // A zero factor wins before folding any other coefficient, avoiding an
-        // irrelevant overflow in products such as huge_constant * 0.
-        for (0..node_len) |factor_index| {
-            if (factor_workspace[factor_index] == 0) continue;
-            const factor: ast.NodeId = @intCast(factor_index);
-            if (isZero(self.builder, factor)) return self.builder.integer(0);
-        }
-
-        var coefficient: ?ast.NodeId = null;
-        var symbolic_count: usize = 0;
-        for (0..node_len) |factor_index| {
-            const multiplicity = factor_workspace[factor_index];
-            if (multiplicity == 0) continue;
-
-            const factor: ast.NodeId = @intCast(factor_index);
-            if (isOne(self.builder, factor)) continue;
-
-            if (isConstant(self.builder, factor)) {
-                const powered = simplifyPower(
-                    self.builder,
-                    factor,
-                    exact.Rational.fromInteger(multiplicity),
-                    self.expression.source,
-                );
-                coefficient = if (coefficient) |current|
-                    foldBinary(
-                        self.builder,
-                        .mul,
-                        current,
-                        powered,
-                        self.expression.source,
-                    ).?
-                else
-                    powered;
-            } else {
-                const powered = if (multiplicity == 1)
-                    factor
-                else
-                    self.builder.power(factor, multiplicity);
-
-                // The compacted output index never exceeds the input index
-                // currently being read, so this workspace is safely reused as
-                // the sorted factor-id list after multiplicities are consumed.
-                factor_workspace[symbolic_count] = powered;
-                symbolic_count += 1;
-            }
-        }
-
-        var sort_index: usize = 1;
-        while (sort_index < symbolic_count) : (sort_index += 1) {
-            const factor: ast.NodeId = factor_workspace[sort_index];
-            var insertion = sort_index;
-            while (insertion > 0 and less(
-                self.builder,
-                factor,
-                factor_workspace[insertion - 1],
-            )) {
-                factor_workspace[insertion] = factor_workspace[insertion - 1];
-                insertion -= 1;
-            }
-            factor_workspace[insertion] = factor;
-        }
-
-        var product: ?ast.NodeId = if (coefficient) |value|
-            if (isOne(self.builder, value)) null else value
-        else
-            null;
-        for (factor_workspace[0..symbolic_count]) |factor| {
-            product = if (product) |current|
-                self.builder.mul(current, factor)
-            else
-                factor;
-        }
-
-        return product orelse self.builder.integer(1);
-    }
 };
-
-fn addFactorWeight(workspace: []u32, id: ast.NodeId, amount: u32) bool {
-    const index: usize = @intCast(id);
-    const sum = @addWithOverflow(workspace[index], amount);
-    if (sum[1] != 0) return false;
-    workspace[index] = sum[0];
-    return true;
-}
 
 fn simplifyAdd(
     builder: *build.Builder,
@@ -287,10 +177,7 @@ fn simplifyAdd(
     right: ast.NodeId,
     comptime source: []const u8,
 ) ast.NodeId {
-    if (isZero(builder, left)) return right;
-    if (isZero(builder, right)) return left;
-    if (foldBinary(builder, .add, left, right, source)) |folded| return folded;
-    return builder.add(left, right);
+    return canonicalAdd(builder, &.{ left, right }, source);
 }
 
 fn simplifySub(
@@ -303,7 +190,11 @@ fn simplifySub(
     if (left == right) return builder.integer(0);
     if (foldBinary(builder, .sub, left, right, source)) |folded| return folded;
     if (isZero(builder, left)) return simplifyNegate(builder, right, source);
-    return builder.sub(left, right);
+    return canonicalAdd(
+        builder,
+        &.{ left, simplifyNegate(builder, right, source) },
+        source,
+    );
 }
 
 fn simplifyDiv(
@@ -312,10 +203,362 @@ fn simplifyDiv(
     right: ast.NodeId,
     comptime source: []const u8,
 ) ast.NodeId {
-    if (isZero(builder, left)) return builder.integer(0);
     if (isOne(builder, right)) return left;
     if (foldBinary(builder, .div, left, right, source)) |folded| return folded;
+    if (exactValue(builder, right)) |denominator| {
+        if (!denominator.isZero()) {
+            const reciprocal = exact.Rational.fromInteger(1)
+                .div(denominator) catch |err| exactFoldFailure(source, err);
+            return canonicalMul(
+                builder,
+                &.{ builder.rational(reciprocal), left },
+                source,
+            );
+        }
+    }
     return builder.div(left, right);
+}
+
+fn canonicalAdd(
+    builder: *build.Builder,
+    operands: []const ast.NodeId,
+    comptime source: []const u8,
+) ast.NodeId {
+    var flattened: [ast.construction_node_limit]ast.NodeId = undefined;
+    var flattened_len: usize = 0;
+    for (operands) |operand| {
+        collectAddOperands(builder, operand, &flattened, &flattened_len);
+    }
+
+    var bases: [ast.construction_node_limit]ast.NodeId = undefined;
+    var coefficients: [ast.construction_node_limit]exact.Rational = undefined;
+    var term_count: usize = 0;
+    var exact_constant = exact.Rational.fromInteger(0);
+    var exact_constant_is_integer = true;
+    var approximate_constant: f64 = 0.0;
+    var has_approximate_constant = false;
+
+    for (flattened[0..flattened_len]) |operand| {
+        if (builder.node(operand) == .float) {
+            approximate_constant += builder.node(operand).float;
+            has_approximate_constant = true;
+            continue;
+        }
+
+        const term = decomposeTerm(builder, operand, source);
+        if (term.basis == ast.invalid_node) {
+            exact_constant_is_integer = exact_constant_is_integer and
+                builder.node(operand) == .integer;
+            exact_constant = exact_constant.add(term.coefficient) catch |err|
+                exactArithmeticFailure(
+                    source,
+                    err,
+                    exact_constant_is_integer,
+                    operatorPosition(source, '+'),
+                );
+            continue;
+        }
+
+        var existing: ?usize = null;
+        for (bases[0..term_count], 0..) |basis, index| {
+            if (basis == term.basis) {
+                existing = index;
+                break;
+            }
+        }
+        if (existing) |index| {
+            coefficients[index] = coefficients[index].add(term.coefficient) catch |err|
+                exactFoldFailure(source, err);
+        } else {
+            bases[term_count] = term.basis;
+            coefficients[term_count] = term.coefficient;
+            term_count += 1;
+        }
+    }
+
+    var compact_count: usize = 0;
+    for (0..term_count) |index| {
+        if (coefficients[index].isZero()) continue;
+        bases[compact_count] = bases[index];
+        coefficients[compact_count] = coefficients[index];
+        compact_count += 1;
+    }
+    term_count = compact_count;
+
+    var sort_index: usize = 1;
+    while (sort_index < term_count) : (sort_index += 1) {
+        const basis = bases[sort_index];
+        const coefficient = coefficients[sort_index];
+        var insertion = sort_index;
+        while (insertion > 0 and less(builder, basis, bases[insertion - 1])) {
+            bases[insertion] = bases[insertion - 1];
+            coefficients[insertion] = coefficients[insertion - 1];
+            insertion -= 1;
+        }
+        bases[insertion] = basis;
+        coefficients[insertion] = coefficient;
+    }
+
+    var result_operands: [ast.construction_node_limit]ast.NodeId = undefined;
+    var result_len: usize = 0;
+    for (bases[0..term_count], coefficients[0..term_count]) |basis, coefficient| {
+        result_operands[result_len] = makeCoefficientTerm(
+            builder,
+            coefficient,
+            basis,
+            source,
+        );
+        result_len += 1;
+    }
+
+    if (has_approximate_constant) {
+        approximate_constant += exact_constant.toF64();
+        const constant = normalizedFloat(
+            builder,
+            approximate_constant,
+            source,
+            operatorPosition(source, '+'),
+        );
+        if (!isZero(builder, constant)) {
+            result_operands[result_len] = constant;
+            result_len += 1;
+        }
+    } else if (!exact_constant.isZero()) {
+        result_operands[result_len] = builder.rational(exact_constant);
+        result_len += 1;
+    }
+
+    return switch (result_len) {
+        0 => builder.integer(0),
+        1 => result_operands[0],
+        else => builder.addNary(result_operands[0..result_len]),
+    };
+}
+
+fn canonicalMul(
+    builder: *build.Builder,
+    operands: []const ast.NodeId,
+    comptime source: []const u8,
+) ast.NodeId {
+    var flattened: [ast.construction_node_limit]ast.NodeId = undefined;
+    var flattened_len: usize = 0;
+    for (operands) |operand| {
+        collectMulOperands(builder, operand, &flattened, &flattened_len);
+    }
+
+    // A known zero wins before other coefficient folding, so a discarded huge
+    // exact product cannot produce an irrelevant overflow.
+    for (flattened[0..flattened_len]) |factor| {
+        if (isZero(builder, factor)) return builder.integer(0);
+    }
+
+    var coefficient = exact.Rational.fromInteger(1);
+    var coefficient_is_integer = true;
+    var approximate_coefficient: f64 = 1.0;
+    var has_approximate_coefficient = false;
+    var bases: [ast.construction_node_limit]ast.NodeId = undefined;
+    var exponents: [ast.construction_node_limit]i64 = undefined;
+    var factor_count: usize = 0;
+
+    for (flattened[0..flattened_len]) |factor| {
+        if (exactValue(builder, factor)) |value| {
+            coefficient_is_integer = coefficient_is_integer and
+                builder.node(factor) == .integer;
+            coefficient = coefficient.mul(value) catch |err|
+                exactArithmeticFailure(
+                    source,
+                    err,
+                    coefficient_is_integer,
+                    operatorPosition(source, '*'),
+                );
+            continue;
+        }
+        if (builder.node(factor) == .float) {
+            approximate_coefficient *= builder.node(factor).float;
+            has_approximate_coefficient = true;
+            continue;
+        }
+
+        var base = factor;
+        var exponent: i64 = 1;
+        if (builder.node(factor) == .pow) {
+            const power = builder.node(factor).pow;
+            if (power.exponent.isInteger() and power.exponent.numerator > 0) {
+                base = power.base;
+                exponent = power.exponent.numerator;
+            }
+        }
+
+        var existing: ?usize = null;
+        for (bases[0..factor_count], 0..) |candidate, index| {
+            if (candidate == base) {
+                existing = index;
+                break;
+            }
+        }
+        if (existing) |index| {
+            exponents[index] = exact.checkedAdd(exponents[index], exponent) catch
+                foldFailure(
+                    source,
+                    operatorPosition(source, '*'),
+                    "combined factor exponent exceeds fixed-width range",
+                );
+        } else {
+            bases[factor_count] = base;
+            exponents[factor_count] = exponent;
+            factor_count += 1;
+        }
+    }
+
+    var sort_index: usize = 1;
+    while (sort_index < factor_count) : (sort_index += 1) {
+        const base = bases[sort_index];
+        const exponent = exponents[sort_index];
+        var insertion = sort_index;
+        while (insertion > 0 and less(builder, base, bases[insertion - 1])) {
+            bases[insertion] = bases[insertion - 1];
+            exponents[insertion] = exponents[insertion - 1];
+            insertion -= 1;
+        }
+        bases[insertion] = base;
+        exponents[insertion] = exponent;
+    }
+
+    var result_factors: [ast.construction_node_limit]ast.NodeId = undefined;
+    var result_len: usize = 0;
+    if (has_approximate_coefficient) {
+        approximate_coefficient *= coefficient.toF64();
+        const folded = normalizedFloat(
+            builder,
+            approximate_coefficient,
+            source,
+            operatorPosition(source, '*'),
+        );
+        if (isZero(builder, folded)) return builder.integer(0);
+        if (!isOne(builder, folded)) {
+            result_factors[result_len] = folded;
+            result_len += 1;
+        }
+    } else if (!coefficient.isOne()) {
+        result_factors[result_len] = builder.rational(coefficient);
+        result_len += 1;
+    }
+
+    for (bases[0..factor_count], exponents[0..factor_count]) |base, exponent| {
+        result_factors[result_len] = if (exponent == 1)
+            base
+        else
+            builder.power(base, exact.Rational.fromInteger(exponent));
+        result_len += 1;
+    }
+
+    return switch (result_len) {
+        0 => builder.integer(1),
+        1 => result_factors[0],
+        else => builder.mulNary(result_factors[0..result_len]),
+    };
+}
+
+const Term = struct {
+    coefficient: exact.Rational,
+    basis: ast.NodeId,
+};
+
+fn decomposeTerm(
+    builder: *build.Builder,
+    operand: ast.NodeId,
+    comptime source: []const u8,
+) Term {
+    _ = source;
+    if (exactValue(builder, operand)) |value| {
+        return .{ .coefficient = value, .basis = ast.invalid_node };
+    }
+    return switch (builder.node(operand)) {
+        .negate => |child| .{
+            .coefficient = exact.Rational.fromInteger(-1),
+            .basis = child,
+        },
+        .mul_nary => |factors| blk: {
+            const leading = exactValue(builder, factors[0]) orelse break :blk .{
+                .coefficient = exact.Rational.fromInteger(1),
+                .basis = operand,
+            };
+            const basis = if (factors.len == 2)
+                factors[1]
+            else
+                builder.mulNary(factors[1..]);
+            break :blk .{ .coefficient = leading, .basis = basis };
+        },
+        else => .{
+            .coefficient = exact.Rational.fromInteger(1),
+            .basis = operand,
+        },
+    };
+}
+
+fn makeCoefficientTerm(
+    builder: *build.Builder,
+    coefficient: exact.Rational,
+    basis: ast.NodeId,
+    comptime source: []const u8,
+) ast.NodeId {
+    if (coefficient.isOne()) return basis;
+    if (coefficient.eql(exact.Rational.fromInteger(-1))) {
+        return simplifyNegate(builder, basis, source);
+    }
+    return canonicalMul(
+        builder,
+        &.{ builder.rational(coefficient), basis },
+        source,
+    );
+}
+
+fn collectAddOperands(
+    builder: *const build.Builder,
+    id: ast.NodeId,
+    workspace: *[ast.construction_node_limit]ast.NodeId,
+    len: *usize,
+) void {
+    switch (builder.node(id)) {
+        .add => |binary| {
+            collectAddOperands(builder, binary.left, workspace, len);
+            collectAddOperands(builder, binary.right, workspace, len);
+        },
+        .add_nary => |operands| {
+            for (operands) |child| collectAddOperands(builder, child, workspace, len);
+        },
+        else => {
+            if (len.* == workspace.len) {
+                @compileError("Bombelli canonical addition exceeds construction workspace");
+            }
+            workspace[len.*] = id;
+            len.* += 1;
+        },
+    }
+}
+
+fn collectMulOperands(
+    builder: *const build.Builder,
+    id: ast.NodeId,
+    workspace: *[ast.construction_node_limit]ast.NodeId,
+    len: *usize,
+) void {
+    switch (builder.node(id)) {
+        .mul => |binary| {
+            collectMulOperands(builder, binary.left, workspace, len);
+            collectMulOperands(builder, binary.right, workspace, len);
+        },
+        .mul_nary => |operands| {
+            for (operands) |child| collectMulOperands(builder, child, workspace, len);
+        },
+        else => {
+            if (len.* == workspace.len) {
+                @compileError("Bombelli canonical multiplication exceeds construction workspace");
+            }
+            workspace[len.*] = id;
+            len.* += 1;
+        },
+    }
 }
 
 fn simplifyPower(
@@ -691,6 +934,22 @@ fn exactFoldFailure(
     }
 }
 
+fn exactArithmeticFailure(
+    comptime source: []const u8,
+    err: exact.Error,
+    integer_only: bool,
+    comptime position: usize,
+) noreturn {
+    if (err == error.Overflow and integer_only) {
+        foldFailure(
+            source,
+            position,
+            "integer constant folding exceeds i64 range",
+        );
+    }
+    exactFoldFailure(source, err);
+}
+
 fn operationByte(comptime operation: BinaryOperation) u8 {
     return switch (operation) {
         .add => '+',
@@ -756,9 +1015,32 @@ fn less(builder: *const build.Builder, left: ast.NodeId, right: ast.NodeId) bool
         .ln => |child| less(builder, child, right_node.ln),
         .negate => |child| less(builder, child, right_node.negate),
         .add => |binary| lessBinary(builder, binary, right_node.add),
+        .add_nary => |operands| lessOperands(
+            builder,
+            operands,
+            right_node.add_nary,
+        ),
         .sub => |binary| lessBinary(builder, binary, right_node.sub),
+        .mul_nary => |operands| lessOperands(
+            builder,
+            operands,
+            right_node.mul_nary,
+        ),
         .div => |binary| lessBinary(builder, binary, right_node.div),
     };
+}
+
+fn lessOperands(
+    builder: *const build.Builder,
+    left: []const ast.NodeId,
+    right: []const ast.NodeId,
+) bool {
+    const common = @min(left.len, right.len);
+    for (left[0..common], right[0..common]) |left_child, right_child| {
+        if (left_child == right_child) continue;
+        return less(builder, left_child, right_child);
+    }
+    return left.len < right.len;
 }
 
 fn lessBinary(builder: *const build.Builder, left: ast.Binary, right: ast.Binary) bool {
@@ -782,8 +1064,9 @@ fn rank(node: ast.Node) u8 {
         .exp => 11,
         .ln => 12,
         .negate => 13,
-        .add => 14,
+        .add, .add_nary => 14,
         .sub => 15,
+        .mul_nary => 5,
         .div => 16,
     };
 }

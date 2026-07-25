@@ -117,18 +117,21 @@ fn expectMeasuredExpression(metrics: bombelli.Metrics) !void {
     try std.testing.expect(metrics.node_count > 0);
     try std.testing.expect(metrics.construction_peak_nodes >= metrics.node_count);
     try std.testing.expectEqual(
-        @sizeOf(bombelli.Expr) + metrics.node_count * @sizeOf(bombelli.Node),
+        @sizeOf(bombelli.Expr) +
+            metrics.node_count * @sizeOf(bombelli.Node) +
+            metrics.operand_count * @sizeOf(bombelli.NodeId),
         metrics.backing_bytes,
     );
 }
 
 fn report(case_name: []const u8, phase: []const u8, metrics: bombelli.Metrics) void {
     std.debug.print(
-        "{s}\t{s}\tnodes={d}\tconstruction_peak={d}\theadroom={d}\tbacking_bytes={d}\n",
+        "{s}\t{s}\tnodes={d}\toperands={d}\tconstruction_peak={d}\theadroom={d}\tbacking_bytes={d}\n",
         .{
             case_name,
             phase,
             metrics.node_count,
+            metrics.operand_count,
             metrics.construction_peak_nodes,
             metrics.constructionHeadroom(),
             metrics.backing_bytes,

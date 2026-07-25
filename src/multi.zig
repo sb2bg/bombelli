@@ -202,6 +202,13 @@ fn cloneNodes(
             cloneNodes(builder, nodes, binary.left, cache),
             cloneNodes(builder, nodes, binary.right, cache),
         ),
+        .add_nary => |operands| blk: {
+            var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
+            for (operands, 0..) |child, operand_index| {
+                cloned[operand_index] = cloneNodes(builder, nodes, child, cache);
+            }
+            break :blk builder.addNary(cloned[0..operands.len]);
+        },
         .sub => |binary| builder.sub(
             cloneNodes(builder, nodes, binary.left, cache),
             cloneNodes(builder, nodes, binary.right, cache),
@@ -210,6 +217,13 @@ fn cloneNodes(
             cloneNodes(builder, nodes, binary.left, cache),
             cloneNodes(builder, nodes, binary.right, cache),
         ),
+        .mul_nary => |operands| blk: {
+            var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
+            for (operands, 0..) |child, operand_index| {
+                cloned[operand_index] = cloneNodes(builder, nodes, child, cache);
+            }
+            break :blk builder.mulNary(cloned[0..operands.len]);
+        },
         .div => |binary| builder.div(
             cloneNodes(builder, nodes, binary.left, cache),
             cloneNodes(builder, nodes, binary.right, cache),

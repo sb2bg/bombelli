@@ -70,7 +70,7 @@ test "flagship compile-time symbolic derivative" {
     const dx = comptime f.diff(.x).simplify();
     const source = comptime dx.render();
 
-    try std.testing.expectEqualStrings("y * cos(x * y) + 3 * x^2", source);
+    try std.testing.expectEqualStrings("3 * x^2 + y * cos(x * y)", source);
 
     const points = [_]struct { x: f64, y: f64 }{
         .{ .x = 2.0, .y = 3.0 },
@@ -86,7 +86,7 @@ test "flagship compile-time symbolic derivative" {
 
 test "product rule" {
     const derivative = comptime expr("x * sin(x)").diff(.x).simplify();
-    try std.testing.expectEqualStrings("sin(x) + x * cos(x)", comptime derivative.render());
+    try std.testing.expectEqualStrings("x * cos(x) + sin(x)", comptime derivative.render());
 
     for ([_]f64{ -2.0, 0.0, 0.75, 3.0 }) |x| {
         try std.testing.expectApproxEqAbs(
@@ -126,7 +126,7 @@ test "multi-stage gradient renders as clean arithmetic" {
     ).diff(.x).simplify();
 
     try std.testing.expectEqualStrings(
-        "2 * x * y^2 / (1 + x^2 * y^2) + y * cos(x * y) * exp(sin(x * y))",
+        "y * cos(x * y) * exp(sin(x * y)) + 2 * x * y^2 / (x^2 * y^2 + 1)",
         comptime gradient.render(),
     );
 
@@ -206,7 +206,7 @@ test "minimum simplification rules" {
         .{ .input = "x * 1", .expected = "x" },
         .{ .input = "1 * x", .expected = "x" },
         .{ .input = "x / 1", .expected = "x" },
-        .{ .input = "0 / x", .expected = "0" },
+        .{ .input = "0 / x", .expected = "0 / x" },
         .{ .input = "-(2 + 3)", .expected = "-5" },
         .{ .input = "x^0", .expected = "1" },
         .{ .input = "x^1", .expected = "x" },
@@ -436,7 +436,7 @@ test "closure functions evaluate and differentiate" {
 
     const square_root_derivative = comptime expr("sqrt(x)").diff(.x).simplify();
     try std.testing.expectEqualStrings(
-        "1/2 * x^(-1/2)",
+        "x^(-1/2) / 2",
         comptime square_root_derivative.render(),
     );
     try std.testing.expectApproxEqAbs(
@@ -447,7 +447,7 @@ test "closure functions evaluate and differentiate" {
 
     const inverse_tangent_derivative = comptime expr("atan(x)").diff(.x).simplify();
     try std.testing.expectEqualStrings(
-        "1 / (1 + x^2)",
+        "1 / (x^2 + 1)",
         comptime inverse_tangent_derivative.render(),
     );
     const tangent_derivative = comptime expr("tan(x)").diff(.x).simplify();
@@ -457,4 +457,40 @@ test "closure functions evaluate and differentiate" {
     );
     const absolute_derivative = comptime expr("abs(x)").diff(.x).simplify();
     try std.testing.expectEqualStrings("x / abs(x)", comptime absolute_derivative.render());
+}
+
+test "canonical n-ary algebra flattens sorts and collects exact coefficients" {
+    const Case = struct {
+        input: []const u8,
+        expected: []const u8,
+    };
+    inline for ([_]Case{
+        .{ .input = "x + x", .expected = "2 * x" },
+        .{ .input = "x / 3 + x / 6", .expected = "x / 2" },
+        .{ .input = "2 * x + 3 * x", .expected = "5 * x" },
+        .{ .input = "x * x * x", .expected = "x^3" },
+        .{ .input = "(x + y) + z", .expected = "x + y + z" },
+        .{ .input = "x * (y * z)", .expected = "x * y * z" },
+        .{ .input = "x * 0", .expected = "0" },
+        .{ .input = "x * 1", .expected = "x" },
+        .{ .input = "x / x", .expected = "x / x" },
+    }) |case| {
+        const simplified = comptime expr(case.input).simplify();
+        try std.testing.expectEqualStrings(case.expected, comptime simplified.render());
+    }
+
+    const ascending = comptime expr("(x + y) + z").simplify();
+    const permuted = comptime expr("z + (y + x)").simplify();
+    try std.testing.expectEqualStrings(
+        comptime ascending.render(),
+        comptime permuted.render(),
+    );
+    try std.testing.expect(ascending.node(ascending.root) == .add_nary);
+    try std.testing.expectEqual(
+        @as(usize, 3),
+        ascending.node(ascending.root).add_nary.len,
+    );
+
+    const factored = comptime expr("z * (x + y)").simplify();
+    try std.testing.expectEqualStrings("z * (x + y)", comptime factored.render());
 }

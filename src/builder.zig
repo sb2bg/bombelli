@@ -40,12 +40,28 @@ pub const Builder = struct {
         return self.intern(.{ .add = .{ .left = left, .right = right } });
     }
 
+    pub fn addNary(self: *Builder, operands: []const ast.NodeId) ast.NodeId {
+        if (operands.len < 2) @compileError("Bombelli n-ary addition requires at least two operands");
+        var storage: [ast.construction_node_limit]ast.NodeId = undefined;
+        @memcpy(storage[0..operands.len], operands);
+        const exact_operands = storage[0..operands.len].*;
+        return self.intern(.{ .add_nary = &exact_operands });
+    }
+
     pub fn sub(self: *Builder, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
         return self.intern(.{ .sub = .{ .left = left, .right = right } });
     }
 
     pub fn mul(self: *Builder, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
         return self.intern(.{ .mul = .{ .left = left, .right = right } });
+    }
+
+    pub fn mulNary(self: *Builder, operands: []const ast.NodeId) ast.NodeId {
+        if (operands.len < 2) @compileError("Bombelli n-ary multiplication requires at least two operands");
+        var storage: [ast.construction_node_limit]ast.NodeId = undefined;
+        @memcpy(storage[0..operands.len], operands);
+        const exact_operands = storage[0..operands.len].*;
+        return self.intern(.{ .mul_nary = &exact_operands });
     }
 
     pub fn div(self: *Builder, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
@@ -244,6 +260,9 @@ fn markReachable(
             markReachable(builder, binary.left, reachable);
             markReachable(builder, binary.right, reachable);
         },
+        .add_nary, .mul_nary => |operands| {
+            for (operands) |child| markReachable(builder, child, reachable);
+        },
         .pow => |power| markReachable(builder, power.base, reachable),
         .negate, .sin, .cos, .tan, .atan, .abs, .exp, .ln => |child| {
             markReachable(builder, child, reachable);
@@ -261,8 +280,10 @@ fn remapNode(
         .float => |value| .{ .float = value },
         .symbol => |name| .{ .symbol = name },
         .add => |binary| .{ .add = remapBinary(binary, remap) },
+        .add_nary => |operands| .{ .add_nary = remapOperands(operands, remap) },
         .sub => |binary| .{ .sub = remapBinary(binary, remap) },
         .mul => |binary| .{ .mul = remapBinary(binary, remap) },
+        .mul_nary => |operands| .{ .mul_nary = remapOperands(operands, remap) },
         .div => |binary| .{ .div = remapBinary(binary, remap) },
         .pow => |power| .{ .pow = .{
             .base = remap[@intCast(power.base)],
@@ -277,6 +298,18 @@ fn remapNode(
         .exp => |child| .{ .exp = remap[@intCast(child)] },
         .ln => |child| .{ .ln = remap[@intCast(child)] },
     };
+}
+
+fn remapOperands(
+    operands: []const ast.NodeId,
+    remap: *const [ast.construction_node_limit]ast.NodeId,
+) []const ast.NodeId {
+    var remapped: [ast.construction_node_limit]ast.NodeId = undefined;
+    for (operands, 0..) |child, index| {
+        remapped[index] = remap[@intCast(child)];
+    }
+    const exact_operands = remapped[0..operands.len].*;
+    return &exact_operands;
 }
 
 fn remapBinary(
@@ -303,8 +336,10 @@ fn hashNode(node_value: ast.Node) u64 {
             break :blk hash;
         },
         .add => |binary| hashBinary(hash, binary),
+        .add_nary => |operands| hashOperands(hash, operands),
         .sub => |binary| hashBinary(hash, binary),
         .mul => |binary| hashBinary(hash, binary),
+        .mul_nary => |operands| hashOperands(hash, operands),
         .div => |binary| hashBinary(hash, binary),
         .pow => |power| mix(
             mix(
@@ -334,6 +369,12 @@ fn canonicalExponent(exponent: anytype) exact.Rational {
 
 fn hashBinary(hash: u64, binary: ast.Binary) u64 {
     return mix(mix(hash, binary.left), binary.right);
+}
+
+fn hashOperands(initial_hash: u64, operands: []const ast.NodeId) u64 {
+    var hash = mix(initial_hash, operands.len);
+    for (operands) |child| hash = mix(hash, child);
+    return hash;
 }
 
 fn mix(hash: u64, value: anytype) u64 {

@@ -43,6 +43,13 @@ const Context = struct {
                 self.derivative(binary.left),
                 self.derivative(binary.right),
             ),
+            .add_nary => |operands| blk: {
+                var derivatives: [ast.construction_node_limit]ast.NodeId = undefined;
+                for (operands, 0..) |child, operand_index| {
+                    derivatives[operand_index] = self.derivative(child);
+                }
+                break :blk self.builder.addNary(derivatives[0..operands.len]);
+            },
             .sub => |binary| self.builder.sub(
                 self.derivative(binary.left),
                 self.derivative(binary.right),
@@ -55,6 +62,22 @@ const Context = struct {
                 const first = self.builder.mul(left_derivative, right_copy);
                 const second = self.builder.mul(left_copy, right_derivative);
                 break :blk self.builder.add(first, second);
+            },
+            .mul_nary => |operands| blk: {
+                var terms: [ast.construction_node_limit]ast.NodeId = undefined;
+                for (operands, 0..) |_, derivative_index| {
+                    var factors: [ast.construction_node_limit]ast.NodeId = undefined;
+                    for (operands, 0..) |child, factor_index| {
+                        factors[factor_index] = if (factor_index == derivative_index)
+                            self.derivative(child)
+                        else
+                            self.clone(child);
+                    }
+                    terms[derivative_index] = self.builder.mulNary(
+                        factors[0..operands.len],
+                    );
+                }
+                break :blk self.builder.addNary(terms[0..operands.len]);
             },
             .div => |binary| blk: {
                 const left_derivative = self.derivative(binary.left);
@@ -145,6 +168,13 @@ const Context = struct {
                 self.clone(binary.left),
                 self.clone(binary.right),
             ),
+            .add_nary => |operands| blk: {
+                var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
+                for (operands, 0..) |child, operand_index| {
+                    cloned[operand_index] = self.clone(child);
+                }
+                break :blk self.builder.addNary(cloned[0..operands.len]);
+            },
             .sub => |binary| self.builder.sub(
                 self.clone(binary.left),
                 self.clone(binary.right),
@@ -153,6 +183,13 @@ const Context = struct {
                 self.clone(binary.left),
                 self.clone(binary.right),
             ),
+            .mul_nary => |operands| blk: {
+                var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
+                for (operands, 0..) |child, operand_index| {
+                    cloned[operand_index] = self.clone(child);
+                }
+                break :blk self.builder.mulNary(cloned[0..operands.len]);
+            },
             .div => |binary| self.builder.div(
                 self.clone(binary.left),
                 self.clone(binary.right),
