@@ -177,7 +177,12 @@ rewriting, equation solving, limits, series, and symbolic integration.
 Structural sharing, node interning, and memoized transformations provide the
 base those larger operations need. The next scaling work is about genuine
 mathematical growth: polynomial-specific forms, n-ary operations, factored
-representations, and code-generation common-subexpression elimination.
+representations, and specialized numerical kernels beyond the current
+one-computation-per-DAG-node evaluator.
+
+Bombelli already keeps repeated multiplication factored when it can: a product
+of twenty identical factors simplifies to `x^20`, and factor multiplicities are
+propagated over shared DAG nodes without expanding their tree occurrences.
 
 Calculus should extend naturally from one derivative to partial derivatives,
 gradients, Jacobians, Hessians, vector calculus, differential equations, and

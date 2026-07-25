@@ -57,7 +57,7 @@ Bombelli currently supports:
 - Non-negative integer powers
 - `sin`, `cos`, `exp`, and `ln`
 - Symbolic differentiation and deterministic simplification
-- Compile-time rendering and allocation-free `f64` evaluation
+- Compile-time rendering and allocation-free, DAG-aware `f64` evaluation
 
 Power binds more tightly than unary negation, so `-x^2` means `-(x^2)`.
 Invalid syntax and missing evaluation fields produce compile errors with focused
@@ -79,13 +79,19 @@ clear at the call site and should compile into straightforward machine code.
 A hand-written lexer and recursive-descent parser build an immutable,
 node-indexed DAG. Every node goes through a hash-consing builder, so repeated
 subexpressions share one `NodeId`. Differentiation and simplification memoize
-their recursive work, then retain only the reachable nodes in an exactly sized
-result.
+their recursive work, evaluation computes each stored node once, and finished
+expressions retain only reachable nodes in an exactly sized result.
 
 Because `eval` takes the expression as a compile-time receiver, Zig resolves
-the recursive symbolic dispatch while compiling. The temporary construction
-workspace has a guarded limit; the stored expression does not carry that
+the symbolic dispatch while compiling and emits topologically ordered numeric
+work with shared results reused. The temporary construction workspace has a
+guarded node limit; multiplicative factor counts are tracked compactly rather
+than expanded into a tree. The stored expression does not carry the workspace
 capacity and grows only with its unique, reachable nodes.
+
+`metrics()` reports the finished `node_count`, `construction_peak_nodes`, and
+`backing_bytes`. Measuring an expression also verifies topological order,
+reachability, and structural uniqueness at compile time.
 
 ## Writing
 
@@ -97,6 +103,7 @@ capacity and grows only with its unique, reachable nodes.
 
 ```sh
 zig build test
+zig build test-compile-fail
 zig build run
 zig build stress
 ```

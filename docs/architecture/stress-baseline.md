@@ -7,10 +7,12 @@ fresh local and global Zig caches. The current command was:
 zig build stress --summary all
 ```
 
-The complete build took 9.83 seconds of wall time. Zig reported 2 seconds and
-280 MiB maximum RSS for the stress-test compilation. The pre-DAG build took
-8.34 seconds, with Zig reporting 3 seconds and 283 MiB. These numbers are local
-baselines, not portable benchmarks.
+The current build took 9.75 seconds of wall time. Zig reported 2 seconds and
+365 MiB maximum RSS for the stress-test compilation. The first compact-DAG
+baseline took 9.83 seconds and 280 MiB; the pre-DAG build took 8.34 seconds and
+283 MiB. The current suite performs more simplification and invariant checking,
+so these are progression markers rather than like-for-like microbenchmarks.
+They are local baselines, not portable measurements.
 
 ## The boundary that prompted the change
 
@@ -41,27 +43,40 @@ Construction now goes through hash-consed constructors, transformations cache
 results by source `NodeId`, and each finished expression retains an exactly
 sized slice containing only unique, reachable nodes.
 
-| Case | Phase | Stored | Reachable | Structurally unique | Backing bytes |
+| Case | Phase | Nodes | Construction peak | Headroom | Backing bytes |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Twenty-factor product | Source | 60 | 60 | 60 | 1,480 |
-| Twenty-factor product | Derivative | 118 | 118 | 118 | 2,872 |
-| Twenty-factor product | Simplified | 96 | 96 | 96 | 2,344 |
-| Deep composition | Source | 6 | 6 | 6 | 184 |
-| Deep composition | Derivative | 14 | 14 | 14 | 376 |
-| Deep composition | Simplified | 12 | 12 | 12 | 328 |
-| Four derivatives of `x^12` | Final | 4 | 4 | 4 | 136 |
-| Repeated `sin(x*y)` | Source | 9 | 9 | 9 | 256 |
-| Repeated `sin(x*y)` | Derivative | 25 | 25 | 25 | 640 |
-| Repeated `sin(x*y)` | Simplified | 21 | 21 | 21 | 544 |
+| Twenty-factor product | Source | 60 | 60 | 964 | 1,488 |
+| Twenty-factor product | Derivative | 118 | 118 | 906 | 2,880 |
+| Twenty-factor product | Simplified | 96 | 97 | 927 | 2,352 |
+| Deep composition | Source | 6 | 6 | 1,018 | 192 |
+| Deep composition | Derivative | 14 | 14 | 1,010 | 384 |
+| Deep composition | Simplified | 12 | 16 | 1,008 | 336 |
+| Four derivatives of `x^12` | Final | 4 | 10 | 1,014 | 144 |
+| Repeated `sin(x*y)` | Source | 9 | 9 | 1,015 | 264 |
+| Repeated `sin(x*y)` | Derivative | 25 | 25 | 999 | 648 |
+| Repeated `sin(x*y)` | Simplified | 21 | 27 | 997 | 552 |
+| Twenty repeated `x` factors | Source | 20 | 20 | 1,004 | 528 |
+| Twenty repeated `x` factors | Simplified | 2 | 20 | 1,004 | 96 |
 
-Every measured result has zero structural duplicates and zero unreachable
-nodes. More importantly, the twenty-factor case that previously failed now
-completes with substantial headroom. Persisted storage is proportional to the
+Hash-consing and builder compaction make structural uniqueness, reachability,
+and topological order invariants. `metrics()` verifies those invariants and
+reports both persisted size and the peak monotonic builder length that produced
+the expression.
+
+The largest measured construction peak is 118 nodes, leaving 906 nodes of
+headroom in the guarded 1,024-node workspace. That evidence does not justify an
+unbounded builder rewrite today. Persisted storage remains proportional to the
 result rather than the temporary construction limit.
 
 The ten-factor derivative gives a direct before-and-after comparison: its
 stored representation fell from 255 nodes to the same 58 unique nodes the old
 measurement had exposed.
+
+Multiplication simplification now propagates factor multiplicities through the
+DAG instead of recursively expanding occurrences. Twenty repeated `x` factors
+finish as the two-node expression `x^20`. A repeatedly squared shared DAG can
+likewise collapse to a power without walking its exponentially large tree
+interpretation.
 
 ## What remains
 
@@ -75,9 +90,14 @@ The next scaling tools should therefore target expression swell itself:
 - Factored representations rather than eager expansion
 - Polynomial-specific storage and algorithms
 - Delayed or bounded simplification
-- Common-subexpression elimination in generated numerical code
-- Larger or segmented construction storage when real workloads require it
+- Larger or segmented construction storage only when measured peaks require it
 
-The stress suite keeps the important distinction explicit: unique reachable
-node count measures mathematical size, while duplicate and unreachable counts
-measure representation waste.
+Generated numerical evaluation now follows the DAG in topological order and
+computes every stored node once. Rendering likewise builds each node's source
+fragment once, although a flat, re-parsable expression must still repeat shared
+text at each use; shortening that final text would require adding named bindings
+to Bombelli's source language.
+
+The stress suite verifies the builder invariants and records mathematical node
+count, peak construction use, remaining workspace headroom, and persisted
+storage cost.

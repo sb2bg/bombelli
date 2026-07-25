@@ -301,8 +301,10 @@ derivative now fits in 118 stored nodes, all unique and reachable; its simplifie
 form uses 96.
 
 That does not abolish genuine expression swell. Polynomial-specific storage,
-n-ary sums and products, factored forms, and code-generation
-common-subexpression elimination will still be needed as the mathematics grows.
+n-ary sums and products, factored forms, and more specialized numerical kernels
+will still be needed as the mathematics grows. The current evaluator already
+computes each stored DAG node once, while multiplication simplification combines
+repeated factors into powers without expanding shared occurrences.
 
 The Jacobian example makes the distinction concrete:
 
