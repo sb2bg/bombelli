@@ -2,7 +2,11 @@ const std = @import("std");
 const ast = @import("ast.zig");
 
 pub fn render(comptime expression: ast.Expr) []const u8 {
-    return renderNode(expression, expression.root, .none);
+    var rendered: [expression.nodes.len][]const u8 = undefined;
+    inline for (expression.nodes, 0..) |node, index| {
+        rendered[index] = renderBare(expression, node, rendered[0..index]);
+    }
+    return rendered[@intCast(expression.root)];
 }
 
 const Context = enum {
@@ -19,61 +23,69 @@ const Context = enum {
     negate_child,
 };
 
-fn renderNode(
+fn renderBare(
     comptime expression: ast.Expr,
-    comptime id: ast.NodeId,
-    comptime context: Context,
+    comptime node: ast.Node,
+    comptime rendered: []const []const u8,
 ) []const u8 {
-    const node = expression.node(id);
-    const bare = switch (node) {
+    return switch (node) {
         .integer => |value| std.fmt.comptimePrint("{d}", .{value}),
-        .float => |value| std.fmt.comptimePrint("{d}", .{value}),
+        .float => |value| renderFloat(value),
         .symbol => |name| name,
         .add => |binary| std.fmt.comptimePrint(
             "{s} + {s}",
             .{
-                renderNode(expression, binary.left, .add_left),
-                renderNode(expression, binary.right, .add_right),
+                renderChild(expression, binary.left, .add_left, rendered),
+                renderChild(expression, binary.right, .add_right, rendered),
             },
         ),
         .sub => |binary| std.fmt.comptimePrint(
             "{s} - {s}",
             .{
-                renderNode(expression, binary.left, .sub_left),
-                renderNode(expression, binary.right, .sub_right),
+                renderChild(expression, binary.left, .sub_left, rendered),
+                renderChild(expression, binary.right, .sub_right, rendered),
             },
         ),
         .mul => |binary| std.fmt.comptimePrint(
             "{s} * {s}",
             .{
-                renderNode(expression, binary.left, .mul_left),
-                renderNode(expression, binary.right, .mul_right),
+                renderChild(expression, binary.left, .mul_left, rendered),
+                renderChild(expression, binary.right, .mul_right, rendered),
             },
         ),
         .div => |binary| std.fmt.comptimePrint(
             "{s} / {s}",
             .{
-                renderNode(expression, binary.left, .div_left),
-                renderNode(expression, binary.right, .div_right),
+                renderChild(expression, binary.left, .div_left, rendered),
+                renderChild(expression, binary.right, .div_right, rendered),
             },
         ),
         .pow => |power| std.fmt.comptimePrint(
             "{s}^{d}",
             .{
-                renderNode(expression, power.base, .power_base),
+                renderChild(expression, power.base, .power_base, rendered),
                 power.exponent,
             },
         ),
         .negate => |child| std.fmt.comptimePrint(
             "-{s}",
-            .{renderNode(expression, child, .negate_child)},
+            .{renderChild(expression, child, .negate_child, rendered)},
         ),
-        .sin => |child| renderFunction(expression, "sin", child),
-        .cos => |child| renderFunction(expression, "cos", child),
-        .exp => |child| renderFunction(expression, "exp", child),
-        .ln => |child| renderFunction(expression, "ln", child),
+        .sin => |child| renderFunction(expression, "sin", child, rendered),
+        .cos => |child| renderFunction(expression, "cos", child, rendered),
+        .exp => |child| renderFunction(expression, "exp", child, rendered),
+        .ln => |child| renderFunction(expression, "ln", child, rendered),
     };
+}
 
+fn renderChild(
+    comptime expression: ast.Expr,
+    comptime id: ast.NodeId,
+    comptime context: Context,
+    comptime rendered: []const []const u8,
+) []const u8 {
+    const node = expression.node(id);
+    const bare = rendered[@intCast(id)];
     return if (needsParentheses(node, context))
         std.fmt.comptimePrint("({s})", .{bare})
     else
@@ -84,11 +96,24 @@ fn renderFunction(
     comptime expression: ast.Expr,
     comptime name: []const u8,
     comptime child: ast.NodeId,
+    comptime rendered: []const []const u8,
 ) []const u8 {
     return std.fmt.comptimePrint(
         "{s}({s})",
-        .{ name, renderNode(expression, child, .none) },
+        .{ name, renderChild(expression, child, .none, rendered) },
     );
+}
+
+fn renderFloat(comptime value: f64) []const u8 {
+    if (!std.math.isFinite(value)) {
+        @compileError("Bombelli cannot render a non-finite floating-point literal");
+    }
+
+    const formatted = std.fmt.comptimePrint("{d}", .{value});
+    return if (std.mem.indexOfAny(u8, formatted, ".eE") == null)
+        std.fmt.comptimePrint("{s}.0", .{formatted})
+    else
+        formatted;
 }
 
 fn needsParentheses(node: ast.Node, context: Context) bool {

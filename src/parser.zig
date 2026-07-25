@@ -91,6 +91,13 @@ const Parser = struct {
         const exponent = std.fmt.parseInt(u32, self.tokenText(token), 10) catch
             diagnostic.fail(self.source, token.start, "power exponent is too large");
         self.advance();
+        if (self.current.kind == .caret) {
+            diagnostic.fail(
+                self.source,
+                self.current.start,
+                "power chaining is not supported; parenthesize the base",
+            );
+        }
         return self.builder.power(base, exponent);
     }
 
@@ -107,6 +114,9 @@ const Parser = struct {
                 self.advance();
                 const value = std.fmt.parseFloat(f64, self.tokenText(token)) catch
                     diagnostic.fail(self.source, token.start, "invalid floating-point literal");
+                if (!std.math.isFinite(value)) {
+                    diagnostic.fail(self.source, token.start, "floating-point literal is out of range");
+                }
                 break :blk self.builder.float(value);
             },
             .identifier => self.parseIdentifier(),

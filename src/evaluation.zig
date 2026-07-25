@@ -2,33 +2,34 @@ const std = @import("std");
 const ast = @import("ast.zig");
 
 pub inline fn evaluate(comptime expression: ast.Expr, values: anytype) f64 {
-    return evaluateNode(expression, expression.root, values);
-}
-
-inline fn evaluateNode(comptime expression: ast.Expr, comptime id: ast.NodeId, values: anytype) f64 {
-    const node = comptime expression.node(id);
-    return switch (node) {
-        .integer => |value| @floatFromInt(value),
-        .float => |value| value,
-        .symbol => symbolValue(node.symbol, values),
-        .add => |binary| evaluateNode(expression, binary.left, values) +
-            evaluateNode(expression, binary.right, values),
-        .sub => |binary| evaluateNode(expression, binary.left, values) -
-            evaluateNode(expression, binary.right, values),
-        .mul => |binary| evaluateNode(expression, binary.left, values) *
-            evaluateNode(expression, binary.right, values),
-        .div => |binary| evaluateNode(expression, binary.left, values) /
-            evaluateNode(expression, binary.right, values),
-        .pow => |power| integerPower(
-            evaluateNode(expression, power.base, values),
-            power.exponent,
-        ),
-        .negate => |child| -evaluateNode(expression, child, values),
-        .sin => |child| @sin(evaluateNode(expression, child, values)),
-        .cos => |child| @cos(evaluateNode(expression, child, values)),
-        .exp => |child| @exp(evaluateNode(expression, child, values)),
-        .ln => |child| @log(evaluateNode(expression, child, values)),
-    };
+    // Finished expressions are topologically ordered, so this inline loop emits
+    // one numerical computation per stored node and reuses shared subexpressions.
+    var results: [expression.nodes.len]f64 = undefined;
+    inline for (expression.nodes, 0..) |node, index| {
+        results[index] = switch (node) {
+            .integer => |value| @floatFromInt(value),
+            .float => |value| value,
+            .symbol => |name| symbolValue(name, values),
+            .add => |binary| results[@intCast(binary.left)] +
+                results[@intCast(binary.right)],
+            .sub => |binary| results[@intCast(binary.left)] -
+                results[@intCast(binary.right)],
+            .mul => |binary| results[@intCast(binary.left)] *
+                results[@intCast(binary.right)],
+            .div => |binary| results[@intCast(binary.left)] /
+                results[@intCast(binary.right)],
+            .pow => |power| integerPower(
+                results[@intCast(power.base)],
+                power.exponent,
+            ),
+            .negate => |child| -results[@intCast(child)],
+            .sin => |child| @sin(results[@intCast(child)]),
+            .cos => |child| @cos(results[@intCast(child)]),
+            .exp => |child| @exp(results[@intCast(child)]),
+            .ln => |child| @log(results[@intCast(child)]),
+        };
+    }
+    return results[@intCast(expression.root)];
 }
 
 inline fn symbolValue(comptime name: []const u8, values: anytype) f64 {
