@@ -14,6 +14,21 @@ pub inline fn evaluateInto(
     output.* = evaluate(expression, values);
 }
 
+pub inline fn evaluateWithBoundVariable(
+    comptime expression: ast.Expr,
+    values: anytype,
+    comptime variable: []const u8,
+    variable_value: f64,
+) f64 {
+    const results = evaluateNodesWithBoundVariable(
+        expression.nodes,
+        values,
+        variable,
+        variable_value,
+    );
+    return results[@intCast(expression.root)];
+}
+
 pub inline fn evaluateVector(
     comptime N: usize,
     comptime expression: ast.ExprVector(N),
@@ -74,6 +89,57 @@ inline fn evaluateNodes(comptime nodes: []const ast.Node, values: anytype) [node
             .rational => |value| value.toF64(),
             .float => |value| value,
             .symbol => |name| symbolValue(name, values),
+            .add => |binary| results[@intCast(binary.left)] +
+                results[@intCast(binary.right)],
+            .add_nary => |operands| blk: {
+                var sum: f64 = 0.0;
+                inline for (operands) |child| sum += results[@intCast(child)];
+                break :blk sum;
+            },
+            .sub => |binary| results[@intCast(binary.left)] -
+                results[@intCast(binary.right)],
+            .mul => |binary| results[@intCast(binary.left)] *
+                results[@intCast(binary.right)],
+            .mul_nary => |operands| blk: {
+                var product: f64 = 1.0;
+                inline for (operands) |child| product *= results[@intCast(child)];
+                break :blk product;
+            },
+            .div => |binary| results[@intCast(binary.left)] /
+                results[@intCast(binary.right)],
+            .pow => |power| integerPower(
+                results[@intCast(power.base)],
+                power.exponent,
+            ),
+            .negate => |child| -results[@intCast(child)],
+            .sin => |child| @sin(results[@intCast(child)]),
+            .cos => |child| @cos(results[@intCast(child)]),
+            .tan => |child| @tan(results[@intCast(child)]),
+            .atan => |child| std.math.atan(results[@intCast(child)]),
+            .abs => |child| @abs(results[@intCast(child)]),
+            .exp => |child| @exp(results[@intCast(child)]),
+            .ln => |child| @log(results[@intCast(child)]),
+        };
+    }
+    return results;
+}
+
+inline fn evaluateNodesWithBoundVariable(
+    comptime nodes: []const ast.Node,
+    values: anytype,
+    comptime variable: []const u8,
+    variable_value: f64,
+) [nodes.len]f64 {
+    var results: [nodes.len]f64 = undefined;
+    inline for (nodes, 0..) |node, index| {
+        results[index] = switch (node) {
+            .integer => |value| @floatFromInt(value),
+            .rational => |value| value.toF64(),
+            .float => |value| value,
+            .symbol => |name| if (comptime std.mem.eql(u8, name, variable))
+                variable_value
+            else
+                symbolValue(name, values),
             .add => |binary| results[@intCast(binary.left)] +
                 results[@intCast(binary.right)],
             .add_nary => |operands| blk: {

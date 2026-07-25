@@ -31,6 +31,8 @@ pub const PartialIntegral = @import("integration.zig").PartialIntegral;
 pub const IntegrationProof = @import("integration.zig").Proof;
 pub const IntegrationDiagnostic = @import("integration.zig").IntegrationDiagnostic;
 pub const IntegrationResult = @import("integration.zig").IntegrationResult;
+pub const QuadratureKind = @import("gauss_legendre.zig").QuadratureKind;
+pub const QuadratureRule = @import("gauss_legendre.zig").QuadratureRule;
 
 pub fn expr(comptime source: []const u8) Expr {
     return parser.parse(source);
@@ -967,5 +969,69 @@ test "complete definite integrals substitute exact and symbolic bounds" {
         1.0 - @cos(0.75),
         result.eval(.{ .y = 0.75 }),
         1e-12,
+    );
+}
+
+test "hardcoded Gauss-Legendre tables satisfy polynomial exactness" {
+    @setEvalBranchQuota(100_000);
+    inline for (.{ 4, 8, 16, 32 }) |order| {
+        const selected = comptime @import("gauss_legendre.zig").table(order);
+        inline for (0..2 * order) |degree| {
+            var actual: f64 = 0.0;
+            inline for (selected.nodes, selected.weights) |node, weight| {
+                actual += weight * std.math.pow(
+                    f64,
+                    node,
+                    @as(f64, @floatFromInt(degree)),
+                );
+            }
+            const expected: f64 = if (degree % 2 == 0)
+                2.0 / @as(f64, @floatFromInt(degree + 1))
+            else
+                0.0;
+            try std.testing.expectApproxEqAbs(expected, actual, 5e-14);
+        }
+    }
+}
+
+test "fixed Gauss-Legendre quadrature specializes symbolic arithmetic" {
+    const rule = comptime expr("exp(-k*x^2)").quadrature(.{
+        .variable = .x,
+        .rule = .gauss_legendre,
+        .order = 16,
+    });
+    const value = rule.eval(.{
+        .from = 0.0,
+        .to = 1.0,
+        .k = 2.0,
+    });
+    try std.testing.expectApproxEqAbs(
+        0.5981440066613041,
+        value,
+        2e-15,
+    );
+}
+
+test "quadrature differentiation differentiates the fixed approximation" {
+    const rule = comptime expr("exp(-k*x^2)").quadrature(.{
+        .variable = .x,
+        .rule = .gauss_legendre,
+        .order = 16,
+    });
+    const derivative_rule = comptime rule.diff(.k);
+    const direct_rule = comptime expr("-x^2 * exp(-k*x^2)").quadrature(.{
+        .variable = .x,
+        .rule = .gauss_legendre,
+        .order = 16,
+    });
+    const inputs = .{
+        .from = 0.0,
+        .to = 1.0,
+        .k = 2.0,
+    };
+    try std.testing.expectApproxEqAbs(
+        direct_rule.eval(inputs),
+        derivative_rule.eval(inputs),
+        1e-15,
     );
 }

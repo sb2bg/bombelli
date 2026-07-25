@@ -84,6 +84,13 @@ const repeated_parts_integral = bombelli.expr(
     .variable = .x,
     .domain = .real,
 }).unwrap().simplify();
+const high_order_quadrature = bombelli.expr(
+    "exp(-k*x^2) * cos(x)",
+).quadrature(.{
+    .variable = .x,
+    .rule = .gauss_legendre,
+    .order = 32,
+});
 
 test "twenty-factor product fits in the compact DAG" {
     const source = comptime product_source.metrics();
@@ -232,6 +239,16 @@ test "repeated integration by parts stays bounded" {
         recovered.eval(.{ .x = 0.75 }),
         1e-10,
     );
+}
+
+test "high-order quadrature remains fixed and allocation-free" {
+    const value = high_order_quadrature.eval(.{
+        .from = -1.0,
+        .to = 1.0,
+        .k = 3.0,
+    });
+    try std.testing.expect(std.math.isFinite(value));
+    try std.testing.expect(value > 0.0);
 }
 
 fn expectMeasuredExpression(metrics: bombelli.Metrics) !void {

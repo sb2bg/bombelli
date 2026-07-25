@@ -90,6 +90,16 @@ pub fn build(b: *std.Build) void {
             .expected = "Bombelli integration is partial; unresolved remainder: exp(x^2)",
             .source_diagnostic = false,
         },
+        .{
+            .path = "tests/compile_fail/unsupported_quadrature_order.zig",
+            .expected = "Bombelli Gauss-Legendre quadrature supports orders 4, 8, 16, and 32; received 12",
+            .source_diagnostic = false,
+        },
+        .{
+            .path = "tests/compile_fail/quadrature_diff_bound.zig",
+            .expected = "Bombelli quadrature endpoints are runtime inputs; parameter-dependent bounds require explicit Leibniz terms",
+            .source_diagnostic = false,
+        },
     };
     for (compile_fail_cases) |case| {
         const check = b.addSystemCommand(&.{

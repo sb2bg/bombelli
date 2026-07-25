@@ -54,14 +54,42 @@ Bombelli currently supports:
 - Symbols with Zig identifier syntax
 - Parentheses and unary negation
 - Addition, subtraction, multiplication, and division
-- Non-negative integer powers
-- `sin`, `cos`, `exp`, and `ln`
+- Exact rational powers
+- `sin`, `cos`, `tan`, `atan`, `abs`, `exp`, and `ln`
 - Symbolic differentiation and deterministic simplification
 - Compile-time rendering and allocation-free, DAG-aware `f64` evaluation
 
 Power binds more tightly than unary negation, so `-x^2` means `-(x^2)`.
 Invalid syntax and missing evaluation fields produce compile errors with focused
 diagnostics.
+
+## Fixed quadrature
+
+Gauss–Legendre rules use literal, prevalidated tables for the supported orders
+4, 8, 16, and 32:
+
+```zig
+const rule = comptime bombelli
+    .expr("exp(-k*x^2)")
+    .quadrature(.{
+        .variable = .x,
+        .rule = .gauss_legendre,
+        .order = 16,
+    });
+
+const value = rule.eval(.{
+    .from = 0.0,
+    .to = 1.0,
+    .k = 2.0,
+});
+```
+
+The runtime path contains only the selected fixed arithmetic and elementary
+functions. `rule.diff(.k)` differentiates that fixed approximation exactly; it
+does not, by itself, establish that the derivative equals the derivative of the
+underlying mathematical integral. Runtime `from` and `to` inputs are treated as
+independent endpoints, and differentiating with respect to either is rejected
+until explicit Leibniz terms are requested.
 
 ## Direction
 

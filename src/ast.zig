@@ -108,6 +108,14 @@ pub const Expr = struct {
         return @import("integration.zig").integrate(self, options);
     }
 
+    pub fn quadrature(
+        comptime self: Expr,
+        comptime options: anytype,
+    ) @import("gauss_legendre.zig").QuadratureRule(options.order) {
+        @setEvalBranchQuota(50_000_000);
+        return @import("gauss_legendre.zig").make(self, options);
+    }
+
     pub fn eval(comptime self: Expr, values: anytype) f64 {
         return @import("evaluation.zig").evaluate(self, values);
     }
