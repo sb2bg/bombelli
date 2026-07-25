@@ -85,13 +85,21 @@ operand edges.
 | Canonical 48-term sum | Simplified | 49 | 48 | 95 | 929 | 1,808 |
 | Canonical 32-factor product | Source | 63 | 0 | 63 | 961 | 2,064 |
 | Canonical 32-factor product | Simplified | 33 | 32 | 63 | 961 | 1,232 |
+| Four-variable degree-8 polynomial | Expanded | 207 | 802 | 368 | 656 | 9,880 |
 
-The twenty-factor derivative remains the largest construction peak at 118
-nodes. The new workloads therefore still leave 906 nodes of measured headroom,
-and finished storage is proportional to actual nodes plus actual n-ary operand
-edges. A segmented or otherwise scalable node builder remains the next response
-if later polynomial, system-solving, or integration workloads materially close
-that gap; globally enlarging the fixed array is not the planned response.
+The polynomial expansion initially exposed a separate algorithmic construction
+peak: multiplying sparse intermediates queued 1,225 pair products even though
+the result had only 165 distinct monomials, exhausting the 1,024-term workspace.
+Polynomial multiplication now accumulates equal monomials immediately, so
+temporary term storage follows the unique result rather than the Cartesian
+product. This fixed the workload without increasing a global array.
+
+The expanded polynomial is now the largest node construction peak at 368,
+leaving 656 nodes of measured headroom. Finished storage remains proportional
+to actual nodes plus actual n-ary operand edges. A segmented or otherwise
+scalable node builder remains the next response if later system-solving or
+integration workloads materially close that gap; globally enlarging the fixed
+array is not the planned response.
 
 The ten-factor derivative gives a direct before-and-after comparison: its
 stored representation fell from 255 nodes to the same 58 unique nodes the old

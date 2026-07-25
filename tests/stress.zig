@@ -59,6 +59,7 @@ const large_product_source = bombelli.expr(
         "a25 * a26 * a27 * a28 * a29 * a30 * a31 * a32",
 );
 const large_product_simplified = large_product_source.simplify();
+const polynomial_expansion = bombelli.expr("(w + x + y + z)^8").expand();
 
 test "twenty-factor product fits in the compact DAG" {
     const source = comptime product_source.metrics();
@@ -171,6 +172,14 @@ test "large canonical sums and products use proportional operand storage" {
     try std.testing.expectEqual(@as(usize, 32), product.operand_count);
     try std.testing.expect(sum.construction_peak_nodes < 256);
     try std.testing.expect(product.construction_peak_nodes < 256);
+}
+
+test "sparse polynomial expansion stays within measured construction headroom" {
+    const expanded = comptime polynomial_expansion.metrics();
+    report("polynomial-4var-degree8", "expanded", expanded);
+    try expectMeasuredExpression(expanded);
+    try std.testing.expect(expanded.operand_count >= 165);
+    try std.testing.expect(expanded.construction_peak_nodes < 512);
 }
 
 fn expectMeasuredExpression(metrics: bombelli.Metrics) !void {

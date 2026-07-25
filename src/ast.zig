@@ -75,6 +75,23 @@ pub const Expr = struct {
         return @import("substitution.zig").substitute(self, replacements);
     }
 
+    pub fn asPolynomial(comptime self: Expr) @import("polynomial.zig").Polynomial {
+        @setEvalBranchQuota(20_000_000);
+        return @import("polynomial.zig").fromExpr(self);
+    }
+
+    pub fn expand(comptime self: Expr) Expr {
+        @setEvalBranchQuota(20_000_000);
+        return self.asPolynomial().toExpr();
+    }
+
+    pub fn asRationalFunction(
+        comptime self: Expr,
+    ) @import("rational_function.zig").RationalFunction {
+        @setEvalBranchQuota(30_000_000);
+        return @import("rational_function.zig").fromExpr(self);
+    }
+
     pub fn eval(comptime self: Expr, values: anytype) f64 {
         return @import("evaluation.zig").evaluate(self, values);
     }
