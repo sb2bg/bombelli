@@ -33,6 +33,9 @@ pub const IntegrationDiagnostic = @import("integration.zig").IntegrationDiagnost
 pub const IntegrationResult = @import("integration.zig").IntegrationResult;
 pub const QuadratureKind = @import("gauss_legendre.zig").QuadratureKind;
 pub const QuadratureRule = @import("gauss_legendre.zig").QuadratureRule;
+pub const AdaptiveQuadratureRule = @import("adaptive_quadrature.zig").AdaptiveQuadratureRule;
+pub const AdaptiveQuadratureResult = @import("adaptive_quadrature.zig").AdaptiveResult;
+pub const AdaptiveQuadratureStatus = @import("adaptive_quadrature.zig").AdaptiveStatus;
 
 pub fn expr(comptime source: []const u8) Expr {
     return parser.parse(source);
@@ -1033,5 +1036,63 @@ test "quadrature differentiation differentiates the fixed approximation" {
         direct_rule.eval(inputs),
         derivative_rule.eval(inputs),
         1e-15,
+    );
+}
+
+test "bounded adaptive quadrature reports convergence metadata" {
+    const rule = comptime expr("exp(-100*x^2)").adaptiveQuadrature(.{
+        .variable = .x,
+        .max_depth = 12,
+        .tolerance = 1e-12,
+    });
+    const result = rule.eval(.{
+        .from = -1.0,
+        .to = 1.0,
+    });
+    try std.testing.expectEqual(
+        AdaptiveQuadratureStatus.converged,
+        result.status,
+    );
+    try std.testing.expectApproxEqAbs(
+        @sqrt(std.math.pi / 100.0),
+        result.value,
+        2e-13,
+    );
+    try std.testing.expect(result.estimated_error <= 1e-12);
+    try std.testing.expect(result.evaluations == result.intervals * 24);
+    try std.testing.expect(result.intervals > 1);
+}
+
+test "bounded adaptive quadrature never hides depth exhaustion" {
+    const rule = comptime expr("exp(20*x)").adaptiveQuadrature(.{
+        .variable = .x,
+        .max_depth = 0,
+        .tolerance = 1e-16,
+    });
+    const result = rule.eval(.{
+        .from = 0.0,
+        .to = 1.0,
+    });
+    try std.testing.expectEqual(
+        AdaptiveQuadratureStatus.depth_exhausted,
+        result.status,
+    );
+    try std.testing.expect(result.estimated_error > 1e-16);
+    try std.testing.expectEqual(@as(usize, 24), result.evaluations);
+}
+
+test "bounded adaptive quadrature reports non-finite integrands" {
+    const rule = comptime expr("ln(x)").adaptiveQuadrature(.{
+        .variable = .x,
+        .max_depth = 4,
+        .tolerance = 1e-10,
+    });
+    const result = rule.eval(.{
+        .from = -1.0,
+        .to = 1.0,
+    });
+    try std.testing.expectEqual(
+        AdaptiveQuadratureStatus.non_finite,
+        result.status,
     );
 }

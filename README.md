@@ -91,6 +91,13 @@ underlying mathematical integral. Runtime `from` and `to` inputs are treated as
 independent endpoints, and differentiating with respect to either is rejected
 until explicit Leibniz terms are requested.
 
+For nonsmooth or sharply localized integrands, `adaptiveQuadrature` uses a
+fixed-capacity depth-first stack whose size is selected by comptime
+`max_depth`. Its result includes an error estimate, evaluation and interval
+counts, and an explicit status. If the requested tolerance is not met before
+the bound is reached, the status is `depth_exhausted`; Bombelli never presents
+that estimate as converged.
+
 ## Direction
 
 Bombelli is growing into a complete, practical mathematics library for Zig. The

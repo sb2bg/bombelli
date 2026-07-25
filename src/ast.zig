@@ -116,6 +116,16 @@ pub const Expr = struct {
         return @import("gauss_legendre.zig").make(self, options);
     }
 
+    pub fn adaptiveQuadrature(
+        comptime self: Expr,
+        comptime options: anytype,
+    ) @import("adaptive_quadrature.zig").AdaptiveQuadratureRule(
+        options.max_depth,
+    ) {
+        @setEvalBranchQuota(50_000_000);
+        return @import("adaptive_quadrature.zig").make(self, options);
+    }
+
     pub fn eval(comptime self: Expr, values: anytype) f64 {
         return @import("evaluation.zig").evaluate(self, values);
     }
