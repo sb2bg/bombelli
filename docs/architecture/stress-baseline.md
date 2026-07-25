@@ -1,16 +1,19 @@
 # Expression-growth baseline
 
-Measured on July 24, 2026 with Zig 0.16.0 on arm64 macOS. Each measurement used
-fresh local and global Zig caches. The current command was:
+Measured on July 24, 2026 with Zig 0.16.0 on an Apple M1 Pro running arm64
+macOS. Each current release measurement used fresh local and global Zig caches.
+The stress command was:
 
 ```sh
 zig build stress --summary all
 ```
 
-The current build took 9.75 seconds of wall time. Zig reported 2 seconds and
-365 MiB maximum RSS for the stress-test compilation. The first compact-DAG
-baseline took 9.83 seconds and 280 MiB; the pre-DAG build took 8.34 seconds and
-283 MiB. The current suite performs more simplification and invariant checking,
+The v0.1.0 release candidate took 18.56 seconds of wall time and reached
+1,118,289,920 bytes (1.04 GiB) maximum RSS. The complete 76-test target,
+including compile-fail, property, and hardening suites, took 19.41 seconds and
+reached 813,711,360 bytes (776 MiB). The first compact-DAG baseline took 9.83
+seconds and 280 MiB; the pre-DAG build took 8.34 seconds and 283 MiB. The
+current suite exercises substantially more mathematics and invariant checking,
 so these are progression markers rather than like-for-like microbenchmarks.
 They are local baselines, not portable measurements.
 

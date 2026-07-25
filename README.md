@@ -1,178 +1,219 @@
 # Bombelli
 
-> A compile-time symbolic mathematics library for Zig.
+> Bombelli is a compile-time symbolic mathematics compiler for Zig. It
+> differentiates, simplifies, solves, integrates, and generates
+> allocation-free numerical code with no runtime symbolic machinery.
 
-Write the expression you mean. Bombelli parses, transforms, and simplifies it
-at compile time, then leaves only the arithmetic your program needs at runtime.
+Write the mathematics at compile time:
 
 ```zig
 const bombelli = @import("bombelli");
 
-const response_gradient = bombelli
-    .expr("ln(1 + x^2 * y^2) + exp(sin(x * y))")
+const derivative = comptime bombelli
+    .expr("sin(x*y) + x^3")
     .diff(.x)
     .simplify();
 
-pub fn responseGradient(x: f64, y: f64) f64 {
-    return response_gradient.eval(.{ .x = x, .y = y });
+pub fn evaluate(x: f64, y: f64) f64 {
+    return derivative.eval(.{ .x = x, .y = y });
 }
 ```
 
-Bombelli renders the derivative as:
+Bombelli renders the result as `3 * x^2 + y * cos(x * y)`. At runtime there is
+no parser, allocator, symbolic graph walk, node-kind switch, virtual machine,
+function pointer, or dynamic dispatch. Zig specializes the compact DAG into
+ordinary numerical operations.
 
-```text
-2 * x * y^2 / (1 + x^2 * y^2) + y * cos(x * y) * exp(sin(x * y))
-```
+Bombelli v0.1.0 targets Zig 0.16.0 and uses only Zig's standard library.
 
-No runtime parser, allocator, symbolic tree walk, or virtual machine is involved.
-The evaluator specializes to the operations in that transformed expression.
+## Flagship workflows
 
-## API
-
-Expressions can be transformed in a single compile-time chain:
+One shared node store can serve a gradient, Jacobian, Hessian, or any typed
+multi-output program. Shared subexpressions are evaluated once, and
+`evalInto` writes into caller-provided fixed-size storage:
 
 ```zig
-const derivative = comptime bombelli
-    .expr("sin(x * y) + x^3")
-    .diff(.x)
+const functions = comptime bombelli.exprVector(.{
+    "sin(x*y) + x^2",
+    "sin(x*y) + y^2",
+});
+const jacobian = comptime functions
+    .jacobian(.{ .x, .y })
     .simplify();
 
-const source = comptime derivative.render();
-const value = derivative.eval(.{ .x = 2.0, .y = 3.0 });
+var output: [2][2]f64 = undefined;
+jacobian.evalInto(&output, .{ .x = 0.5, .y = 2.0 });
 ```
 
-File-scope constants are already evaluated at compile time, so the explicit
-`comptime` keyword is only needed when building expressions in function scope.
-`diff` accepts Zig enum-literal syntax, and `eval` accepts a struct whose fields
-provide the expression's symbols.
-
-## Expressions
-
-Bombelli currently supports:
-
-- Integer and floating-point literals
-- Symbols with Zig identifier syntax
-- Parentheses and unary negation
-- Addition, subtraction, multiplication, and division
-- Exact rational powers
-- `sin`, `cos`, `tan`, `atan`, `abs`, `exp`, and `ln`
-- Symbolic differentiation and deterministic simplification
-- Compile-time rendering and allocation-free, DAG-aware `f64` evaluation
-
-Power binds more tightly than unary negation, so `-x^2` means `-(x^2)`.
-Invalid syntax and missing evaluation fields produce compile errors with focused
-diagnostics.
-
-## Fixed quadrature
-
-Gauss–Legendre rules use literal, prevalidated tables for the supported orders
-4, 8, 16, and 32:
+Exact symbolic linear systems retain parameter conditions instead of silently
+dividing by a pivot that might be zero:
 
 ```zig
-const rule = comptime bombelli
-    .expr("exp(-k*x^2)")
-    .quadrature(.{
+const problem = comptime bombelli.system(.{
+    "a*x + b*y = e",
+    "c*x + d*y = f",
+}, .{
+    .unknowns = .{ .x, .y },
+    .domain = .real,
+});
+
+const result = comptime problem.solve(.bareiss);
+// result is conditional on a*d - b*c != 0
+```
+
+Symbolic integration is inspectable. A partial result preserves both the
+closed portion and an `IntegralProblem` remainder, which can be compiled
+directly into fixed quadrature:
+
+```zig
+const symbolic = comptime bombelli
+    .expr("3*x^2 + exp(x^2)")
+    .integrate(.{
         .variable = .x,
-        .rule = .gauss_legendre,
-        .order = 16,
+        .domain = .real,
     });
 
-const value = rule.eval(.{
-    .from = 0.0,
-    .to = 1.0,
-    .k = 2.0,
+const compiled = comptime symbolic.compile(.{
+    .rule = .gauss_legendre,
+    .order = 16,
+});
+
+const value = compiled.eval(.{ .from = 0.0, .to = 1.0 });
+```
+
+Source emission is distinct from mathematical rendering:
+
+```zig
+const source = comptime derivative.emit(.{
+    .target = .zig,
+    .mode = .out_of_place,
+    .name = "evaluate_derivative",
 });
 ```
 
-The runtime path contains only the selected fixed arithmetic and elementary
-functions. `rule.diff(.k)` differentiates that fixed approximation exactly; it
-does not, by itself, establish that the derivative equals the derivative of the
-underlying mathematical integral. Runtime `from` and `to` inputs are treated as
-independent endpoints, and differentiating with respect to either is rejected
-until explicit Leibniz terms are requested.
+The emitted evaluator is standalone Zig and does not import Bombelli. See
+[examples/flagship.zig](examples/flagship.zig) for all five release workflows
+in one executable.
 
-For nonsmooth or sharply localized integrands, `adaptiveQuadrature` uses a
-fixed-capacity depth-first stack whose size is selected by comptime
-`max_depth`. Its result includes an error estimate, evaluation and interval
-counts, and an explicit status. If the requested tolerance is not met before
-the bound is reached, the status is `depth_exhausted`; Bombelli never presents
-that estimate as converged.
+## v0.1.0 scope
 
-An inspectable partial symbolic integral can be compiled with
-`.compile(.{ .rule = .gauss_legendre, .order = 16 })`. The resulting callable
-evaluates the closed portion directly and applies quadrature only to the
-retained `IntegralProblem` remainder. Its `.diff(.parameter)` differentiates
-that fixed split when the bounds are parameter-independent; otherwise it
-requests explicit Leibniz boundary terms.
+The release includes:
 
-Square nonlinear systems can compile into bounded Newton callables with
-symbolic residuals and a symbolic Jacobian generated at comptime. Runtime work
-uses fixed-size vectors and matrices with partial pivoting. The numerical result
-reports convergence, singular-Jacobian, non-convergence, or non-finite status
-along with the final residual and iteration metadata.
+- Checked `i64` exact integers and canonical rationals with `u64`
+  denominators
+- Exact rational powers with explicit real-valued numerical behavior
+- Canonical n-ary addition and multiplication without automatic expansion
+- `sin`, `cos`, `tan`, `atan`, `abs`, `sqrt`, `exp`, and `ln`
+- Memoized substitution, differentiation, gradients, Jacobians, and Hessians
+- Sparse multivariate polynomials over exact rationals and explicit expansion
+- Normalized rational functions that retain denominator conditions
+- First-class equations, systems, and structured solution sets
+- Exact rational RREF and fraction-free symbolic Bareiss solving
+- Reusable square-system factorizations
+- Linear and quadratic polynomial equation solving over the real domain
+- Closed, partial, and unsupported symbolic integration results
+- Fixed Gauss–Legendre rules of orders 4, 8, 16, and 32
+- Allocation-free bounded adaptive quadrature with explicit status
+- Symbolic-plus-quadrature compiled integrals
+- Fixed-size Newton solvers with symbolic Jacobians and convergence metadata
+- Implicit parameter sensitivities with nonsingularity checks
+- Canonical/pretty rendering and standalone Zig source emission
 
-`solver.diff(.parameter)` generates an implicit sensitivity solve rather than
-differentiating the Newton iteration trace. It returns sensitivities only after
-the base root converges and the local symbolic Jacobian passes runtime
-nonsingularity checks.
+`render()` is the canonical, re-parsable form. `renderMode(.pretty)` may use
+presentation sugar such as `sqrt(x)`, while `renderMode(.canonical)` selects
+the explicit canonical mode. Zig has no method overloading or default
+arguments, so `renderMode` preserves the original zero-argument API.
 
-## Rendering and source emission
+## Deliberate limits
 
-`render()` remains the canonical, re-parsable mathematical form.
-`renderMode(.pretty)` may use presentation sugar such as `sqrt(x)`, while
-`renderMode(.canonical)` is the explicit mode-selecting equivalent of
-`render()`. Zig has no method overloading or default arguments, so the separate
-`renderMode` spelling preserves the original zero-argument API.
+Bombelli keeps the v0.1.0 promise bounded and explicit:
 
-`emit(.{ .target = .zig, .mode = .out_of_place })` is a separate code-generation
-backend for scalar, vector, and matrix expressions, fixed quadrature rules, and
-generated Newton solvers. Emitted DAG bindings are topologically ordered, so
-shared nodes are evaluated once. Emitted quadrature and Newton sources are
-standalone Zig numerical code and do not import Bombelli.
+- The only mathematical domain currently exposed is `.real`; Bombelli does
+  not introduce complex branches.
+- Exact arithmetic is fixed-width and checked. Overflow produces a precise
+  compile-time diagnostic rather than wrapping or allocating a big integer.
+- The construction workspace is guarded at 1,024 nodes. Finished DAG storage
+  remains proportional to actual nodes and operand edges. The largest release
+  stress case peaks at 368 nodes.
+- Simplification preserves factored forms and does not erase singularities
+  through unconditional cancellation such as `x/x -> 1`.
+- Symbolic integration is a terminating subset: linearity, constant
+  extraction, exact polynomials, the power rule, real `1/x`, affine
+  sine/cosine/exponential forms, and decreasing-degree integration by parts.
+  A heuristic stop is `unsupported`, never a claim of no elementary form.
+- Exact Gaussian solving classifies constant rational systems. Symbolic
+  Bareiss solving currently requires square systems and reports the
+  determinant condition for its unique branch.
+- Polynomial equation solving currently supports degree at most two with
+  constant coefficients.
+- Fixed quadrature supports only the four prevalidated orders above.
+  Differentiating a rule differentiates the fixed approximation; it does not
+  prove interchange of differentiation and mathematical integration.
+- Adaptive quadrature is intentionally not differentiable because subdivision
+  branches can change. `max_depth` is capped at 64.
+- Newton compilation requires a square nonlinear system and a symbolic
+  Jacobian. It reports singular, non-convergent, and non-finite outcomes.
+- Source emission currently supports Zig and out-of-place callables only.
 
-## Direction
+Assumptions are operation-local. Symbols never acquire global attributes that
+silently alter later behavior:
 
-Bombelli is growing into a complete, practical mathematics library for Zig. The
-long-term goal is one coherent system spanning symbolic algebra, calculus,
-linear algebra, exact and approximate arithmetic, complex mathematics,
-equations and solvers, transforms and series, probability and statistics,
-discrete mathematics, and efficient numerical evaluation.
-
-That breadth will grow around the same core idea: mathematical code should be
-clear at the call site and should compile into straightforward machine code.
+```zig
+const result = comptime bombelli.expr("exp(a*x + b)").integrate(.{
+    .variable = .x,
+    .domain = .real,
+    .assumptions = .{bombelli.nonzero(.a)},
+});
+```
 
 ## Design
 
 A hand-written lexer and recursive-descent parser build an immutable,
-node-indexed DAG. Every node goes through a hash-consing builder, so repeated
-subexpressions share one `NodeId`. Differentiation and simplification memoize
-their recursive work, evaluation computes each stored node once, and finished
-expressions retain only reachable nodes in an exactly sized result.
+node-indexed DAG. Hash-consing gives structurally equal nodes one `NodeId`.
+Transformations memoize DAG rebuilds, and finished programs retain only unique,
+reachable, topologically ordered nodes in exactly sized storage.
 
-Because `eval` takes the expression as a compile-time receiver, Zig resolves
-the symbolic dispatch while compiling and emits topologically ordered numeric
-work with shared results reused. The temporary construction workspace has a
-guarded node limit; multiplicative factor counts are tracked compactly rather
-than expanded into a tree. The stored expression does not carry the workspace
-capacity and grows only with its unique, reachable nodes.
+Because each callable is a compile-time-specialized Zig type, runtime
+evaluation becomes straight-line arithmetic plus only the bounded numerical
+loops and explicit status branches appropriate to quadrature and solvers.
+`metrics()` reports node count, operand edges, construction peak, and backing
+bytes while also validating reachability, structural uniqueness, and
+topological order.
 
-`metrics()` reports the finished `node_count`, `construction_peak_nodes`, and
-`backing_bytes`. Measuring an expression also verifies topological order,
-reachability, and structural uniqueness at compile time.
+## Validation
 
-## Writing
+The release candidate passes:
 
-- [Building a Symbolic Differentiator That Compiles Away Completely in Zig](docs/blog/building-a-symbolic-differentiator-that-compiles-away.md)
-- [Disproving the Jacobian Conjecture with Bombelli](docs/blog/disproving-the-jacobian-conjecture-with-bombelli.md)
-- [Expression-growth baseline](docs/architecture/stress-baseline.md)
+- 76 core, compile-fail, property, and dangerous-case hardening tests
+- 11 stress tests, including the original twenty-factor derivative
+- 342 seeded programs/problems and 4,984 independent SymPy oracle assertions
+- Standalone behavioral tests for emitted expression, quadrature, and Newton
+  code, including forbidden-symbolic-machinery inspection
 
-## Commands
+Run the complete validation surfaces with:
 
 ```sh
 zig build test
-zig build test-compile-fail
-zig build run
 zig build stress
+zig build differential
+zig build test-emission
 ```
 
-Bombelli uses only Zig's standard library and targets Zig 0.16.0.
+`zig build differential` additionally requires Python 3 and SymPy. They are
+validation dependencies only; Bombelli itself has no dependency beyond Zig's
+standard library.
+
+The measured compiler cost, 2×2–4×4 scaling, emitted sizes, and handwritten
+runtime comparison are recorded in the
+[v0.1.0 validation baseline](docs/validation/release-baseline.md). Reproduce
+the scaling, size, and runtime measurements with:
+
+```sh
+python3 -B benchmarks/measure_release.py
+```
+
+## More
+
+- [Expression-growth and construction baseline](docs/architecture/stress-baseline.md)
+- [Building a Symbolic Differentiator That Compiles Away Completely in Zig](docs/blog/building-a-symbolic-differentiator-that-compiles-away.md)
+- [Disproving the Jacobian Conjecture with Bombelli](docs/blog/disproving-the-jacobian-conjecture-with-bombelli.md)
