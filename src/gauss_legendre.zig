@@ -62,6 +62,17 @@ pub fn QuadratureRule(comptime N: usize) type {
                 .variable = self.variable,
             };
         }
+
+        pub fn emit(
+            comptime self: Self,
+            comptime options: anytype,
+        ) []const u8 {
+            @setEvalBranchQuota(30_000_000);
+            return @import("source_emission.zig").emitFixedQuadrature(
+                self,
+                options,
+            );
+        }
     };
 }
 

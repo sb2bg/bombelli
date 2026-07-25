@@ -82,6 +82,19 @@ pub fn hessian(
     return gradient(expression, variables).jacobian(variables);
 }
 
+pub fn scalarJacobian(
+    comptime expression: ast.Expr,
+    comptime variables: anytype,
+) ast.ExprMatrix(1, ast.tupleLength(@TypeOf(variables))) {
+    const N = ast.tupleLength(@TypeOf(variables));
+    const derivatives = gradient(expression, variables);
+    var entries: [1][N]ast.Expr = undefined;
+    inline for (0..N) |column| {
+        entries[0][column] = vectorElement(N, derivatives, column);
+    }
+    return matrix(1, N, entries);
+}
+
 pub fn jacobian(
     comptime R: usize,
     comptime expression: ast.ExprVector(R),

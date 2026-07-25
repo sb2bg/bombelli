@@ -115,6 +115,11 @@ pub fn build(b: *std.Build) void {
             .expected = "Bombelli Newton sensitivity parameter must not be one of the solved unknowns",
             .source_diagnostic = false,
         },
+        .{
+            .path = "tests/compile_fail/callable_unsupported_diff.zig",
+            .expected = "Bombelli adaptive quadrature is not differentiable because its runtime subdivision branches may change",
+            .source_diagnostic = false,
+        },
     };
     for (compile_fail_cases) |case| {
         const check = b.addSystemCommand(&.{

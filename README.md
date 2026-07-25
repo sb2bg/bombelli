@@ -116,6 +116,20 @@ differentiating the Newton iteration trace. It returns sensitivities only after
 the base root converges and the local symbolic Jacobian passes runtime
 nonsingularity checks.
 
+## Rendering and source emission
+
+`render()` remains the canonical, re-parsable mathematical form.
+`renderMode(.pretty)` may use presentation sugar such as `sqrt(x)`, while
+`renderMode(.canonical)` is the explicit mode-selecting equivalent of
+`render()`. Zig has no method overloading or default arguments, so the separate
+`renderMode` spelling preserves the original zero-argument API.
+
+`emit(.{ .target = .zig, .mode = .out_of_place })` is a separate code-generation
+backend for scalar, vector, and matrix expressions, fixed quadrature rules, and
+generated Newton solvers. Emitted DAG bindings are topologically ordered, so
+shared nodes are evaluated once. Emitted quadrature and Newton sources are
+standalone Zig numerical code and do not import Bombelli.
+
 ## Direction
 
 Bombelli is growing into a complete, practical mathematics library for Zig. The

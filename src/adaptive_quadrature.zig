@@ -121,6 +121,15 @@ pub fn AdaptiveQuadratureRule(comptime max_depth: usize) type {
             };
         }
 
+        pub fn diff(
+            comptime self: Self,
+            comptime parameter: anytype,
+        ) noreturn {
+            _ = self;
+            _ = parameter;
+            @compileError("Bombelli adaptive quadrature is not differentiable because its runtime subdivision branches may change");
+        }
+
         inline fn estimate(
             comptime self: Self,
             inputs: anytype,

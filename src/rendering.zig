@@ -1,10 +1,27 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 
+pub const RenderMode = enum {
+    canonical,
+    pretty,
+};
+
 pub fn render(comptime expression: ast.Expr) []const u8 {
+    return renderMode(expression, .canonical);
+}
+
+pub fn renderMode(
+    comptime expression: ast.Expr,
+    comptime mode: RenderMode,
+) []const u8 {
     var rendered: [expression.nodes.len][]const u8 = undefined;
     inline for (expression.nodes, 0..) |node, index| {
-        rendered[index] = renderBare(expression, node, rendered[0..index]);
+        rendered[index] = renderBare(
+            expression,
+            node,
+            rendered[0..index],
+            mode,
+        );
     }
     return rendered[@intCast(expression.root)];
 }
@@ -13,7 +30,15 @@ pub fn renderVector(
     comptime N: usize,
     comptime expression: ast.ExprVector(N),
 ) [N][]const u8 {
-    const rendered = renderNodes(expression.nodes);
+    return renderVectorMode(N, expression, .canonical);
+}
+
+pub fn renderVectorMode(
+    comptime N: usize,
+    comptime expression: ast.ExprVector(N),
+    comptime mode: RenderMode,
+) [N][]const u8 {
+    const rendered = renderNodes(expression.nodes, mode);
     var outputs: [N][]const u8 = undefined;
     inline for (expression.roots, 0..) |root, index| {
         outputs[index] = rendered[@intCast(root)];
@@ -26,7 +51,16 @@ pub fn renderMatrix(
     comptime C: usize,
     comptime expression: ast.ExprMatrix(R, C),
 ) [R][C][]const u8 {
-    const rendered = renderNodes(expression.nodes);
+    return renderMatrixMode(R, C, expression, .canonical);
+}
+
+pub fn renderMatrixMode(
+    comptime R: usize,
+    comptime C: usize,
+    comptime expression: ast.ExprMatrix(R, C),
+    comptime mode: RenderMode,
+) [R][C][]const u8 {
+    const rendered = renderNodes(expression.nodes, mode);
     var outputs: [R][C][]const u8 = undefined;
     inline for (expression.roots, 0..) |row, row_index| {
         inline for (row, 0..) |root, column_index| {
@@ -36,7 +70,10 @@ pub fn renderMatrix(
     return outputs;
 }
 
-fn renderNodes(comptime nodes: []const ast.Node) [nodes.len][]const u8 {
+fn renderNodes(
+    comptime nodes: []const ast.Node,
+    comptime mode: RenderMode,
+) [nodes.len][]const u8 {
     const expression = ast.Expr{
         .nodes = nodes,
         .root = 0,
@@ -45,7 +82,12 @@ fn renderNodes(comptime nodes: []const ast.Node) [nodes.len][]const u8 {
     };
     var rendered: [nodes.len][]const u8 = undefined;
     inline for (nodes, 0..) |node, index| {
-        rendered[index] = renderBare(expression, node, rendered[0..index]);
+        rendered[index] = renderBare(
+            expression,
+            node,
+            rendered[0..index],
+            mode,
+        );
     }
     return rendered;
 }
@@ -68,6 +110,7 @@ fn renderBare(
     comptime expression: ast.Expr,
     comptime node: ast.Node,
     comptime rendered: []const []const u8,
+    comptime mode: RenderMode,
 ) []const u8 {
     return switch (node) {
         .integer => |value| std.fmt.comptimePrint("{d}", .{value}),
@@ -107,7 +150,11 @@ fn renderBare(
                 renderChild(expression, binary.right, .div_right, rendered),
             },
         ),
-        .pow => |power| if (power.exponent.denominator == 1)
+        .pow => |power| if (mode == .pretty and
+            power.exponent.numerator == 1 and
+            power.exponent.denominator == 2)
+            renderFunction(expression, "sqrt", power.base, rendered)
+        else if (power.exponent.denominator == 1)
             std.fmt.comptimePrint(
                 "{s}^{d}",
                 .{

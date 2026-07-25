@@ -65,6 +65,14 @@ pub const Expr = struct {
         return @import("multi.zig").hessian(self, variables);
     }
 
+    pub fn jacobian(
+        comptime self: Expr,
+        comptime variables: anytype,
+    ) ExprMatrix(1, tupleLength(@TypeOf(variables))) {
+        @setEvalBranchQuota(20_000_000);
+        return @import("multi.zig").scalarJacobian(self, variables);
+    }
+
     pub fn simplify(comptime self: Expr) Expr {
         @setEvalBranchQuota(5_000_000);
         return @import("simplification.zig").simplify(self);
@@ -139,6 +147,22 @@ pub const Expr = struct {
         return @import("rendering.zig").render(self);
     }
 
+    pub fn renderMode(
+        comptime self: Expr,
+        comptime mode: @import("rendering.zig").RenderMode,
+    ) []const u8 {
+        @setEvalBranchQuota(1_000_000);
+        return @import("rendering.zig").renderMode(self, mode);
+    }
+
+    pub fn emit(
+        comptime self: Expr,
+        comptime options: anytype,
+    ) []const u8 {
+        @setEvalBranchQuota(10_000_000);
+        return @import("source_emission.zig").emitExpr(self, options);
+    }
+
     pub fn metrics(comptime self: Expr) @import("metrics.zig").Metrics {
         @setEvalBranchQuota(10_000_000);
         return @import("metrics.zig").measure(self);
@@ -203,6 +227,22 @@ pub fn ExprVector(comptime N: usize) type {
             return @import("rendering.zig").renderVector(N, self);
         }
 
+        pub fn renderMode(
+            comptime self: Self,
+            comptime mode: @import("rendering.zig").RenderMode,
+        ) [N][]const u8 {
+            @setEvalBranchQuota(2_000_000);
+            return @import("rendering.zig").renderVectorMode(N, self, mode);
+        }
+
+        pub fn emit(
+            comptime self: Self,
+            comptime options: anytype,
+        ) []const u8 {
+            @setEvalBranchQuota(20_000_000);
+            return @import("source_emission.zig").emitVector(N, self, options);
+        }
+
         pub fn metrics(comptime self: Self) @import("metrics.zig").Metrics {
             @setEvalBranchQuota(10_000_000);
             return @import("metrics.zig").measureVector(N, self);
@@ -261,6 +301,32 @@ pub fn ExprMatrix(comptime R: usize, comptime C: usize) type {
         pub fn render(comptime self: Self) [R][C][]const u8 {
             @setEvalBranchQuota(4_000_000);
             return @import("rendering.zig").renderMatrix(R, C, self);
+        }
+
+        pub fn renderMode(
+            comptime self: Self,
+            comptime mode: @import("rendering.zig").RenderMode,
+        ) [R][C][]const u8 {
+            @setEvalBranchQuota(4_000_000);
+            return @import("rendering.zig").renderMatrixMode(
+                R,
+                C,
+                self,
+                mode,
+            );
+        }
+
+        pub fn emit(
+            comptime self: Self,
+            comptime options: anytype,
+        ) []const u8 {
+            @setEvalBranchQuota(30_000_000);
+            return @import("source_emission.zig").emitMatrix(
+                R,
+                C,
+                self,
+                options,
+            );
         }
 
         pub fn metrics(comptime self: Self) @import("metrics.zig").Metrics {

@@ -182,6 +182,14 @@ pub fn NewtonSolver(
         ) NewtonSensitivitySolver(N, max_iterations) {
             return compileSensitivity(N, max_iterations, self, parameter);
         }
+
+        pub fn emit(
+            comptime self: Self,
+            comptime options: anytype,
+        ) []const u8 {
+            @setEvalBranchQuota(50_000_000);
+            return @import("source_emission.zig").emitNewton(self, options);
+        }
     };
 }
 
