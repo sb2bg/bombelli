@@ -105,6 +105,12 @@ retained `IntegralProblem` remainder. Its `.diff(.parameter)` differentiates
 that fixed split when the bounds are parameter-independent; otherwise it
 requests explicit Leibniz boundary terms.
 
+Square nonlinear systems can compile into bounded Newton callables with
+symbolic residuals and a symbolic Jacobian generated at comptime. Runtime work
+uses fixed-size vectors and matrices with partial pivoting. The numerical result
+reports convergence, singular-Jacobian, non-convergence, or non-finite status
+along with the final residual and iteration metadata.
+
 ## Direction
 
 Bombelli is growing into a complete, practical mathematics library for Zig. The

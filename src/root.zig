@@ -37,6 +37,9 @@ pub const AdaptiveQuadratureRule = @import("adaptive_quadrature.zig").AdaptiveQu
 pub const AdaptiveQuadratureResult = @import("adaptive_quadrature.zig").AdaptiveResult;
 pub const AdaptiveQuadratureStatus = @import("adaptive_quadrature.zig").AdaptiveStatus;
 pub const HybridIntegral = @import("hybrid_integration.zig").HybridIntegral;
+pub const NewtonStatus = @import("newton.zig").NewtonStatus;
+pub const NewtonResult = @import("newton.zig").NewtonResult;
+pub const NewtonSolver = @import("newton.zig").NewtonSolver;
 
 pub fn expr(comptime source: []const u8) Expr {
     return parser.parse(source);
@@ -1167,4 +1170,95 @@ test "compiled partial integral differentiation preserves the fixed split" {
         derivative.eval(inputs),
         1e-15,
     );
+}
+
+test "generated Newton solvers converge with symbolic Jacobians" {
+    const problem_value = comptime system(.{
+        "x^2 + y^2 = r^2",
+        "x - y = 0",
+    }, .{
+        .unknowns = .{ .x, .y },
+        .domain = .real,
+    });
+    const solver = comptime problem_value.compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 32,
+        .tolerance = 1e-12,
+    });
+    const result = solver.eval(.{
+        .initial = .{ .x = 0.7, .y = 0.7 },
+        .r = 1.0,
+    });
+    try std.testing.expectEqual(NewtonStatus.converged, result.status);
+    try std.testing.expectApproxEqAbs(
+        1.0 / @sqrt(2.0),
+        result.values[0],
+        1e-12,
+    );
+    try std.testing.expectApproxEqAbs(
+        1.0 / @sqrt(2.0),
+        result.values[1],
+        1e-12,
+    );
+    try std.testing.expect(result.residual_norm <= 1e-12);
+    try std.testing.expect(result.iterations > 0);
+}
+
+test "generated Newton linear solves pivot at runtime" {
+    const solver = comptime system(.{
+        "y = 1",
+        "x = 2",
+    }, .{
+        .unknowns = .{ .x, .y },
+        .domain = .real,
+    }).compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 4,
+        .tolerance = 1e-12,
+    });
+    const result = solver.eval(.{
+        .initial = .{ .x = 0.0, .y = 0.0 },
+    });
+    try std.testing.expectEqual(NewtonStatus.converged, result.status);
+    try std.testing.expectEqualDeep([2]f64{ 2.0, 1.0 }, result.values);
+}
+
+test "generated Newton solvers report singular and non-convergent outcomes" {
+    const singular_solver = comptime system(.{
+        "x^2 = 1",
+        "y^2 = 1",
+    }, .{
+        .unknowns = .{ .x, .y },
+        .domain = .real,
+    }).compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 8,
+        .tolerance = 1e-12,
+    });
+    const singular = singular_solver.eval(.{
+        .initial = .{ .x = 0.0, .y = 0.0 },
+    });
+    try std.testing.expectEqual(
+        NewtonStatus.singular_jacobian,
+        singular.status,
+    );
+
+    const bounded_solver = comptime equationProblem("x^2 = 2", .{
+        .unknowns = .{.x},
+        .domain = .real,
+    }).compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 1,
+        .tolerance = 1e-15,
+    });
+    const bounded = bounded_solver.eval(.{
+        .initial = .{ .x = 1.0 },
+    });
+    try std.testing.expectEqual(NewtonStatus.non_converged, bounded.status);
+    try std.testing.expectEqual(@as(usize, 1), bounded.iterations);
+    try std.testing.expect(bounded.residual_norm > 1e-15);
 }

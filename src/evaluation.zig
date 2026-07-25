@@ -79,6 +79,53 @@ pub inline fn evaluateMatrixInto(
     }
 }
 
+pub inline fn evaluateVectorWithVariables(
+    comptime R: usize,
+    comptime N: usize,
+    comptime expression: ast.ExprVector(R),
+    values: anytype,
+    comptime variable_names: [N][]const u8,
+    variable_values: [N]f64,
+) [R]f64 {
+    const results = evaluateNodesWithVariables(
+        N,
+        expression.nodes,
+        values,
+        variable_names,
+        variable_values,
+    );
+    var output: [R]f64 = undefined;
+    inline for (expression.roots, 0..) |root, index| {
+        output[index] = results[@intCast(root)];
+    }
+    return output;
+}
+
+pub inline fn evaluateMatrixWithVariables(
+    comptime R: usize,
+    comptime C: usize,
+    comptime N: usize,
+    comptime expression: ast.ExprMatrix(R, C),
+    values: anytype,
+    comptime variable_names: [N][]const u8,
+    variable_values: [N]f64,
+) [R][C]f64 {
+    const results = evaluateNodesWithVariables(
+        N,
+        expression.nodes,
+        values,
+        variable_names,
+        variable_values,
+    );
+    var output: [R][C]f64 = undefined;
+    inline for (expression.roots, 0..) |row, row_index| {
+        inline for (row, 0..) |root, column_index| {
+            output[row_index][column_index] = results[@intCast(root)];
+        }
+    }
+    return output;
+}
+
 inline fn evaluateNodes(comptime nodes: []const ast.Node, values: anytype) [nodes.len]f64 {
     // Finished programs are topologically ordered, so this unrolled loop emits
     // one numerical computation per stored node across every output root.
@@ -140,6 +187,61 @@ inline fn evaluateNodesWithBoundVariable(
                 variable_value
             else
                 symbolValue(name, values),
+            .add => |binary| results[@intCast(binary.left)] +
+                results[@intCast(binary.right)],
+            .add_nary => |operands| blk: {
+                var sum: f64 = 0.0;
+                inline for (operands) |child| sum += results[@intCast(child)];
+                break :blk sum;
+            },
+            .sub => |binary| results[@intCast(binary.left)] -
+                results[@intCast(binary.right)],
+            .mul => |binary| results[@intCast(binary.left)] *
+                results[@intCast(binary.right)],
+            .mul_nary => |operands| blk: {
+                var product: f64 = 1.0;
+                inline for (operands) |child| product *= results[@intCast(child)];
+                break :blk product;
+            },
+            .div => |binary| results[@intCast(binary.left)] /
+                results[@intCast(binary.right)],
+            .pow => |power| integerPower(
+                results[@intCast(power.base)],
+                power.exponent,
+            ),
+            .negate => |child| -results[@intCast(child)],
+            .sin => |child| @sin(results[@intCast(child)]),
+            .cos => |child| @cos(results[@intCast(child)]),
+            .tan => |child| @tan(results[@intCast(child)]),
+            .atan => |child| std.math.atan(results[@intCast(child)]),
+            .abs => |child| @abs(results[@intCast(child)]),
+            .exp => |child| @exp(results[@intCast(child)]),
+            .ln => |child| @log(results[@intCast(child)]),
+        };
+    }
+    return results;
+}
+
+inline fn evaluateNodesWithVariables(
+    comptime N: usize,
+    comptime nodes: []const ast.Node,
+    values: anytype,
+    comptime variable_names: [N][]const u8,
+    variable_values: [N]f64,
+) [nodes.len]f64 {
+    var results: [nodes.len]f64 = undefined;
+    inline for (nodes, 0..) |node, index| {
+        results[index] = switch (node) {
+            .integer => |value| @floatFromInt(value),
+            .rational => |value| value.toF64(),
+            .float => |value| value,
+            .symbol => |name| variableValue(
+                N,
+                name,
+                values,
+                variable_names,
+                variable_values,
+            ),
             .add => |binary| results[@intCast(binary.left)] +
                 results[@intCast(binary.right)],
             .add_nary => |operands| blk: {
@@ -250,6 +352,21 @@ inline fn symbolValue(comptime name: []const u8, values: anytype) f64 {
             .{name},
         )),
     };
+}
+
+inline fn variableValue(
+    comptime N: usize,
+    comptime name: []const u8,
+    values: anytype,
+    comptime variable_names: [N][]const u8,
+    variable_values: [N]f64,
+) f64 {
+    inline for (variable_names, 0..) |candidate, index| {
+        if (comptime std.mem.eql(u8, name, candidate)) {
+            return variable_values[index];
+        }
+    }
+    return symbolValue(name, values);
 }
 
 inline fn integerPower(base: f64, comptime exponent: @import("exact.zig").Rational) f64 {

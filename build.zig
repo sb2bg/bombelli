@@ -105,6 +105,11 @@ pub fn build(b: *std.Build) void {
             .expected = "Bombelli hybrid integration has parameter-dependent bounds; explicit Leibniz boundary terms are required",
             .source_diagnostic = false,
         },
+        .{
+            .path = "tests/compile_fail/newton_missing_initial.zig",
+            .expected = "Bombelli Newton eval input requires '.initial'",
+            .source_diagnostic = false,
+        },
     };
     for (compile_fail_cases) |case| {
         const check = b.addSystemCommand(&.{

@@ -49,6 +49,19 @@ pub fn SystemProblem(
                 algorithm,
             );
         }
+
+        pub fn compile(
+            comptime self: Self,
+            comptime options: anytype,
+        ) @import("newton.zig").NewtonSolver(N, options.max_iterations) {
+            @setEvalBranchQuota(50_000_000);
+            return @import("newton.zig").compileSystem(
+                M,
+                N,
+                self,
+                options,
+            );
+        }
     };
 }
 
@@ -71,6 +84,15 @@ pub fn EquationProblem(
             @setEvalBranchQuota(50_000_000);
             const problem = systemFromEquation(N, Assumptions, self);
             return problem.solve(algorithm);
+        }
+
+        pub fn compile(
+            comptime self: Self,
+            comptime options: anytype,
+        ) @import("newton.zig").NewtonSolver(N, options.max_iterations) {
+            @setEvalBranchQuota(50_000_000);
+            const problem = systemFromEquation(N, Assumptions, self);
+            return problem.compile(options);
         }
     };
 }
