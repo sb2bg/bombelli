@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — 2026-07-24
+## 0.1.0 — 2026-07-25
 
 Bombelli's first public release establishes a compile-time symbolic mathematics
 compiler for Zig 0.16.0.
