@@ -43,6 +43,13 @@ pub const IntegralProblem = struct {
 pub const PartialIntegral = struct {
     closed_portion: ast.Expr,
     remainder: IntegralProblem,
+
+    pub fn compile(
+        comptime self: PartialIntegral,
+        comptime options: anytype,
+    ) @import("hybrid_integration.zig").HybridIntegral(options.order) {
+        return @import("hybrid_integration.zig").compilePartial(self, options);
+    }
 };
 
 pub const Proof = struct {
@@ -76,6 +83,24 @@ pub const IntegrationResult = union(enum) {
                 "Bombelli symbolic integration is unsupported: {s}",
                 .{diagnostic.message},
             )),
+        };
+    }
+
+    pub fn compile(
+        comptime self: Self,
+        comptime options: anytype,
+    ) @import("hybrid_integration.zig").HybridIntegral(options.order) {
+        return switch (self) {
+            .partial => |value| value.compile(options),
+            .closed_form => @compileError(
+                "Bombelli integration is already closed form; compile the expression directly",
+            ),
+            .no_elementary_form => @compileError(
+                "Bombelli cannot compile a no-elementary-form proof as a numerical integral",
+            ),
+            .unsupported => @compileError(
+                "Bombelli cannot compile an unsupported symbolic integration result",
+            ),
         };
     }
 };

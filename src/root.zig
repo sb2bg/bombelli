@@ -36,6 +36,7 @@ pub const QuadratureRule = @import("gauss_legendre.zig").QuadratureRule;
 pub const AdaptiveQuadratureRule = @import("adaptive_quadrature.zig").AdaptiveQuadratureRule;
 pub const AdaptiveQuadratureResult = @import("adaptive_quadrature.zig").AdaptiveResult;
 pub const AdaptiveQuadratureStatus = @import("adaptive_quadrature.zig").AdaptiveStatus;
+pub const HybridIntegral = @import("hybrid_integration.zig").HybridIntegral;
 
 pub fn expr(comptime source: []const u8) Expr {
     return parser.parse(source);
@@ -1094,5 +1095,76 @@ test "bounded adaptive quadrature reports non-finite integrands" {
     try std.testing.expectEqual(
         AdaptiveQuadratureStatus.non_finite,
         result.status,
+    );
+}
+
+test "compiled partial integrals quadrature only the unresolved remainder" {
+    const symbolic = comptime expr("3*x^2 + exp(x^2)").integrate(.{
+        .variable = .x,
+        .from = 0,
+        .to = 1,
+        .domain = .real,
+    });
+    const compiled = comptime symbolic.compile(.{
+        .rule = .gauss_legendre,
+        .order = 32,
+    });
+    try std.testing.expectEqualStrings(
+        "exp(x^2)",
+        comptime compiled.remainder_rule.integrand.render(),
+    );
+    try std.testing.expectApproxEqAbs(
+        2.4626517459071815,
+        compiled.eval(.{}),
+        3e-15,
+    );
+}
+
+test "compiled partial integrals support runtime endpoints" {
+    const symbolic = comptime expr("3*x^2 + exp(x^2)").integrate(.{
+        .variable = .x,
+        .domain = .real,
+    });
+    const compiled = comptime symbolic.compile(.{
+        .rule = .gauss_legendre,
+        .order = 32,
+    });
+    const full_rule = comptime expr("3*x^2 + exp(x^2)").quadrature(.{
+        .variable = .x,
+        .rule = .gauss_legendre,
+        .order = 32,
+    });
+    const inputs = .{ .from = 0.2, .to = 0.8 };
+    try std.testing.expectApproxEqAbs(
+        full_rule.eval(inputs),
+        compiled.eval(inputs),
+        2e-15,
+    );
+}
+
+test "compiled partial integral differentiation preserves the fixed split" {
+    const symbolic = comptime expr("x + exp(-k*x^2)").integrate(.{
+        .variable = .x,
+        .domain = .real,
+    });
+    const compiled = comptime symbolic.compile(.{
+        .rule = .gauss_legendre,
+        .order = 16,
+    });
+    const derivative = comptime compiled.diff(.k);
+    const direct = comptime expr("-x^2 * exp(-k*x^2)").quadrature(.{
+        .variable = .x,
+        .rule = .gauss_legendre,
+        .order = 16,
+    });
+    const inputs = .{
+        .from = 0.0,
+        .to = 1.0,
+        .k = 2.0,
+    };
+    try std.testing.expectApproxEqAbs(
+        direct.eval(inputs),
+        derivative.eval(inputs),
+        1e-15,
     );
 }

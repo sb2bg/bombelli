@@ -100,6 +100,11 @@ pub fn build(b: *std.Build) void {
             .expected = "Bombelli quadrature endpoints are runtime inputs; parameter-dependent bounds require explicit Leibniz terms",
             .source_diagnostic = false,
         },
+        .{
+            .path = "tests/compile_fail/hybrid_diff_dependent_bound.zig",
+            .expected = "Bombelli hybrid integration has parameter-dependent bounds; explicit Leibniz boundary terms are required",
+            .source_diagnostic = false,
+        },
     };
     for (compile_fail_cases) |case| {
         const check = b.addSystemCommand(&.{

@@ -98,6 +98,13 @@ counts, and an explicit status. If the requested tolerance is not met before
 the bound is reached, the status is `depth_exhausted`; Bombelli never presents
 that estimate as converged.
 
+An inspectable partial symbolic integral can be compiled with
+`.compile(.{ .rule = .gauss_legendre, .order = 16 })`. The resulting callable
+evaluates the closed portion directly and applies quadrature only to the
+retained `IntegralProblem` remainder. Its `.diff(.parameter)` differentiates
+that fixed split when the bounds are parameter-independent; otherwise it
+requests explicit Leibniz boundary terms.
+
 ## Direction
 
 Bombelli is growing into a complete, practical mathematics library for Zig. The

@@ -18,6 +18,15 @@ pub fn QuadratureRule(comptime N: usize) type {
         pub inline fn eval(comptime self: Self, inputs: anytype) f64 {
             const from = inputValue(inputs, "from");
             const to = inputValue(inputs, "to");
+            return self.evalRange(inputs, from, to);
+        }
+
+        pub inline fn evalRange(
+            comptime self: Self,
+            inputs: anytype,
+            from: f64,
+            to: f64,
+        ) f64 {
             const midpoint = (from + to) * 0.5;
             const half_width = (to - from) * 0.5;
             const selected = table(N);
