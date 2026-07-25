@@ -110,6 +110,11 @@ pub fn build(b: *std.Build) void {
             .expected = "Bombelli Newton eval input requires '.initial'",
             .source_diagnostic = false,
         },
+        .{
+            .path = "tests/compile_fail/newton_diff_unknown.zig",
+            .expected = "Bombelli Newton sensitivity parameter must not be one of the solved unknowns",
+            .source_diagnostic = false,
+        },
     };
     for (compile_fail_cases) |case| {
         const check = b.addSystemCommand(&.{

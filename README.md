@@ -111,6 +111,11 @@ uses fixed-size vectors and matrices with partial pivoting. The numerical result
 reports convergence, singular-Jacobian, non-convergence, or non-finite status
 along with the final residual and iteration metadata.
 
+`solver.diff(.parameter)` generates an implicit sensitivity solve rather than
+differentiating the Newton iteration trace. It returns sensitivities only after
+the base root converges and the local symbolic Jacobian passes runtime
+nonsingularity checks.
+
 ## Direction
 
 Bombelli is growing into a complete, practical mathematics library for Zig. The

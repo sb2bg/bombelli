@@ -11,6 +11,13 @@ pub const NewtonStatus = enum {
     non_finite,
 };
 
+pub const SensitivityStatus = enum {
+    converged,
+    root_not_converged,
+    singular_jacobian,
+    non_finite,
+};
+
 pub fn NewtonResult(comptime N: usize) type {
     return struct {
         values: [N]f64,
@@ -168,6 +175,125 @@ pub fn NewtonSolver(
                 .non_converged,
             );
         }
+
+        pub fn diff(
+            comptime self: Self,
+            comptime parameter: anytype,
+        ) NewtonSensitivitySolver(N, max_iterations) {
+            return compileSensitivity(N, max_iterations, self, parameter);
+        }
+    };
+}
+
+pub fn SensitivityResult(comptime N: usize) type {
+    return struct {
+        root: NewtonResult(N),
+        sensitivities: [N]f64,
+        status: SensitivityStatus,
+    };
+}
+
+pub fn NewtonSensitivitySolver(
+    comptime N: usize,
+    comptime max_iterations: usize,
+) type {
+    return struct {
+        solver: NewtonSolver(N, max_iterations),
+        parameter_derivatives: ast.ExprVector(N),
+
+        const Self = @This();
+
+        pub inline fn eval(
+            comptime self: Self,
+            inputs: anytype,
+        ) SensitivityResult(N) {
+            const root = self.solver.eval(inputs);
+            if (root.status != .converged) {
+                return .{
+                    .root = root,
+                    .sensitivities = nanVector(N),
+                    .status = .root_not_converged,
+                };
+            }
+            const jacobian = evaluation.evaluateMatrixWithVariables(
+                N,
+                N,
+                N,
+                self.solver.jacobian_program,
+                inputs,
+                self.solver.unknowns,
+                root.values,
+            );
+            const parameter_derivatives =
+                evaluation.evaluateVectorWithVariables(
+                    N,
+                    N,
+                    self.parameter_derivatives,
+                    inputs,
+                    self.solver.unknowns,
+                    root.values,
+                );
+            if (!allFiniteMatrix(N, jacobian) or
+                !allFiniteVector(N, parameter_derivatives))
+            {
+                return .{
+                    .root = root,
+                    .sensitivities = nanVector(N),
+                    .status = .non_finite,
+                };
+            }
+            var right_hand_side: [N]f64 = undefined;
+            for (parameter_derivatives, 0..) |value, index| {
+                right_hand_side[index] = -value;
+            }
+            const sensitivities = solveLinearSystem(
+                N,
+                jacobian,
+                right_hand_side,
+                self.solver.pivot_tolerance,
+            ) orelse return .{
+                .root = root,
+                .sensitivities = nanVector(N),
+                .status = .singular_jacobian,
+            };
+            if (!allFiniteVector(N, sensitivities)) {
+                return .{
+                    .root = root,
+                    .sensitivities = nanVector(N),
+                    .status = .non_finite,
+                };
+            }
+            return .{
+                .root = root,
+                .sensitivities = sensitivities,
+                .status = .converged,
+            };
+        }
+    };
+}
+
+fn compileSensitivity(
+    comptime N: usize,
+    comptime max_iterations: usize,
+    comptime solver: NewtonSolver(N, max_iterations),
+    comptime parameter: anytype,
+) NewtonSensitivitySolver(N, max_iterations) {
+    const name = @tagName(parameter);
+    inline for (solver.unknowns) |unknown| {
+        if (std.mem.eql(u8, name, unknown)) {
+            @compileError("Bombelli Newton sensitivity parameter must not be one of the solved unknowns");
+        }
+    }
+    var derivatives: [N]ast.Expr = undefined;
+    inline for (0..N) |row| {
+        derivatives[row] = differentiation.differentiate(
+            multi.vectorElement(N, solver.residuals, row),
+            name,
+        ).simplify();
+    }
+    return .{
+        .solver = solver,
+        .parameter_derivatives = multi.vector(N, derivatives),
     };
 }
 
@@ -359,4 +485,8 @@ fn allFiniteMatrix(comptime N: usize, values: [N][N]f64) bool {
         if (!allFiniteVector(N, row)) return false;
     }
     return true;
+}
+
+fn nanVector(comptime N: usize) [N]f64 {
+    return [_]f64{std.math.nan(f64)} ** N;
 }

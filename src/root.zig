@@ -40,6 +40,9 @@ pub const HybridIntegral = @import("hybrid_integration.zig").HybridIntegral;
 pub const NewtonStatus = @import("newton.zig").NewtonStatus;
 pub const NewtonResult = @import("newton.zig").NewtonResult;
 pub const NewtonSolver = @import("newton.zig").NewtonSolver;
+pub const NewtonSensitivityStatus = @import("newton.zig").SensitivityStatus;
+pub const NewtonSensitivityResult = @import("newton.zig").SensitivityResult;
+pub const NewtonSensitivitySolver = @import("newton.zig").NewtonSensitivitySolver;
 
 pub fn expr(comptime source: []const u8) Expr {
     return parser.parse(source);
@@ -1261,4 +1264,61 @@ test "generated Newton solvers report singular and non-convergent outcomes" {
     try std.testing.expectEqual(NewtonStatus.non_converged, bounded.status);
     try std.testing.expectEqual(@as(usize, 1), bounded.iterations);
     try std.testing.expect(bounded.residual_norm > 1e-15);
+}
+
+test "generated solver sensitivities use implicit differentiation" {
+    const solver = comptime system(.{
+        "x^2 + y^2 = r^2",
+        "x - y = 0",
+    }, .{
+        .unknowns = .{ .x, .y },
+        .domain = .real,
+    }).compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 32,
+        .tolerance = 1e-12,
+    });
+    const sensitivity_solver = comptime solver.diff(.r);
+    const result = sensitivity_solver.eval(.{
+        .initial = .{ .x = 0.7, .y = 0.7 },
+        .r = 1.0,
+    });
+    try std.testing.expectEqual(
+        NewtonSensitivityStatus.converged,
+        result.status,
+    );
+    try std.testing.expectEqual(NewtonStatus.converged, result.root.status);
+    try std.testing.expectApproxEqAbs(
+        1.0 / @sqrt(2.0),
+        result.sensitivities[0],
+        1e-12,
+    );
+    try std.testing.expectApproxEqAbs(
+        1.0 / @sqrt(2.0),
+        result.sensitivities[1],
+        1e-12,
+    );
+}
+
+test "generated sensitivities require a nonsingular local root" {
+    const solver = comptime equationProblem("x^2 = p", .{
+        .unknowns = .{.x},
+        .domain = .real,
+    }).compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 8,
+        .tolerance = 1e-12,
+    });
+    const sensitivity_solver = comptime solver.diff(.p);
+    const result = sensitivity_solver.eval(.{
+        .initial = .{ .x = 0.0 },
+        .p = 0.0,
+    });
+    try std.testing.expectEqual(NewtonStatus.converged, result.root.status);
+    try std.testing.expectEqual(
+        NewtonSensitivityStatus.singular_jacobian,
+        result.status,
+    );
 }
