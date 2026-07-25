@@ -45,6 +45,19 @@ pub const Expr = struct {
         return @import("differentiation.zig").differentiate(self, @tagName(variable));
     }
 
+    pub fn gradient(comptime self: Expr, comptime variables: anytype) ExprVector(tupleLength(@TypeOf(variables))) {
+        @setEvalBranchQuota(10_000_000);
+        return @import("multi.zig").gradient(self, variables);
+    }
+
+    pub fn hessian(comptime self: Expr, comptime variables: anytype) ExprMatrix(
+        tupleLength(@TypeOf(variables)),
+        tupleLength(@TypeOf(variables)),
+    ) {
+        @setEvalBranchQuota(20_000_000);
+        return @import("multi.zig").hessian(self, variables);
+    }
+
     pub fn simplify(comptime self: Expr) Expr {
         @setEvalBranchQuota(5_000_000);
         return @import("simplification.zig").simplify(self);
@@ -64,6 +77,122 @@ pub const Expr = struct {
         return @import("metrics.zig").measure(self);
     }
 };
+
+pub fn ExprVector(comptime N: usize) type {
+    return struct {
+        nodes: []const Node,
+        roots: [N]NodeId,
+        sources: [N][]const u8,
+        construction_peak_nodes: usize,
+
+        const Self = @This();
+
+        pub fn node(self: Self, id: NodeId) Node {
+            return self.nodes[@intCast(id)];
+        }
+
+        pub fn at(comptime self: Self, comptime index: usize) Expr {
+            if (index >= N) @compileError("Bombelli vector expression index is out of bounds");
+            return @import("multi.zig").vectorElement(N, self, index);
+        }
+
+        pub fn diff(comptime self: Self, comptime variable: anytype) Self {
+            @setEvalBranchQuota(10_000_000);
+            return @import("multi.zig").differentiateVector(N, self, variable);
+        }
+
+        pub fn jacobian(comptime self: Self, comptime variables: anytype) ExprMatrix(
+            N,
+            tupleLength(@TypeOf(variables)),
+        ) {
+            @setEvalBranchQuota(20_000_000);
+            return @import("multi.zig").jacobian(N, self, variables);
+        }
+
+        pub fn simplify(comptime self: Self) Self {
+            @setEvalBranchQuota(10_000_000);
+            return @import("multi.zig").simplifyVector(N, self);
+        }
+
+        pub fn eval(comptime self: Self, values: anytype) [N]f64 {
+            return @import("evaluation.zig").evaluateVector(N, self, values);
+        }
+
+        pub fn evalInto(comptime self: Self, output: anytype, values: anytype) void {
+            return @import("evaluation.zig").evaluateVectorInto(N, self, output, values);
+        }
+
+        pub fn render(comptime self: Self) [N][]const u8 {
+            @setEvalBranchQuota(2_000_000);
+            return @import("rendering.zig").renderVector(N, self);
+        }
+
+        pub fn metrics(comptime self: Self) @import("metrics.zig").Metrics {
+            @setEvalBranchQuota(10_000_000);
+            return @import("metrics.zig").measureVector(N, self);
+        }
+    };
+}
+
+pub fn ExprMatrix(comptime R: usize, comptime C: usize) type {
+    return struct {
+        nodes: []const Node,
+        roots: [R][C]NodeId,
+        sources: [R][C][]const u8,
+        construction_peak_nodes: usize,
+
+        const Self = @This();
+
+        pub fn node(self: Self, id: NodeId) Node {
+            return self.nodes[@intCast(id)];
+        }
+
+        pub fn at(comptime self: Self, comptime row: usize, comptime column: usize) Expr {
+            if (row >= R or column >= C) {
+                @compileError("Bombelli matrix expression index is out of bounds");
+            }
+            return @import("multi.zig").matrixElement(R, C, self, row, column);
+        }
+
+        pub fn diff(comptime self: Self, comptime variable: anytype) Self {
+            @setEvalBranchQuota(20_000_000);
+            return @import("multi.zig").differentiateMatrix(R, C, self, variable);
+        }
+
+        pub fn simplify(comptime self: Self) Self {
+            @setEvalBranchQuota(20_000_000);
+            return @import("multi.zig").simplifyMatrix(R, C, self);
+        }
+
+        pub fn eval(comptime self: Self, values: anytype) [R][C]f64 {
+            return @import("evaluation.zig").evaluateMatrix(R, C, self, values);
+        }
+
+        pub fn evalInto(comptime self: Self, output: anytype, values: anytype) void {
+            return @import("evaluation.zig").evaluateMatrixInto(R, C, self, output, values);
+        }
+
+        pub fn render(comptime self: Self) [R][C][]const u8 {
+            @setEvalBranchQuota(4_000_000);
+            return @import("rendering.zig").renderMatrix(R, C, self);
+        }
+
+        pub fn metrics(comptime self: Self) @import("metrics.zig").Metrics {
+            @setEvalBranchQuota(10_000_000);
+            return @import("metrics.zig").measureMatrix(R, C, self);
+        }
+    };
+}
+
+pub fn tupleLength(comptime T: type) usize {
+    return switch (@typeInfo(T)) {
+        .@"struct" => |info| if (info.is_tuple)
+            info.fields.len
+        else
+            @compileError("Bombelli expects a tuple"),
+        else => @compileError("Bombelli expects a tuple"),
+    };
+}
 
 pub fn nodeEqual(left: Node, right: Node) bool {
     if (std.meta.activeTag(left) != std.meta.activeTag(right)) return false;

@@ -129,7 +129,86 @@ pub const Builder = struct {
             .construction_peak_nodes = self.len,
         };
     }
+
+    pub fn finishVector(
+        comptime self: *Builder,
+        comptime N: usize,
+        roots: [N]ast.NodeId,
+        sources: [N][]const u8,
+    ) ast.ExprVector(N) {
+        const finished = self.finishRoots(N, roots);
+        return .{
+            .nodes = finished.nodes,
+            .roots = finished.roots,
+            .sources = sources,
+            .construction_peak_nodes = self.len,
+        };
+    }
+
+    pub fn finishMatrix(
+        comptime self: *Builder,
+        comptime R: usize,
+        comptime C: usize,
+        roots: [R][C]ast.NodeId,
+        sources: [R][C][]const u8,
+    ) ast.ExprMatrix(R, C) {
+        var flat_roots: [R * C]ast.NodeId = undefined;
+        inline for (0..R) |row| {
+            inline for (0..C) |column| {
+                flat_roots[row * C + column] = roots[row][column];
+            }
+        }
+        const finished = self.finishRoots(R * C, flat_roots);
+        var compact_roots: [R][C]ast.NodeId = undefined;
+        inline for (0..R) |row| {
+            inline for (0..C) |column| {
+                compact_roots[row][column] = finished.roots[row * C + column];
+            }
+        }
+        return .{
+            .nodes = finished.nodes,
+            .roots = compact_roots,
+            .sources = sources,
+            .construction_peak_nodes = self.len,
+        };
+    }
+
+    fn finishRoots(
+        comptime self: *Builder,
+        comptime N: usize,
+        roots: [N]ast.NodeId,
+    ) FinishedRoots(N) {
+        var reachable = [_]bool{false} ** ast.construction_node_limit;
+        for (roots) |root| markReachable(self, root, &reachable);
+
+        var remap = [_]ast.NodeId{ast.invalid_node} ** ast.construction_node_limit;
+        var compact: [ast.construction_node_limit]ast.Node = undefined;
+        var compact_len: usize = 0;
+
+        for (self.nodes[0..self.len], 0..) |node_value, old_index| {
+            if (!reachable[old_index]) continue;
+
+            const new_id: ast.NodeId = @intCast(compact_len);
+            remap[old_index] = new_id;
+            compact[compact_len] = remapNode(node_value, &remap);
+            compact_len += 1;
+        }
+
+        const exact_nodes = compact[0..compact_len].*;
+        var compact_roots: [N]ast.NodeId = undefined;
+        for (roots, 0..) |root, index| {
+            compact_roots[index] = remap[@intCast(root)];
+        }
+        return .{ .nodes = &exact_nodes, .roots = compact_roots };
+    }
 };
+
+fn FinishedRoots(comptime N: usize) type {
+    return struct {
+        nodes: []const ast.Node,
+        roots: [N]ast.NodeId,
+    };
+}
 
 fn markReachable(
     builder: *const Builder,

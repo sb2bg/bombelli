@@ -11,7 +11,11 @@ pub const Metrics = struct {
 };
 
 pub fn measure(comptime expression: ast.Expr) Metrics {
-    validate(expression);
+    validateProgram(
+        expression.nodes,
+        &[_]ast.NodeId{expression.root},
+        expression.construction_peak_nodes,
+    );
     return .{
         .node_count = expression.nodes.len,
         .construction_peak_nodes = expression.construction_peak_nodes,
@@ -19,30 +23,80 @@ pub fn measure(comptime expression: ast.Expr) Metrics {
     };
 }
 
-fn validate(comptime expression: ast.Expr) void {
+pub fn measureVector(
+    comptime N: usize,
+    comptime expression: ast.ExprVector(N),
+) Metrics {
+    validateProgram(
+        expression.nodes,
+        &expression.roots,
+        expression.construction_peak_nodes,
+    );
+    return .{
+        .node_count = expression.nodes.len,
+        .construction_peak_nodes = expression.construction_peak_nodes,
+        .backing_bytes = @sizeOf(ast.ExprVector(N)) +
+            expression.nodes.len * @sizeOf(ast.Node),
+    };
+}
+
+pub fn measureMatrix(
+    comptime R: usize,
+    comptime C: usize,
+    comptime expression: ast.ExprMatrix(R, C),
+) Metrics {
+    var roots: [R * C]ast.NodeId = undefined;
+    inline for (0..R) |row| {
+        inline for (0..C) |column| {
+            roots[row * C + column] = expression.roots[row][column];
+        }
+    }
+    validateProgram(
+        expression.nodes,
+        &roots,
+        expression.construction_peak_nodes,
+    );
+    return .{
+        .node_count = expression.nodes.len,
+        .construction_peak_nodes = expression.construction_peak_nodes,
+        .backing_bytes = @sizeOf(ast.ExprMatrix(R, C)) +
+            expression.nodes.len * @sizeOf(ast.Node),
+    };
+}
+
+fn validateProgram(
+    comptime nodes: []const ast.Node,
+    comptime roots: []const ast.NodeId,
+    comptime construction_peak_nodes: usize,
+) void {
     comptime {
-        if (expression.nodes.len == 0) {
+        if (nodes.len == 0) {
             @compileError("Bombelli invariant failure: expression has no nodes");
         }
-        if (expression.root >= expression.nodes.len) {
-            @compileError("Bombelli invariant failure: root node is out of bounds");
+        if (roots.len == 0) {
+            @compileError("Bombelli invariant failure: expression has no roots");
         }
-        if (expression.construction_peak_nodes < expression.nodes.len or
-            expression.construction_peak_nodes > ast.construction_node_limit)
+        for (roots) |root| {
+            if (root >= nodes.len) {
+                @compileError("Bombelli invariant failure: root node is out of bounds");
+            }
+        }
+        if (construction_peak_nodes < nodes.len or
+            construction_peak_nodes > ast.construction_node_limit)
         {
             @compileError("Bombelli invariant failure: invalid construction peak");
         }
 
-        var reachable = [_]bool{false} ** expression.nodes.len;
-        markReachable(expression, expression.root, &reachable);
+        var reachable = [_]bool{false} ** nodes.len;
+        for (roots) |root| markReachable(nodes, root, &reachable);
 
-        for (expression.nodes, 0..) |node_value, index| {
+        for (nodes, 0..) |node_value, index| {
             validateChildren(node_value, index);
             if (!reachable[index]) {
                 @compileError("Bombelli invariant failure: expression contains an unreachable node");
             }
 
-            for (expression.nodes[0..index]) |previous| {
+            for (nodes[0..index]) |previous| {
                 if (ast.nodeEqual(node_value, previous)) {
                     @compileError("Bombelli invariant failure: expression contains duplicate nodes");
                 }
@@ -78,7 +132,7 @@ fn validateChild(
 }
 
 fn markReachable(
-    comptime expression: ast.Expr,
+    comptime nodes: []const ast.Node,
     id: ast.NodeId,
     reachable: []bool,
 ) void {
@@ -86,15 +140,15 @@ fn markReachable(
     if (reachable[index]) return;
     reachable[index] = true;
 
-    switch (expression.node(id)) {
+    switch (nodes[index]) {
         .integer, .float, .symbol => {},
         .add, .sub, .mul, .div => |binary| {
-            markReachable(expression, binary.left, reachable);
-            markReachable(expression, binary.right, reachable);
+            markReachable(nodes, binary.left, reachable);
+            markReachable(nodes, binary.right, reachable);
         },
-        .pow => |power| markReachable(expression, power.base, reachable),
+        .pow => |power| markReachable(nodes, power.base, reachable),
         .negate, .sin, .cos, .exp, .ln => |child| {
-            markReachable(expression, child, reachable);
+            markReachable(nodes, child, reachable);
         },
     }
 }

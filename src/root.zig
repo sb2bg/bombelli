@@ -3,12 +3,49 @@ const ast = @import("ast.zig");
 const parser = @import("parser.zig");
 
 pub const Expr = ast.Expr;
+pub const ExprVector = ast.ExprVector;
+pub const ExprMatrix = ast.ExprMatrix;
 pub const Node = ast.Node;
 pub const NodeId = ast.NodeId;
 pub const Metrics = @import("metrics.zig").Metrics;
 
 pub fn expr(comptime source: []const u8) Expr {
     return parser.parse(source);
+}
+
+pub fn exprVector(comptime sources: anytype) ExprVector(ast.tupleLength(@TypeOf(sources))) {
+    const N = ast.tupleLength(@TypeOf(sources));
+    var expressions: [N]Expr = undefined;
+    inline for (sources, 0..) |source, index| {
+        expressions[index] = expr(source);
+    }
+    return @import("multi.zig").vector(N, expressions);
+}
+
+pub fn exprMatrix(comptime sources: anytype) ExprMatrix(
+    ast.tupleLength(@TypeOf(sources)),
+    matrixColumnCount(@TypeOf(sources)),
+) {
+    const R = ast.tupleLength(@TypeOf(sources));
+    const C = matrixColumnCount(@TypeOf(sources));
+    var expressions: [R][C]Expr = undefined;
+    inline for (sources, 0..) |row, row_index| {
+        if (ast.tupleLength(@TypeOf(row)) != C) {
+            @compileError("Bombelli expression matrix rows must have equal lengths");
+        }
+        inline for (row, 0..) |source, column_index| {
+            expressions[row_index][column_index] = expr(source);
+        }
+    }
+    return @import("multi.zig").matrix(R, C, expressions);
+}
+
+fn matrixColumnCount(comptime T: type) usize {
+    const info = @typeInfo(T).@"struct";
+    if (!info.is_tuple or info.fields.len == 0) {
+        @compileError("Bombelli expression matrix expects a non-empty tuple of rows");
+    }
+    return ast.tupleLength(info.fields[0].type);
 }
 
 test "flagship compile-time symbolic derivative" {
@@ -269,4 +306,48 @@ test "rendered floating-point literals preserve their type and round trip" {
     try std.testing.expectEqualStrings("2.0 * x + 1.0 / 0.0", source);
     try std.testing.expectEqual(original.metrics().node_count, reparsed.metrics().node_count);
     try std.testing.expectEqualStrings(source, comptime reparsed.render());
+}
+
+test "multi-root programs share nodes and evaluate into caller storage" {
+    const functions = comptime exprVector(.{
+        "sin(x * y) + x",
+        "sin(x * y) + y",
+    });
+    const rendered = comptime functions.render();
+    try std.testing.expectEqualStrings("sin(x * y) + x", rendered[0]);
+    try std.testing.expectEqualStrings("sin(x * y) + y", rendered[1]);
+
+    // x, y, x*y, sin(x*y), the two distinct sums: the shared transcendental
+    // is represented and evaluated exactly once across both roots.
+    try std.testing.expectEqual(@as(usize, 6), comptime functions.metrics().node_count);
+
+    var output: [2]f64 = undefined;
+    functions.evalInto(&output, .{ .x = 2.0, .y = 3.0 });
+    try std.testing.expectApproxEqAbs(@sin(6.0) + 2.0, output[0], 1e-12);
+    try std.testing.expectApproxEqAbs(@sin(6.0) + 3.0, output[1], 1e-12);
+}
+
+test "gradient jacobian and hessian are typed shared programs" {
+    const f = comptime expr("x^2 * y + sin(x * y)");
+    const gradient = comptime f.gradient(.{ .x, .y }).simplify();
+    const gradient_rendered = comptime gradient.render();
+    try std.testing.expectEqualStrings("2 * x * y + y * cos(x * y)", gradient_rendered[0]);
+    try std.testing.expectEqualStrings("x^2 + x * cos(x * y)", gradient_rendered[1]);
+
+    const functions = comptime exprVector(.{ "x^2 + y", "x * y" });
+    const jacobian = comptime functions.jacobian(.{ .x, .y }).simplify();
+    const jacobian_rendered = comptime jacobian.render();
+    try std.testing.expectEqualStrings("2 * x", jacobian_rendered[0][0]);
+    try std.testing.expectEqualStrings("1", jacobian_rendered[0][1]);
+    try std.testing.expectEqualStrings("y", jacobian_rendered[1][0]);
+    try std.testing.expectEqualStrings("x", jacobian_rendered[1][1]);
+
+    const hessian = comptime expr("x^2 + x * y + y^2")
+        .hessian(.{ .x, .y })
+        .simplify();
+    const hessian_values = hessian.eval(.{ .x = 4.0, .y = -2.0 });
+    try std.testing.expectEqualDeep([2][2]f64{
+        .{ 2.0, 1.0 },
+        .{ 1.0, 2.0 },
+    }, hessian_values);
 }

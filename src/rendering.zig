@@ -9,6 +9,47 @@ pub fn render(comptime expression: ast.Expr) []const u8 {
     return rendered[@intCast(expression.root)];
 }
 
+pub fn renderVector(
+    comptime N: usize,
+    comptime expression: ast.ExprVector(N),
+) [N][]const u8 {
+    const rendered = renderNodes(expression.nodes);
+    var outputs: [N][]const u8 = undefined;
+    inline for (expression.roots, 0..) |root, index| {
+        outputs[index] = rendered[@intCast(root)];
+    }
+    return outputs;
+}
+
+pub fn renderMatrix(
+    comptime R: usize,
+    comptime C: usize,
+    comptime expression: ast.ExprMatrix(R, C),
+) [R][C][]const u8 {
+    const rendered = renderNodes(expression.nodes);
+    var outputs: [R][C][]const u8 = undefined;
+    inline for (expression.roots, 0..) |row, row_index| {
+        inline for (row, 0..) |root, column_index| {
+            outputs[row_index][column_index] = rendered[@intCast(root)];
+        }
+    }
+    return outputs;
+}
+
+fn renderNodes(comptime nodes: []const ast.Node) [nodes.len][]const u8 {
+    const expression = ast.Expr{
+        .nodes = nodes,
+        .root = 0,
+        .source = "",
+        .construction_peak_nodes = nodes.len,
+    };
+    var rendered: [nodes.len][]const u8 = undefined;
+    inline for (nodes, 0..) |node, index| {
+        rendered[index] = renderBare(expression, node, rendered[0..index]);
+    }
+    return rendered;
+}
+
 const Context = enum {
     none,
     add_left,
