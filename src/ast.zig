@@ -70,6 +70,11 @@ pub const Expr = struct {
         return @import("simplification.zig").simplify(self);
     }
 
+    pub fn substitute(comptime self: Expr, comptime replacements: anytype) Expr {
+        @setEvalBranchQuota(10_000_000);
+        return @import("substitution.zig").substitute(self, replacements);
+    }
+
     pub fn eval(comptime self: Expr, values: anytype) f64 {
         return @import("evaluation.zig").evaluate(self, values);
     }
@@ -125,6 +130,15 @@ pub fn ExprVector(comptime N: usize) type {
             return @import("multi.zig").simplifyVector(N, self);
         }
 
+        pub fn substitute(comptime self: Self, comptime replacements: anytype) Self {
+            @setEvalBranchQuota(10_000_000);
+            return @import("substitution.zig").substituteVector(
+                N,
+                self,
+                replacements,
+            );
+        }
+
         pub fn eval(comptime self: Self, values: anytype) [N]f64 {
             return @import("evaluation.zig").evaluateVector(N, self, values);
         }
@@ -173,6 +187,16 @@ pub fn ExprMatrix(comptime R: usize, comptime C: usize) type {
         pub fn simplify(comptime self: Self) Self {
             @setEvalBranchQuota(20_000_000);
             return @import("multi.zig").simplifyMatrix(R, C, self);
+        }
+
+        pub fn substitute(comptime self: Self, comptime replacements: anytype) Self {
+            @setEvalBranchQuota(20_000_000);
+            return @import("substitution.zig").substituteMatrix(
+                R,
+                C,
+                self,
+                replacements,
+            );
         }
 
         pub fn eval(comptime self: Self, values: anytype) [R][C]f64 {

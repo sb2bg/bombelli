@@ -494,3 +494,45 @@ test "canonical n-ary algebra flattens sorts and collects exact coefficients" {
     const factored = comptime expr("z * (x + y)").simplify();
     try std.testing.expectEqualStrings("z * (x + y)", comptime factored.render());
 }
+
+test "substitution is a simultaneous memoized DAG rebuild" {
+    const completed_square = comptime expr("x^2 + 2*x*y + y^2")
+        .substitute(.{
+            .y = expr("x"),
+        })
+        .simplify();
+    try std.testing.expectEqualStrings("4 * x^2", comptime completed_square.render());
+
+    const simultaneous = comptime expr("x - y")
+        .substitute(.{
+            .x = "y",
+            .y = "x",
+        })
+        .simplify();
+    try std.testing.expectApproxEqAbs(
+        3.0,
+        simultaneous.eval(.{ .x = 2.0, .y = 5.0 }),
+        0.0,
+    );
+
+    const exact_replacement = comptime expr("a*x + b")
+        .substitute(.{
+            .a = rational(1, 3),
+            .b = 2,
+        })
+        .simplify();
+    try std.testing.expectEqualStrings("x / 3 + 2", comptime exact_replacement.render());
+
+    const shared = comptime expr("sin(y) + cos(y)")
+        .substitute(.{ .y = expr("x^2") });
+    // x, x^2, sin(x^2), cos(x^2), and the sum. Both functions retain the
+    // same replacement root rather than cloning it independently.
+    try std.testing.expectEqual(@as(usize, 5), shared.metrics().node_count);
+
+    const vector = comptime exprVector(.{ "x + y", "x * y" })
+        .substitute(.{ .y = "x" })
+        .simplify();
+    const rendered = comptime vector.render();
+    try std.testing.expectEqualStrings("2 * x", rendered[0]);
+    try std.testing.expectEqualStrings("x^2", rendered[1]);
+}
