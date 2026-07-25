@@ -172,6 +172,24 @@ pub fn build(b: *std.Build) void {
     property_step.dependOn(&run_property_tests.step);
     test_step.dependOn(property_step);
 
+    const hardening_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/hardening.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "bombelli", .module = bombelli },
+            },
+        }),
+    });
+    const run_hardening_tests = b.addRunArtifact(hardening_tests);
+    const hardening_step = b.step(
+        "hardening",
+        "Run domain, singularity, and numerical-status hardening tests",
+    );
+    hardening_step.dependOn(&run_hardening_tests.step);
+    test_step.dependOn(hardening_step);
+
     const differential = b.addSystemCommand(&.{
         "python3",
         "tests/differential_sympy.py",

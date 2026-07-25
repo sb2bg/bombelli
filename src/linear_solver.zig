@@ -455,6 +455,17 @@ fn solveSymbolic(
         ).toExpr();
     }
     const values = multi.vector(N, expressions);
+    if (polynomial.constantValue(determinant) != null) {
+        var matrix_values: [1][N]ast.Expr = undefined;
+        inline for (0..N) |column| {
+            matrix_values[0][column] = values.at(column);
+        }
+        return .{ .finite = solution.finiteFromMatrix(
+            1,
+            N,
+            multi.matrix(1, N, matrix_values),
+        ) };
+    }
     const condition = solution.Condition{
         .expression = determinant.toExpr(),
         .relation = .nonzero,
