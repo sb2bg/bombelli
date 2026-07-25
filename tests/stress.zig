@@ -78,6 +78,12 @@ const symbolic_system_problem = bombelli.system(.{
     .domain = .real,
 });
 const symbolic_system_solution = symbolic_system_problem.solve(.bareiss);
+const repeated_parts_integral = bombelli.expr(
+    "x^8 * exp(2*x + 1)",
+).integrate(.{
+    .variable = .x,
+    .domain = .real,
+}).unwrap().simplify();
 
 test "twenty-factor product fits in the compact DAG" {
     const source = comptime product_source.metrics();
@@ -210,6 +216,21 @@ test "exact and symbolic coefficient systems retain shared solution DAGs" {
     try std.testing.expectEqual(
         @as(usize, 1),
         symbolic_system_solution.conditional.conditions.len,
+    );
+}
+
+test "repeated integration by parts stays bounded" {
+    const integral_metrics = comptime repeated_parts_integral.metrics();
+    report("integration-by-parts-degree8", "antiderivative", integral_metrics);
+    try expectMeasuredExpression(integral_metrics);
+    try std.testing.expect(integral_metrics.construction_peak_nodes < 512);
+
+    const recovered = comptime repeated_parts_integral.diff(.x).simplify();
+    const original = comptime bombelli.expr("x^8 * exp(2*x + 1)").simplify();
+    try std.testing.expectApproxEqRel(
+        original.eval(.{ .x = 0.75 }),
+        recovered.eval(.{ .x = 0.75 }),
+        1e-10,
     );
 }
 

@@ -21,6 +21,27 @@ pub fn substitute(
     return builder.finish(root, expression.source);
 }
 
+pub fn substituteName(
+    comptime expression: ast.Expr,
+    comptime name: []const u8,
+    comptime replacement: ast.Expr,
+) ast.Expr {
+    var builder = build.Builder{};
+    var rebuild_cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
+    var replacement_cache =
+        [_]ast.NodeId{ast.invalid_node} ** replacement.nodes.len;
+    const root = rebuildName(
+        &builder,
+        expression.nodes,
+        expression.root,
+        &rebuild_cache,
+        name,
+        replacement,
+        &replacement_cache,
+    );
+    return builder.finish(root, expression.source);
+}
+
 pub fn substituteVector(
     comptime N: usize,
     comptime expression: ast.ExprVector(N),
@@ -154,6 +175,230 @@ fn rebuild(
         .ln => |child| builder.logarithm(
             rebuild(builder, nodes, child, cache, replacements),
         ),
+    };
+    cache[index] = result;
+    return result;
+}
+
+fn rebuildName(
+    builder: *build.Builder,
+    comptime nodes: []const ast.Node,
+    id: ast.NodeId,
+    cache: []ast.NodeId,
+    comptime name: []const u8,
+    comptime replacement: ast.Expr,
+    replacement_cache: []ast.NodeId,
+) ast.NodeId {
+    const index: usize = @intCast(id);
+    if (cache[index] != ast.invalid_node) return cache[index];
+
+    const result = switch (nodes[index]) {
+        .symbol => |symbol_name| if (std.mem.eql(u8, symbol_name, name))
+            cloneNode(
+                builder,
+                replacement.nodes,
+                replacement.root,
+                replacement_cache,
+            )
+        else
+            builder.symbol(symbol_name),
+        .integer => |value| builder.integer(value),
+        .rational => |value| builder.rational(value),
+        .float => |value| builder.float(value),
+        .add => |binary| builder.add(
+            rebuildName(
+                builder,
+                nodes,
+                binary.left,
+                cache,
+                name,
+                replacement,
+                replacement_cache,
+            ),
+            rebuildName(
+                builder,
+                nodes,
+                binary.right,
+                cache,
+                name,
+                replacement,
+                replacement_cache,
+            ),
+        ),
+        .add_nary => |operands| blk: {
+            var rebuilt: [ast.construction_node_limit]ast.NodeId = undefined;
+            for (operands, 0..) |child, operand_index| {
+                rebuilt[operand_index] = rebuildName(
+                    builder,
+                    nodes,
+                    child,
+                    cache,
+                    name,
+                    replacement,
+                    replacement_cache,
+                );
+            }
+            break :blk builder.addNary(rebuilt[0..operands.len]);
+        },
+        .sub => |binary| builder.sub(
+            rebuildName(
+                builder,
+                nodes,
+                binary.left,
+                cache,
+                name,
+                replacement,
+                replacement_cache,
+            ),
+            rebuildName(
+                builder,
+                nodes,
+                binary.right,
+                cache,
+                name,
+                replacement,
+                replacement_cache,
+            ),
+        ),
+        .mul => |binary| builder.mul(
+            rebuildName(
+                builder,
+                nodes,
+                binary.left,
+                cache,
+                name,
+                replacement,
+                replacement_cache,
+            ),
+            rebuildName(
+                builder,
+                nodes,
+                binary.right,
+                cache,
+                name,
+                replacement,
+                replacement_cache,
+            ),
+        ),
+        .mul_nary => |operands| blk: {
+            var rebuilt: [ast.construction_node_limit]ast.NodeId = undefined;
+            for (operands, 0..) |child, operand_index| {
+                rebuilt[operand_index] = rebuildName(
+                    builder,
+                    nodes,
+                    child,
+                    cache,
+                    name,
+                    replacement,
+                    replacement_cache,
+                );
+            }
+            break :blk builder.mulNary(rebuilt[0..operands.len]);
+        },
+        .div => |binary| builder.div(
+            rebuildName(
+                builder,
+                nodes,
+                binary.left,
+                cache,
+                name,
+                replacement,
+                replacement_cache,
+            ),
+            rebuildName(
+                builder,
+                nodes,
+                binary.right,
+                cache,
+                name,
+                replacement,
+                replacement_cache,
+            ),
+        ),
+        .pow => |power| builder.power(
+            rebuildName(
+                builder,
+                nodes,
+                power.base,
+                cache,
+                name,
+                replacement,
+                replacement_cache,
+            ),
+            power.exponent,
+        ),
+        .negate => |child| builder.negate(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
+        .sin => |child| builder.sine(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
+        .cos => |child| builder.cosine(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
+        .tan => |child| builder.tangent(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
+        .atan => |child| builder.arctangent(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
+        .abs => |child| builder.absolute(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
+        .exp => |child| builder.exponential(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
+        .ln => |child| builder.logarithm(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
     };
     cache[index] = result;
     return result;

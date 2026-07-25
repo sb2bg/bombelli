@@ -171,7 +171,13 @@ pub const Polynomial = struct {
         comptime self: Polynomial,
         comptime variable: anytype,
     ) Polynomial {
-        const name = @tagName(variable);
+        return self.antiderivativeName(@tagName(variable));
+    }
+
+    pub fn antiderivativeName(
+        comptime self: Polynomial,
+        comptime name: []const u8,
+    ) Polynomial {
         const with_variable = ensureVariable(self, name);
         const variable_index = findVariable(with_variable.variable_names, name).?;
         var raw: [term_limit]RawTerm = undefined;

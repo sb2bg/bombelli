@@ -24,6 +24,13 @@ pub const SolutionCondition = @import("solution_set.zig").Condition;
 pub const SolutionRelation = @import("solution_set.zig").Relation;
 pub const SolutionSet = @import("solution_set.zig").SolutionSet;
 pub const SolveAlgorithm = @import("problem.zig").SolveAlgorithm;
+pub const IntegrationAlgorithm = @import("integration.zig").IntegrationAlgorithm;
+pub const IntegralBounds = @import("integration.zig").IntegralBounds;
+pub const IntegralProblem = @import("integration.zig").IntegralProblem;
+pub const PartialIntegral = @import("integration.zig").PartialIntegral;
+pub const IntegrationProof = @import("integration.zig").Proof;
+pub const IntegrationDiagnostic = @import("integration.zig").IntegrationDiagnostic;
+pub const IntegrationResult = @import("integration.zig").IntegrationResult;
 
 pub fn expr(comptime source: []const u8) Expr {
     return parser.parse(source);
@@ -843,5 +850,122 @@ test "solution sets can retain solved branches with an unresolved remainder" {
     try std.testing.expectEqualStrings(
         "x^5 + y*x + 1 = 0",
         result.partial.unresolved_equations[0],
+    );
+}
+
+test "symbolic integration handles exact polynomials and rational powers" {
+    const polynomial_integral = comptime expr("3*x^2 + 2*x + 1").integrate(.{
+        .variable = .x,
+        .domain = .real,
+    }).unwrap().simplify();
+    try std.testing.expectEqualStrings(
+        "x + x^2 + x^3",
+        comptime polynomial_integral.render(),
+    );
+
+    const square_root = comptime expr("sqrt(x)").integrate(.{
+        .variable = .x,
+        .domain = .real,
+    }).unwrap().simplify();
+    try std.testing.expectApproxEqAbs(
+        2.0 / 3.0,
+        square_root.eval(.{ .x = 1.0 }),
+        1e-12,
+    );
+
+    const reciprocal = comptime expr("1/x").integrate(.{
+        .variable = .x,
+        .domain = .real,
+    }).unwrap().simplify();
+    try std.testing.expectEqualStrings(
+        "ln(abs(x))",
+        comptime reciprocal.render(),
+    );
+}
+
+test "affine elementary integration uses operation-local assumptions" {
+    const exact_slope = comptime expr("sin(2*x + 3)").integrate(.{
+        .variable = .x,
+        .domain = .real,
+    }).unwrap().simplify();
+    try std.testing.expectApproxEqAbs(
+        -@cos(5.0) / 2.0,
+        exact_slope.eval(.{ .x = 1.0 }),
+        1e-12,
+    );
+
+    const without_assumption = comptime expr("exp(a*x + b)").integrate(.{
+        .variable = .x,
+        .domain = .real,
+    });
+    try std.testing.expect(without_assumption == .unsupported);
+
+    const with_assumption = comptime expr("exp(a*x + b)").integrate(.{
+        .variable = .x,
+        .domain = .real,
+        .assumptions = .{nonzero(.a)},
+    }).unwrap().simplify();
+    try std.testing.expectApproxEqAbs(
+        @exp(7.0) / 2.0,
+        with_assumption.eval(.{ .x = 3.0, .a = 2.0, .b = 1.0 }),
+        1e-12,
+    );
+}
+
+test "integration by parts terminates as polynomial degree decreases" {
+    const cases = .{
+        "x^3 * exp(2*x)",
+        "x^3 * sin(2*x + 1)",
+        "x^3 * cos(2*x + 1)",
+    };
+    inline for (cases) |source| {
+        const original = comptime expr(source).simplify();
+        const antiderivative = comptime original.integrate(.{
+            .variable = .x,
+            .domain = .real,
+        }).unwrap().simplify();
+        const recovered = comptime antiderivative.diff(.x).simplify();
+        inline for (.{ -0.7, 0.25, 1.1 }) |x| {
+            try std.testing.expectApproxEqRel(
+                original.eval(.{ .x = x }),
+                recovered.eval(.{ .x = x }),
+                1e-11,
+            );
+        }
+    }
+}
+
+test "partial integration preserves the unresolved integral problem" {
+    const problem_value = comptime expr("3*x^2 + exp(x^2)").integral(.{
+        .variable = .x,
+        .domain = .real,
+    });
+    const result = comptime problem_value.solve(.symbolic);
+    try std.testing.expect(result == .partial);
+    try std.testing.expectEqualStrings(
+        "x^3",
+        comptime result.partial.closed_portion.render(),
+    );
+    try std.testing.expectEqualStrings(
+        "exp(x^2)",
+        comptime result.partial.remainder.integrand.render(),
+    );
+    try std.testing.expectEqualStrings(
+        "x",
+        result.partial.remainder.variable,
+    );
+}
+
+test "complete definite integrals substitute exact and symbolic bounds" {
+    const result = comptime expr("sin(x)").integrate(.{
+        .variable = .x,
+        .from = 0,
+        .to = "y",
+        .domain = .real,
+    }).unwrap().simplify();
+    try std.testing.expectApproxEqAbs(
+        1.0 - @cos(0.75),
+        result.eval(.{ .y = 0.75 }),
+        1e-12,
     );
 }

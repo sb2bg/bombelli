@@ -85,6 +85,11 @@ pub fn build(b: *std.Build) void {
             .expected = "Bombelli expected one solution, but found 2",
             .source_diagnostic = false,
         },
+        .{
+            .path = "tests/compile_fail/unwrap_partial_integral.zig",
+            .expected = "Bombelli integration is partial; unresolved remainder: exp(x^2)",
+            .source_diagnostic = false,
+        },
     };
     for (compile_fail_cases) |case| {
         const check = b.addSystemCommand(&.{

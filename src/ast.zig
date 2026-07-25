@@ -92,6 +92,22 @@ pub const Expr = struct {
         return @import("rational_function.zig").fromExpr(self);
     }
 
+    pub fn integral(
+        comptime self: Expr,
+        comptime options: anytype,
+    ) @import("integration.zig").IntegralProblem {
+        @setEvalBranchQuota(50_000_000);
+        return @import("integration.zig").makeProblem(self, options);
+    }
+
+    pub fn integrate(
+        comptime self: Expr,
+        comptime options: anytype,
+    ) @import("integration.zig").IntegrationResult {
+        @setEvalBranchQuota(50_000_000);
+        return @import("integration.zig").integrate(self, options);
+    }
+
     pub fn eval(comptime self: Expr, values: anytype) f64 {
         return @import("evaluation.zig").evaluate(self, values);
     }

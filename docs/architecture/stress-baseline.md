@@ -86,6 +86,7 @@ operand edges.
 | Canonical 32-factor product | Source | 63 | 0 | 63 | 961 | 2,064 |
 | Canonical 32-factor product | Simplified | 33 | 32 | 63 | 961 | 1,232 |
 | Four-variable degree-8 polynomial | Expanded | 207 | 802 | 368 | 656 | 9,880 |
+| Degree-8 polynomial × exponential | Integrated | 53 | 60 | 61 | 963 | 1,984 |
 
 The polynomial expansion initially exposed a separate algorithmic construction
 peak: multiplying sparse intermediates queued 1,225 pair products even though
@@ -100,6 +101,10 @@ to actual nodes plus actual n-ary operand edges. A segmented or otherwise
 scalable node builder remains the next response if later system-solving or
 integration workloads materially close that gap; globally enlarging the fixed
 array is not the planned response.
+
+The first exact-system and bounded-integration workloads do not move that
+boundary: a symbolic 2×2 solution finishes at 20 nodes, while eight terminating
+integration-by-parts steps finish at 53 nodes with a 61-node construction peak.
 
 The ten-factor derivative gives a direct before-and-after comparison: its
 stored representation fell from 255 nodes to the same 58 unique nodes the old
