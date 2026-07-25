@@ -104,7 +104,7 @@ pub fn vectorElement(
     comptime expression: ast.ExprVector(N),
     comptime index: usize,
 ) ast.Expr {
-    return extract(expression.nodes, expression.roots[index], expression.sources[index]);
+    return extractRoot(expression.nodes, expression.roots[index], expression.sources[index]);
 }
 
 pub fn matrixElement(
@@ -114,7 +114,7 @@ pub fn matrixElement(
     comptime row: usize,
     comptime column: usize,
 ) ast.Expr {
-    return extract(
+    return extractRoot(
         expression.nodes,
         expression.roots[row][column],
         expression.sources[row][column],
@@ -173,7 +173,7 @@ pub fn differentiateMatrix(
     return matrix(R, C, derivatives);
 }
 
-fn extract(
+pub fn extractRoot(
     comptime nodes: []const ast.Node,
     comptime root: ast.NodeId,
     comptime source: []const u8,

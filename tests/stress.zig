@@ -60,6 +60,24 @@ const large_product_source = bombelli.expr(
 );
 const large_product_simplified = large_product_source.simplify();
 const polynomial_expansion = bombelli.expr("(w + x + y + z)^8").expand();
+const exact_system_problem = bombelli.system(.{
+    "x + y = 3",
+    "y + z = 5",
+    "z + w = 7",
+    "x + 2*w = 9",
+}, .{
+    .unknowns = .{ .x, .y, .z, .w },
+    .domain = .real,
+});
+const exact_system_solution = exact_system_problem.solve(.bareiss).requireUnique();
+const symbolic_system_problem = bombelli.system(.{
+    "a*x + b*y = e",
+    "c*x + d*y = f",
+}, .{
+    .unknowns = .{ .x, .y },
+    .domain = .real,
+});
+const symbolic_system_solution = symbolic_system_problem.solve(.bareiss);
 
 test "twenty-factor product fits in the compact DAG" {
     const source = comptime product_source.metrics();
@@ -180,6 +198,19 @@ test "sparse polynomial expansion stays within measured construction headroom" {
     try expectMeasuredExpression(expanded);
     try std.testing.expect(expanded.operand_count >= 165);
     try std.testing.expect(expanded.construction_peak_nodes < 512);
+}
+
+test "exact and symbolic coefficient systems retain shared solution DAGs" {
+    const exact_metrics = comptime exact_system_solution.metrics();
+    const symbolic_metrics = comptime symbolic_system_solution.conditional.values.metrics();
+    report("exact-system-4x4", "solution", exact_metrics);
+    report("symbolic-system-2x2", "solution", symbolic_metrics);
+    try expectMeasuredVector(4, exact_metrics);
+    try expectMeasuredVector(2, symbolic_metrics);
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        symbolic_system_solution.conditional.conditions.len,
+    );
 }
 
 fn expectMeasuredExpression(metrics: bombelli.Metrics) !void {

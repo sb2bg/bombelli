@@ -130,7 +130,13 @@ pub const Polynomial = struct {
     }
 
     pub fn diff(comptime self: Polynomial, comptime variable: anytype) Polynomial {
-        const name = @tagName(variable);
+        return self.diffName(@tagName(variable));
+    }
+
+    pub fn diffName(
+        comptime self: Polynomial,
+        comptime name: []const u8,
+    ) Polynomial {
         const variable_index = findVariable(self.variable_names, name) orelse
             return zero(self.variable_names);
         var raw: [term_limit]RawTerm = undefined;
@@ -147,6 +153,18 @@ pub const Polynomial = struct {
             len += 1;
         }
         return finish(self.variable_names, raw[0..len]);
+    }
+
+    pub fn dependsOn(
+        comptime self: Polynomial,
+        comptime name: []const u8,
+    ) bool {
+        const variable_index = findVariable(self.variable_names, name) orelse
+            return false;
+        for (self.terms) |term| {
+            if (term.exponents[variable_index] != 0) return true;
+        }
+        return false;
     }
 
     pub fn antiderivative(

@@ -138,6 +138,13 @@ pub fn fromExpr(comptime expression: ast.Expr) RationalFunction {
     return context.convert(expression.root);
 }
 
+pub fn fromPolynomials(
+    comptime numerator: polynomial.Polynomial,
+    comptime denominator: polynomial.Polynomial,
+) RationalFunction {
+    return normalized(numerator, denominator, &.{});
+}
+
 const ConversionContext = struct {
     expression: ast.Expr,
     cache: []?RationalFunction,

@@ -78,6 +78,13 @@ pub fn build(b: *std.Build) void {
             .source_diagnostic = false,
         },
         .{ .path = "tests/compile_fail/float_literal_overflow.zig", .expected = "floating-point literal is out of range" },
+        .{ .path = "tests/compile_fail/equation_missing_equals.zig", .expected = "equation must contain exactly one '='" },
+        .{ .path = "tests/compile_fail/equation_multiple_equals.zig", .expected = "equation must contain exactly one '='" },
+        .{
+            .path = "tests/compile_fail/require_unique_multiple.zig",
+            .expected = "Bombelli expected one solution, but found 2",
+            .source_diagnostic = false,
+        },
     };
     for (compile_fail_cases) |case| {
         const check = b.addSystemCommand(&.{
