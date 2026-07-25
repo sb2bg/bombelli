@@ -154,6 +154,24 @@ pub fn build(b: *std.Build) void {
     const stress_step = b.step("stress", "Run compile-time expression stress tests");
     stress_step.dependOn(&run_stress_tests.step);
 
+    const property_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/properties.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "bombelli", .module = bombelli },
+            },
+        }),
+    });
+    const run_property_tests = b.addRunArtifact(property_tests);
+    const property_step = b.step(
+        "properties",
+        "Run deterministic mathematical and DAG property tests",
+    );
+    property_step.dependOn(&run_property_tests.step);
+    test_step.dependOn(property_step);
+
     const example = b.addExecutable(.{
         .name = "bombelli-example",
         .root_module = b.createModule(.{
