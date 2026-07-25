@@ -16,6 +16,8 @@ pub fn Factorization(
 ) type {
     return struct {
         coefficients: [M][N]polynomial.Polynomial,
+        inverse_program: ast.ExprMatrix(N, N),
+        conditions: []const solution.Condition,
         unknowns: [N][]const u8,
         domain: domain.Domain,
         assumptions: Assumptions,
@@ -35,14 +37,37 @@ pub fn Factorization(
             inline for (rhs, 0..) |value, index| {
                 right_hand_side[index] = valuePolynomial(value);
             }
-            return solveData(
-                M,
+            var expressions: [N]ast.Expr = undefined;
+            inline for (0..N) |row| {
+                var source: []const u8 = "0";
+                inline for (0..N) |column| {
+                    source = std.fmt.comptimePrint(
+                        "({s}) + ({s}) * ({s})",
+                        .{
+                            source,
+                            self.inverse_program.at(row, column).render(),
+                            right_hand_side[column].toExpr().render(),
+                        },
+                    );
+                }
+                expressions[row] = parser.parse(source).simplify();
+            }
+            const values = multi.vector(N, expressions);
+            if (self.conditions.len != 0) {
+                return .{ .conditional = .{
+                    .values = values,
+                    .conditions = self.conditions,
+                } };
+            }
+            var matrix_values: [1][N]ast.Expr = undefined;
+            inline for (0..N) |column| {
+                matrix_values[0][column] = values.at(column);
+            }
+            return .{ .finite = solution.finiteFromMatrix(
+                1,
                 N,
-                self.coefficients,
-                right_hand_side,
-                self.domain,
-                self.algorithm,
-            );
+                multi.matrix(1, N, matrix_values),
+            ) };
         }
     };
 }
@@ -55,14 +80,88 @@ pub fn factorSystem(
     comptime algorithm_value: anytype,
 ) Factorization(M, N, Assumptions) {
     const algorithm = parseAlgorithm(algorithm_value);
+    if (M != N) {
+        @compileError("Bombelli reusable factorization currently requires a square coefficient matrix");
+    }
     const extracted = extractLinearSystem(M, N, problem);
+    var inverse_entries: [N][N]ast.Expr = undefined;
+    var condition_storage: [128]solution.Condition = undefined;
+    var condition_count: usize = 0;
+    inline for (0..N) |column| {
+        var basis: [M]polynomial.Polynomial = undefined;
+        inline for (0..M) |row| {
+            basis[row] = polynomial.exactConstant(
+                exact.Rational.fromInteger(if (row == column) 1 else 0),
+            );
+        }
+        const column_solution = solveData(
+            M,
+            N,
+            extracted.coefficients,
+            basis,
+            problem.domain,
+            algorithm,
+        );
+        switch (column_solution) {
+            .finite => |finite| {
+                if (finite.branch_count != 1) {
+                    @compileError("Bombelli factorization requires a uniquely invertible coefficient matrix");
+                }
+                const values = finite.branch(0);
+                inline for (0..N) |row| {
+                    inverse_entries[row][column] = values.at(row);
+                }
+            },
+            .conditional => |conditional| {
+                inline for (0..N) |row| {
+                    inverse_entries[row][column] = conditional.values.at(row);
+                }
+                for (conditional.conditions) |condition| {
+                    appendSolutionCondition(
+                        &condition_storage,
+                        &condition_count,
+                        condition,
+                    );
+                }
+            },
+            else => @compileError(
+                "Bombelli factorization requires a uniquely invertible coefficient matrix",
+            ),
+        }
+    }
+    const exact_conditions = condition_storage[0..condition_count].*;
     return .{
         .coefficients = extracted.coefficients,
+        .inverse_program = multi.matrix(N, N, inverse_entries),
+        .conditions = &exact_conditions,
         .unknowns = problem.unknowns,
         .domain = problem.domain,
         .assumptions = problem.assumptions,
         .algorithm = algorithm,
     };
+}
+
+fn appendSolutionCondition(
+    storage: *[128]solution.Condition,
+    len: *usize,
+    comptime condition: solution.Condition,
+) void {
+    for (storage[0..len.*]) |existing| {
+        if (existing.relation == condition.relation and
+            std.mem.eql(
+                u8,
+                existing.expression.render(),
+                condition.expression.render(),
+            ))
+        {
+            return;
+        }
+    }
+    if (len.* == storage.len) {
+        @compileError("Bombelli factorization has too many symbolic conditions");
+    }
+    storage[len.*] = condition;
+    len.* += 1;
 }
 
 pub fn solveSystem(

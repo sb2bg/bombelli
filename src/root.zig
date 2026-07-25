@@ -786,6 +786,46 @@ test "four by four exact systems and reusable factorizations" {
     try std.testing.expectEqualDeep([2]f64{ 5.0 / 3.0, 2.0 / 3.0 }, second.eval(.{}));
 }
 
+test "symbolic factorizations reuse precomputed inverse programs" {
+    const problem_value = comptime system(.{
+        "a*x + b*y = 0",
+        "c*x + d*y = 0",
+    }, .{
+        .unknowns = .{ .x, .y },
+        .domain = .real,
+    });
+    const factorization = comptime problem_value.factor(.bareiss);
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        factorization.conditions.len,
+    );
+    const inverse_metrics = comptime factorization.inverse_program.metrics();
+    try std.testing.expect(inverse_metrics.node_count > 0);
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        factorization.inverse_program.roots.len,
+    );
+
+    const first = comptime factorization.solve(.{ "e", "f" });
+    const second = comptime factorization.solve(.{ 1, 0 });
+    try std.testing.expect(first == .conditional);
+    try std.testing.expect(second == .conditional);
+    const parameters = .{
+        .a = 2.0,
+        .b = 1.0,
+        .c = 1.0,
+        .d = -1.0,
+        .e = 7.0,
+        .f = 2.0,
+    };
+    const first_values = first.conditional.values.eval(parameters);
+    try std.testing.expectApproxEqAbs(3.0, first_values[0], 1e-12);
+    try std.testing.expectApproxEqAbs(1.0, first_values[1], 1e-12);
+    const second_values = second.conditional.values.eval(parameters);
+    try std.testing.expectApproxEqAbs(1.0 / 3.0, second_values[0], 1e-12);
+    try std.testing.expectApproxEqAbs(1.0 / 3.0, second_values[1], 1e-12);
+}
+
 test "symbolic Bareiss solving records the determinant pivot condition" {
     const symbolic_problem = comptime system(.{
         "a*x + b*y = e",
