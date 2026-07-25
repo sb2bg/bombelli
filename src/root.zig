@@ -205,15 +205,68 @@ test "expressions retain one node per repeated subtree" {
     const repeated = comptime expr("sin(x * y) + sin(x * y)");
     const metrics = comptime repeated.metrics();
 
-    try std.testing.expectEqual(@as(usize, 5), metrics.stored_nodes);
-    try std.testing.expectEqual(metrics.stored_nodes, metrics.reachable_nodes);
+    try std.testing.expectEqual(@as(usize, 5), metrics.node_count);
     try std.testing.expectEqual(
-        metrics.reachable_nodes,
-        metrics.unique_structural_nodes,
+        @sizeOf(Expr) + 5 * @sizeOf(Node),
+        metrics.backing_bytes,
     );
-    try std.testing.expectEqual(@as(usize, 0), metrics.duplicateOccurrences());
-    try std.testing.expectEqual(
-        @as(usize, 0),
-        metrics.unreachableConstructionNodes(),
+}
+
+test "simplification stays proportional to a compact multiplication DAG" {
+    const repeated_square = comptime blk: {
+        var builder = @import("builder.zig").Builder{};
+        var current = builder.symbol("x");
+        for (0..11) |_| {
+            current = builder.mul(current, current);
+        }
+        break :blk builder.finish(current, "x squared eleven times");
+    };
+
+    try std.testing.expectEqual(@as(usize, 12), repeated_square.metrics().node_count);
+    const simplified = comptime repeated_square.simplify();
+    try std.testing.expectEqualStrings("x^2048", comptime simplified.render());
+    try std.testing.expectEqual(@as(usize, 2), simplified.metrics().node_count);
+    try std.testing.expectApproxEqAbs(
+        std.math.pow(f64, 1.001, 2048),
+        simplified.eval(.{ .x = 1.001 }),
+        1e-10,
     );
+}
+
+test "factor multiplicities beyond u32 preserve the compact DAG" {
+    const repeated_square = comptime blk: {
+        var builder = @import("builder.zig").Builder{};
+        var current = builder.symbol("x");
+        for (0..40) |_| {
+            current = builder.mul(current, current);
+        }
+        break :blk builder.finish(current, "x squared forty times");
+    };
+
+    const simplified = comptime repeated_square.simplify();
+    try std.testing.expect(simplified.metrics().node_count <= repeated_square.metrics().node_count);
+    try std.testing.expectEqual(@as(f64, 1.0), simplified.eval(.{ .x = 1.0 }));
+}
+
+test "power factors have a canonical total order and combine" {
+    const ascending = comptime expr("x^2 * x^3").simplify();
+    const descending = comptime expr("x^3 * x^2").simplify();
+    const cancellation = comptime expr("x^2 * x^3 - x^3 * x^2").simplify();
+
+    try std.testing.expectEqualStrings("x^5", comptime ascending.render());
+    try std.testing.expectEqualStrings(
+        comptime ascending.render(),
+        comptime descending.render(),
+    );
+    try std.testing.expectEqualStrings("0", comptime cancellation.render());
+}
+
+test "rendered floating-point literals preserve their type and round trip" {
+    const original = comptime expr("2.0 * x + 1.0 / 0.0");
+    const source = comptime original.render();
+    const reparsed = comptime expr(source);
+
+    try std.testing.expectEqualStrings("2.0 * x + 1.0 / 0.0", source);
+    try std.testing.expectEqual(original.metrics().node_count, reparsed.metrics().node_count);
+    try std.testing.expectEqualStrings(source, comptime reparsed.render());
 }

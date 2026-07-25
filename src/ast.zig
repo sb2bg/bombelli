@@ -34,6 +34,7 @@ pub const Expr = struct {
     nodes: []const Node,
     root: NodeId,
     source: []const u8,
+    construction_peak_nodes: usize,
 
     pub fn node(self: Expr, id: NodeId) Node {
         return self.nodes[@intCast(id)];
@@ -86,45 +87,6 @@ pub fn nodeEqual(left: Node, right: Node) bool {
     };
 }
 
-pub fn equal(
-    comptime left_expr: Expr,
-    left_id: NodeId,
-    comptime right_expr: Expr,
-    right_id: NodeId,
-) bool {
-    const left = left_expr.node(left_id);
-    const right = right_expr.node(right_id);
-    if (std.meta.activeTag(left) != std.meta.activeTag(right)) return false;
-
-    return switch (left) {
-        .integer => |value| value == right.integer,
-        .float => |value| @as(u64, @bitCast(value)) ==
-            @as(u64, @bitCast(right.float)),
-        .symbol => |name| std.mem.eql(u8, name, right.symbol),
-        .add => |binary| equalBinary(left_expr, binary, right_expr, right.add),
-        .sub => |binary| equalBinary(left_expr, binary, right_expr, right.sub),
-        .mul => |binary| equalBinary(left_expr, binary, right_expr, right.mul),
-        .div => |binary| equalBinary(left_expr, binary, right_expr, right.div),
-        .pow => |power| power.exponent == right.pow.exponent and
-            equal(left_expr, power.base, right_expr, right.pow.base),
-        .negate => |child| equal(left_expr, child, right_expr, right.negate),
-        .sin => |child| equal(left_expr, child, right_expr, right.sin),
-        .cos => |child| equal(left_expr, child, right_expr, right.cos),
-        .exp => |child| equal(left_expr, child, right_expr, right.exp),
-        .ln => |child| equal(left_expr, child, right_expr, right.ln),
-    };
-}
-
 fn binaryEqual(left: Binary, right: Binary) bool {
     return left.left == right.left and left.right == right.right;
-}
-
-fn equalBinary(
-    comptime left_expr: Expr,
-    left: Binary,
-    comptime right_expr: Expr,
-    right: Binary,
-) bool {
-    return equal(left_expr, left.left, right_expr, right.left) and
-        equal(left_expr, left.right, right_expr, right.right);
 }

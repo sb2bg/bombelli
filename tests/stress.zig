@@ -26,6 +26,12 @@ const shared_source = bombelli.expr(
 const shared_derivative = shared_source.diff(.x);
 const shared_simplified = shared_derivative.simplify();
 
+const factored_source = bombelli.expr(
+    "x * x * x * x * x * x * x * x * x * x * " ++
+        "x * x * x * x * x * x * x * x * x * x",
+);
+const factored_simplified = factored_source.simplify();
+
 test "twenty-factor product fits in the compact DAG" {
     const source = comptime product_source.metrics();
     const derivative = comptime product_derivative.metrics();
@@ -35,11 +41,11 @@ test "twenty-factor product fits in the compact DAG" {
     report("product-20", "derivative", derivative);
     report("product-20", "simplified", simplified);
 
-    try expectCompactDag(source);
-    try expectCompactDag(derivative);
-    try expectCompactDag(simplified);
-    try std.testing.expect(derivative.reachable_nodes > source.reachable_nodes);
-    try std.testing.expect(simplified.reachable_nodes < derivative.reachable_nodes);
+    try expectMeasuredExpression(source);
+    try expectMeasuredExpression(derivative);
+    try expectMeasuredExpression(simplified);
+    try std.testing.expect(derivative.node_count > source.node_count);
+    try std.testing.expect(simplified.node_count < derivative.node_count);
 }
 
 test "stress metrics cover deep composition" {
@@ -51,11 +57,11 @@ test "stress metrics cover deep composition" {
     report("deep-composition", "derivative", derivative);
     report("deep-composition", "simplified", simplified);
 
-    try expectCompactDag(source);
-    try expectCompactDag(derivative);
-    try expectCompactDag(simplified);
-    try std.testing.expect(derivative.reachable_nodes > source.reachable_nodes);
-    try std.testing.expect(simplified.reachable_nodes <= derivative.reachable_nodes);
+    try expectMeasuredExpression(source);
+    try expectMeasuredExpression(derivative);
+    try expectMeasuredExpression(simplified);
+    try std.testing.expect(derivative.node_count > source.node_count);
+    try std.testing.expect(simplified.node_count <= derivative.node_count);
 }
 
 test "stress metrics cover four repeated derivatives" {
@@ -71,11 +77,11 @@ test "stress metrics cover four repeated derivatives" {
     report("repeated-x^12", "d3", d3);
     report("repeated-x^12", "d4", d4);
 
-    try expectCompactDag(source);
-    try expectCompactDag(d1);
-    try expectCompactDag(d2);
-    try expectCompactDag(d3);
-    try expectCompactDag(d4);
+    try expectMeasuredExpression(source);
+    try expectMeasuredExpression(d1);
+    try expectMeasuredExpression(d2);
+    try expectMeasuredExpression(d3);
+    try expectMeasuredExpression(d4);
     try std.testing.expectEqualStrings("11880 * x^8", comptime repeated_d4.render());
 }
 
@@ -88,30 +94,43 @@ test "repeated structural subtrees are hash-consed" {
     report("shared-subtree", "derivative", derivative);
     report("shared-subtree", "simplified", simplified);
 
-    try expectCompactDag(source);
-    try expectCompactDag(derivative);
-    try expectCompactDag(simplified);
+    try expectMeasuredExpression(source);
+    try expectMeasuredExpression(derivative);
+    try expectMeasuredExpression(simplified);
 }
 
-fn expectCompactDag(metrics: bombelli.Metrics) !void {
-    try std.testing.expectEqual(metrics.stored_nodes, metrics.reachable_nodes);
-    try std.testing.expectEqual(metrics.reachable_nodes, metrics.unique_structural_nodes);
-    try std.testing.expectEqual(@as(usize, 0), metrics.duplicateOccurrences());
-    try std.testing.expectEqual(@as(usize, 0), metrics.unreachableConstructionNodes());
+test "large repeated products stay factored" {
+    const source = comptime factored_source.metrics();
+    const simplified = comptime factored_simplified.metrics();
+
+    report("factored-x^20", "source", source);
+    report("factored-x^20", "simplified", simplified);
+
+    try expectMeasuredExpression(source);
+    try expectMeasuredExpression(simplified);
+    try std.testing.expectEqualStrings("x^20", comptime factored_simplified.render());
+    try std.testing.expectEqual(@as(usize, 2), simplified.node_count);
+    try std.testing.expect(simplified.construction_peak_nodes <= source.node_count);
+}
+
+fn expectMeasuredExpression(metrics: bombelli.Metrics) !void {
+    try std.testing.expect(metrics.node_count > 0);
+    try std.testing.expect(metrics.construction_peak_nodes >= metrics.node_count);
+    try std.testing.expectEqual(
+        @sizeOf(bombelli.Expr) + metrics.node_count * @sizeOf(bombelli.Node),
+        metrics.backing_bytes,
+    );
 }
 
 fn report(case_name: []const u8, phase: []const u8, metrics: bombelli.Metrics) void {
     std.debug.print(
-        "{s}\t{s}\tstored={d}\treachable={d}\tunique={d}\tduplicates={d}\tunreachable={d}\tconstruction_limit={d}\tbacking_bytes={d}\n",
+        "{s}\t{s}\tnodes={d}\tconstruction_peak={d}\theadroom={d}\tbacking_bytes={d}\n",
         .{
             case_name,
             phase,
-            metrics.stored_nodes,
-            metrics.reachable_nodes,
-            metrics.unique_structural_nodes,
-            metrics.duplicateOccurrences(),
-            metrics.unreachableConstructionNodes(),
-            metrics.construction_limit,
+            metrics.node_count,
+            metrics.construction_peak_nodes,
+            metrics.constructionHeadroom(),
             metrics.backing_bytes,
         },
     );

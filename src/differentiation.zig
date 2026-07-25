@@ -4,10 +4,16 @@ const build = @import("builder.zig");
 
 pub fn differentiate(comptime expression: ast.Expr, comptime variable: []const u8) ast.Expr {
     var builder = build.Builder{};
+    var clone_cache =
+        [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
+    var derivative_cache =
+        [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
     var context = Context{
         .builder = &builder,
         .expression = expression,
         .variable = variable,
+        .clone_cache = &clone_cache,
+        .derivative_cache = &derivative_cache,
     };
     const root = context.derivative(expression.root);
     return builder.finish(root, expression.source);
@@ -17,10 +23,8 @@ const Context = struct {
     builder: *build.Builder,
     expression: ast.Expr,
     variable: []const u8,
-    clone_cache: [ast.construction_node_limit]ast.NodeId =
-        [_]ast.NodeId{ast.invalid_node} ** ast.construction_node_limit,
-    derivative_cache: [ast.construction_node_limit]ast.NodeId =
-        [_]ast.NodeId{ast.invalid_node} ** ast.construction_node_limit,
+    clone_cache: []ast.NodeId,
+    derivative_cache: []ast.NodeId,
 
     fn derivative(self: *Context, id: ast.NodeId) ast.NodeId {
         const index: usize = @intCast(id);

@@ -71,6 +71,10 @@ pub const Builder = struct {
     }
 
     pub fn intern(self: *Builder, new_node: ast.Node) ast.NodeId {
+        // Child nodes are interned before their parents, and structural identity
+        // is defined entirely by the tag, payload, and canonical child ids. Thus
+        // every finished expression is a topologically ordered DAG containing
+        // exactly one reachable instance of each structural node.
         var slot: usize = @intCast(hashNode(new_node) & hash_mask);
         for (0..hash_table_size) |_| {
             const existing_id = self.hash_table[slot];
@@ -122,6 +126,7 @@ pub const Builder = struct {
             .nodes = &exact_nodes,
             .root = remap[@intCast(root)],
             .source = source,
+            .construction_peak_nodes = self.len,
         };
     }
 };

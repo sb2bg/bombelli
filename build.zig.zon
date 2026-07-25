@@ -11,5 +11,6 @@
         "docs",
         "examples",
         "src",
+        "tests",
     },
 }

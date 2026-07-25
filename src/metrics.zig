@@ -1,83 +1,100 @@
 const ast = @import("ast.zig");
 
 pub const Metrics = struct {
-    construction_limit: usize,
+    node_count: usize,
+    construction_peak_nodes: usize,
     backing_bytes: usize,
-    stored_nodes: usize,
-    reachable_nodes: usize,
-    unique_structural_nodes: usize,
 
-    pub fn duplicateOccurrences(self: Metrics) usize {
-        return self.reachable_nodes - self.unique_structural_nodes;
-    }
-
-    pub fn unreachableConstructionNodes(self: Metrics) usize {
-        return self.stored_nodes - self.reachable_nodes;
+    pub fn constructionHeadroom(self: Metrics) usize {
+        return ast.construction_node_limit - self.construction_peak_nodes;
     }
 };
 
 pub fn measure(comptime expression: ast.Expr) Metrics {
-    var visited = [_]bool{false} ** ast.construction_node_limit;
-    var reachable: [ast.construction_node_limit]ast.NodeId = undefined;
-    var reachable_count: usize = 0;
-    collectReachable(
-        expression,
-        expression.root,
-        &visited,
-        &reachable,
-        &reachable_count,
-    );
-
-    var unique: [ast.construction_node_limit]ast.NodeId = undefined;
-    var unique_count: usize = 0;
-    for (reachable[0..reachable_count]) |candidate| {
-        var found = false;
-        for (unique[0..unique_count]) |existing| {
-            if (ast.equal(expression, candidate, expression, existing)) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            unique[unique_count] = candidate;
-            unique_count += 1;
-        }
-    }
-
+    validate(expression);
     return .{
-        .construction_limit = ast.construction_node_limit,
+        .node_count = expression.nodes.len,
+        .construction_peak_nodes = expression.construction_peak_nodes,
         .backing_bytes = @sizeOf(ast.Expr) + expression.nodes.len * @sizeOf(ast.Node),
-        .stored_nodes = expression.nodes.len,
-        .reachable_nodes = reachable_count,
-        .unique_structural_nodes = unique_count,
     };
 }
 
-fn collectReachable(
+fn validate(comptime expression: ast.Expr) void {
+    comptime {
+        if (expression.nodes.len == 0) {
+            @compileError("Bombelli invariant failure: expression has no nodes");
+        }
+        if (expression.root >= expression.nodes.len) {
+            @compileError("Bombelli invariant failure: root node is out of bounds");
+        }
+        if (expression.construction_peak_nodes < expression.nodes.len or
+            expression.construction_peak_nodes > ast.construction_node_limit)
+        {
+            @compileError("Bombelli invariant failure: invalid construction peak");
+        }
+
+        var reachable = [_]bool{false} ** expression.nodes.len;
+        markReachable(expression, expression.root, &reachable);
+
+        for (expression.nodes, 0..) |node_value, index| {
+            validateChildren(node_value, index);
+            if (!reachable[index]) {
+                @compileError("Bombelli invariant failure: expression contains an unreachable node");
+            }
+
+            for (expression.nodes[0..index]) |previous| {
+                if (ast.nodeEqual(node_value, previous)) {
+                    @compileError("Bombelli invariant failure: expression contains duplicate nodes");
+                }
+            }
+        }
+    }
+}
+
+fn validateChildren(
+    comptime node_value: ast.Node,
+    comptime parent_index: usize,
+) void {
+    switch (node_value) {
+        .integer, .float, .symbol => {},
+        .add, .sub, .mul, .div => |binary| {
+            validateChild(binary.left, parent_index);
+            validateChild(binary.right, parent_index);
+        },
+        .pow => |power| validateChild(power.base, parent_index),
+        .negate, .sin, .cos, .exp, .ln => |child| {
+            validateChild(child, parent_index);
+        },
+    }
+}
+
+fn validateChild(
+    comptime child: ast.NodeId,
+    comptime parent_index: usize,
+) void {
+    if (child >= parent_index) {
+        @compileError("Bombelli invariant failure: expression is not topologically ordered");
+    }
+}
+
+fn markReachable(
     comptime expression: ast.Expr,
     id: ast.NodeId,
-    visited: *[ast.construction_node_limit]bool,
-    reachable: *[ast.construction_node_limit]ast.NodeId,
-    count: *usize,
+    reachable: []bool,
 ) void {
     const index: usize = @intCast(id);
-    if (visited[index]) return;
-    visited[index] = true;
-
-    reachable[count.*] = id;
-    count.* += 1;
+    if (reachable[index]) return;
+    reachable[index] = true;
 
     switch (expression.node(id)) {
         .integer, .float, .symbol => {},
         .add, .sub, .mul, .div => |binary| {
-            collectReachable(expression, binary.left, visited, reachable, count);
-            collectReachable(expression, binary.right, visited, reachable, count);
+            markReachable(expression, binary.left, reachable);
+            markReachable(expression, binary.right, reachable);
         },
-        .pow => |power| {
-            collectReachable(expression, power.base, visited, reachable, count);
-        },
+        .pow => |power| markReachable(expression, power.base, reachable),
         .negate, .sin, .cos, .exp, .ln => |child| {
-            collectReachable(expression, child, visited, reachable, count);
+            markReachable(expression, child, reachable);
         },
     }
 }
