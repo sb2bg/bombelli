@@ -1,5 +1,5 @@
 const bombelli = @import("bombelli");
 
 comptime {
-    _ = bombelli.expr("exp(1000) * x").simplify();
+    _ = bombelli.expr("exp(1000.0) * x").simplify();
 }

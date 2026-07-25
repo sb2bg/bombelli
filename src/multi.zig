@@ -64,6 +64,7 @@ pub fn gradient(
     comptime variables: anytype,
 ) ast.ExprVector(ast.tupleLength(@TypeOf(variables))) {
     const N = ast.tupleLength(@TypeOf(variables));
+    if (N == 0) @compileError("Bombelli gradient expects at least one variable");
     var derivatives: [N]ast.Expr = undefined;
     inline for (variables, 0..) |variable, index| {
         derivatives[index] = expression.diff(variable);
@@ -87,6 +88,7 @@ pub fn jacobian(
     comptime variables: anytype,
 ) ast.ExprMatrix(R, ast.tupleLength(@TypeOf(variables))) {
     const C = ast.tupleLength(@TypeOf(variables));
+    if (C == 0) @compileError("Bombelli Jacobian expects at least one variable");
     var derivatives: [R][C]ast.Expr = undefined;
     inline for (0..R) |row| {
         const element = vectorElement(R, expression, row);
@@ -219,6 +221,9 @@ fn cloneNodes(
         .negate => |child| builder.negate(cloneNodes(builder, nodes, child, cache)),
         .sin => |child| builder.sine(cloneNodes(builder, nodes, child, cache)),
         .cos => |child| builder.cosine(cloneNodes(builder, nodes, child, cache)),
+        .tan => |child| builder.tangent(cloneNodes(builder, nodes, child, cache)),
+        .atan => |child| builder.arctangent(cloneNodes(builder, nodes, child, cache)),
+        .abs => |child| builder.absolute(cloneNodes(builder, nodes, child, cache)),
         .exp => |child| builder.exponential(cloneNodes(builder, nodes, child, cache)),
         .ln => |child| builder.logarithm(cloneNodes(builder, nodes, child, cache)),
     };

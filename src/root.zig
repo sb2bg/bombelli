@@ -25,6 +25,7 @@ pub fn rational(comptime numerator: Integer, comptime denominator: Integer) Rati
 
 pub fn exprVector(comptime sources: anytype) ExprVector(ast.tupleLength(@TypeOf(sources))) {
     const N = ast.tupleLength(@TypeOf(sources));
+    if (N == 0) @compileError("Bombelli expression vector expects at least one output");
     var expressions: [N]Expr = undefined;
     inline for (sources, 0..) |source, index| {
         expressions[index] = expr(source);
@@ -55,7 +56,11 @@ fn matrixColumnCount(comptime T: type) usize {
     if (!info.is_tuple or info.fields.len == 0) {
         @compileError("Bombelli expression matrix expects a non-empty tuple of rows");
     }
-    return ast.tupleLength(info.fields[0].type);
+    const columns = ast.tupleLength(info.fields[0].type);
+    if (columns == 0) {
+        @compileError("Bombelli expression matrix expects at least one column");
+    }
+    return columns;
 }
 
 test "flagship compile-time symbolic derivative" {
@@ -335,6 +340,11 @@ test "multi-root programs share nodes and evaluate into caller storage" {
     functions.evalInto(&output, .{ .x = 2.0, .y = 3.0 });
     try std.testing.expectApproxEqAbs(@sin(6.0) + 2.0, output[0], 1e-12);
     try std.testing.expectApproxEqAbs(@sin(6.0) + 3.0, output[1], 1e-12);
+
+    const scalar = comptime expr("x + 1");
+    var scalar_output: f64 = undefined;
+    scalar.evalInto(&scalar_output, .{ .x = 2.0 });
+    try std.testing.expectEqual(@as(f64, 3.0), scalar_output);
 }
 
 test "gradient jacobian and hessian are typed shared programs" {
@@ -400,4 +410,51 @@ test "exact constants stay rational until numerical evaluation" {
         @as(i64, 3002399751580331),
         large.node(large.root).integer,
     );
+}
+
+test "rational powers are canonical and preserve exact bases" {
+    const negative = comptime expr("x^-2").simplify();
+    try std.testing.expectEqualStrings("x^-2", comptime negative.render());
+    try std.testing.expectApproxEqAbs(0.25, negative.eval(.{ .x = 2.0 }), 0.0);
+
+    const square_root = comptime expr("sqrt(2)").simplify();
+    try std.testing.expectEqualStrings("2^(1/2)", comptime square_root.render());
+    try std.testing.expect(square_root.node(square_root.root) == .pow);
+    try std.testing.expectApproxEqAbs(@sqrt(2.0), square_root.eval(.{}), 1e-15);
+
+    const real_cube_root = comptime expr("(-8)^(1/3)").simplify();
+    try std.testing.expectApproxEqAbs(-2.0, real_cube_root.eval(.{}), 1e-15);
+    const nonreal_square_root = comptime expr("sqrt(-1)").simplify();
+    try std.testing.expect(std.math.isNan(nonreal_square_root.eval(.{})));
+}
+
+test "closure functions evaluate and differentiate" {
+    const f = comptime expr("sqrt(x) + abs(y) + atan(z) + tan(z)");
+    const actual = f.eval(.{ .x = 9.0, .y = -2.0, .z = 0.25 });
+    const expected = 3.0 + 2.0 + std.math.atan(@as(f64, 0.25)) + @tan(0.25);
+    try std.testing.expectApproxEqAbs(expected, actual, 1e-12);
+
+    const square_root_derivative = comptime expr("sqrt(x)").diff(.x).simplify();
+    try std.testing.expectEqualStrings(
+        "1/2 * x^(-1/2)",
+        comptime square_root_derivative.render(),
+    );
+    try std.testing.expectApproxEqAbs(
+        0.25,
+        square_root_derivative.eval(.{ .x = 4.0 }),
+        1e-15,
+    );
+
+    const inverse_tangent_derivative = comptime expr("atan(x)").diff(.x).simplify();
+    try std.testing.expectEqualStrings(
+        "1 / (1 + x^2)",
+        comptime inverse_tangent_derivative.render(),
+    );
+    const tangent_derivative = comptime expr("tan(x)").diff(.x).simplify();
+    try std.testing.expectEqualStrings(
+        "1 / cos(x)^2",
+        comptime tangent_derivative.render(),
+    );
+    const absolute_derivative = comptime expr("abs(x)").diff(.x).simplify();
+    try std.testing.expectEqualStrings("x / abs(x)", comptime absolute_derivative.render());
 }

@@ -105,19 +105,32 @@ fn renderBare(
                 renderChild(expression, binary.right, .div_right, rendered),
             },
         ),
-        .pow => |power| std.fmt.comptimePrint(
-            "{s}^{d}",
-            .{
-                renderChild(expression, power.base, .power_base, rendered),
-                power.exponent,
-            },
-        ),
+        .pow => |power| if (power.exponent.denominator == 1)
+            std.fmt.comptimePrint(
+                "{s}^{d}",
+                .{
+                    renderChild(expression, power.base, .power_base, rendered),
+                    power.exponent.numerator,
+                },
+            )
+        else
+            std.fmt.comptimePrint(
+                "{s}^({d}/{d})",
+                .{
+                    renderChild(expression, power.base, .power_base, rendered),
+                    power.exponent.numerator,
+                    power.exponent.denominator,
+                },
+            ),
         .negate => |child| std.fmt.comptimePrint(
             "-{s}",
             .{renderChild(expression, child, .negate_child, rendered)},
         ),
         .sin => |child| renderFunction(expression, "sin", child, rendered),
         .cos => |child| renderFunction(expression, "cos", child, rendered),
+        .tan => |child| renderFunction(expression, "tan", child, rendered),
+        .atan => |child| renderFunction(expression, "atan", child, rendered),
+        .abs => |child| renderFunction(expression, "abs", child, rendered),
         .exp => |child| renderFunction(expression, "exp", child, rendered),
         .ln => |child| renderFunction(expression, "ln", child, rendered),
     };
@@ -189,6 +202,6 @@ fn nodePrecedence(node: ast.Node) u8 {
         .integer => |value| if (value < 0) 30 else 50,
         .rational => |value| if (value.numerator < 0) 30 else 50,
         .float => |value| if (value < 0.0) 30 else 50,
-        .symbol, .sin, .cos, .exp, .ln => 50,
+        .symbol, .sin, .cos, .tan, .atan, .abs, .exp, .ln => 50,
     };
 }

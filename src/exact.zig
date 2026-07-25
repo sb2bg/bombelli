@@ -51,6 +51,10 @@ pub const Rational = struct {
         };
     }
 
+    pub fn abs(self: Rational) Error!Rational {
+        return if (self.numerator < 0) self.negate() else self;
+    }
+
     pub fn add(self: Rational, other: Rational) Error!Rational {
         return addSigned(self, other, false);
     }
@@ -124,6 +128,17 @@ pub const Rational = struct {
     }
 
     pub fn powUnsigned(self: Rational, exponent: u32) Error!Rational {
+        return self.powMagnitude(exponent);
+    }
+
+    pub fn powInteger(self: Rational, exponent: Integer) Error!Rational {
+        if (exponent >= 0) return self.powMagnitude(@intCast(exponent));
+        if (self.isZero()) return error.ZeroDenominator;
+        const magnitude: u64 = @intCast(-@as(i128, exponent));
+        return Rational.fromInteger(1).div(try self.powMagnitude(magnitude));
+    }
+
+    fn powMagnitude(self: Rational, exponent: u64) Error!Rational {
         var result = fromInteger(1);
         var factor = self;
         var remaining = exponent;

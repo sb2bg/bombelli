@@ -2,6 +2,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const build = @import("builder.zig");
 const diagnostic = @import("diagnostic.zig");
+const exact = @import("exact.zig");
 const lexer = @import("lexer.zig");
 
 pub fn parse(comptime source: []const u8) ast.Expr {
@@ -83,14 +84,7 @@ const Parser = struct {
 
         const caret_position = self.current.start;
         self.advance();
-        if (self.current.kind != .integer) {
-            diagnostic.fail(self.source, caret_position, "power exponent must be a non-negative integer literal");
-        }
-
-        const token = self.current;
-        const exponent = std.fmt.parseInt(u32, self.tokenText(token), 10) catch
-            diagnostic.fail(self.source, token.start, "power exponent is too large");
-        self.advance();
+        const exponent = self.parseExponent(caret_position);
         if (self.current.kind == .caret) {
             diagnostic.fail(
                 self.source,
@@ -99,6 +93,82 @@ const Parser = struct {
             );
         }
         return self.builder.power(base, exponent);
+    }
+
+    fn parseExponent(self: *Parser, caret_position: usize) exact.Rational {
+        const parenthesized = self.current.kind == .left_paren;
+        if (parenthesized) self.advance();
+
+        var numerator_sign: i64 = 1;
+        if (self.current.kind == .minus) {
+            numerator_sign = -1;
+            self.advance();
+        }
+        if (self.current.kind != .integer) {
+            diagnostic.fail(
+                self.source,
+                caret_position,
+                "power exponent must be an exact rational literal",
+            );
+        }
+        const numerator_token = self.current;
+        var numerator = std.fmt.parseInt(i64, self.tokenText(numerator_token), 10) catch
+            diagnostic.fail(self.source, numerator_token.start, "power exponent numerator is too large");
+        numerator *= numerator_sign;
+        self.advance();
+
+        var denominator: i64 = 1;
+        if (parenthesized and self.current.kind == .slash) {
+            self.advance();
+            var denominator_sign: i64 = 1;
+            if (self.current.kind == .minus) {
+                denominator_sign = -1;
+                self.advance();
+            }
+            if (self.current.kind != .integer) {
+                diagnostic.fail(
+                    self.source,
+                    self.current.start,
+                    "power exponent denominator must be an integer literal",
+                );
+            }
+            const denominator_token = self.current;
+            denominator = std.fmt.parseInt(
+                i64,
+                self.tokenText(denominator_token),
+                10,
+            ) catch diagnostic.fail(
+                self.source,
+                denominator_token.start,
+                "power exponent denominator is too large",
+            );
+            denominator *= denominator_sign;
+            self.advance();
+        }
+
+        if (parenthesized) {
+            if (self.current.kind != .right_paren) {
+                diagnostic.fail(
+                    self.source,
+                    self.current.start,
+                    "power exponent must contain one exact rational literal",
+                );
+            }
+            self.advance();
+        }
+
+        return exact.Rational.init(numerator, denominator) catch |err| switch (err) {
+            error.ZeroDenominator => diagnostic.fail(
+                self.source,
+                caret_position,
+                "power exponent denominator cannot be zero",
+            ),
+            error.Overflow => diagnostic.fail(
+                self.source,
+                caret_position,
+                "power exponent is outside fixed-width range",
+            ),
+        };
     }
 
     fn parsePrimary(self: *Parser) ast.NodeId {
@@ -146,6 +216,14 @@ const Parser = struct {
             .sin
         else if (std.mem.eql(u8, name, "cos"))
             .cos
+        else if (std.mem.eql(u8, name, "tan"))
+            .tan
+        else if (std.mem.eql(u8, name, "atan"))
+            .atan
+        else if (std.mem.eql(u8, name, "abs"))
+            .abs
+        else if (std.mem.eql(u8, name, "sqrt"))
+            .sqrt
         else if (std.mem.eql(u8, name, "exp"))
             .exp
         else if (std.mem.eql(u8, name, "ln"))
@@ -163,6 +241,13 @@ const Parser = struct {
         return switch (function_kind) {
             .sin => self.builder.sine(argument),
             .cos => self.builder.cosine(argument),
+            .tan => self.builder.tangent(argument),
+            .atan => self.builder.arctangent(argument),
+            .abs => self.builder.absolute(argument),
+            .sqrt => self.builder.power(argument, exact.Rational{
+                .numerator = 1,
+                .denominator = 2,
+            }),
             .exp => self.builder.exponential(argument),
             .ln => self.builder.logarithm(argument),
         };
@@ -180,6 +265,10 @@ const Parser = struct {
 const Function = enum {
     sin,
     cos,
+    tan,
+    atan,
+    abs,
+    sqrt,
     exp,
     ln,
 };

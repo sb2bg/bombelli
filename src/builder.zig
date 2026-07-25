@@ -52,8 +52,9 @@ pub const Builder = struct {
         return self.intern(.{ .div = .{ .left = left, .right = right } });
     }
 
-    pub fn power(self: *Builder, base: ast.NodeId, exponent: u32) ast.NodeId {
-        return self.intern(.{ .pow = .{ .base = base, .exponent = exponent } });
+    pub fn power(self: *Builder, base: ast.NodeId, exponent: anytype) ast.NodeId {
+        const canonical = canonicalExponent(exponent);
+        return self.intern(.{ .pow = .{ .base = base, .exponent = canonical } });
     }
 
     pub fn negate(self: *Builder, child: ast.NodeId) ast.NodeId {
@@ -66,6 +67,18 @@ pub const Builder = struct {
 
     pub fn cosine(self: *Builder, child: ast.NodeId) ast.NodeId {
         return self.intern(.{ .cos = child });
+    }
+
+    pub fn tangent(self: *Builder, child: ast.NodeId) ast.NodeId {
+        return self.intern(.{ .tan = child });
+    }
+
+    pub fn arctangent(self: *Builder, child: ast.NodeId) ast.NodeId {
+        return self.intern(.{ .atan = child });
+    }
+
+    pub fn absolute(self: *Builder, child: ast.NodeId) ast.NodeId {
+        return self.intern(.{ .abs = child });
     }
 
     pub fn exponential(self: *Builder, child: ast.NodeId) ast.NodeId {
@@ -232,7 +245,7 @@ fn markReachable(
             markReachable(builder, binary.right, reachable);
         },
         .pow => |power| markReachable(builder, power.base, reachable),
-        .negate, .sin, .cos, .exp, .ln => |child| {
+        .negate, .sin, .cos, .tan, .atan, .abs, .exp, .ln => |child| {
             markReachable(builder, child, reachable);
         },
     }
@@ -258,6 +271,9 @@ fn remapNode(
         .negate => |child| .{ .negate = remap[@intCast(child)] },
         .sin => |child| .{ .sin = remap[@intCast(child)] },
         .cos => |child| .{ .cos = remap[@intCast(child)] },
+        .tan => |child| .{ .tan = remap[@intCast(child)] },
+        .atan => |child| .{ .atan = remap[@intCast(child)] },
+        .abs => |child| .{ .abs = remap[@intCast(child)] },
         .exp => |child| .{ .exp = remap[@intCast(child)] },
         .ln => |child| .{ .ln = remap[@intCast(child)] },
     };
@@ -290,12 +306,29 @@ fn hashNode(node_value: ast.Node) u64 {
         .sub => |binary| hashBinary(hash, binary),
         .mul => |binary| hashBinary(hash, binary),
         .div => |binary| hashBinary(hash, binary),
-        .pow => |power| mix(mix(hash, power.base), power.exponent),
+        .pow => |power| mix(
+            mix(
+                mix(hash, power.base),
+                @as(u64, @bitCast(power.exponent.numerator)),
+            ),
+            power.exponent.denominator,
+        ),
         .negate => |child| mix(hash, child),
         .sin => |child| mix(hash, child),
         .cos => |child| mix(hash, child),
+        .tan => |child| mix(hash, child),
+        .atan => |child| mix(hash, child),
+        .abs => |child| mix(hash, child),
         .exp => |child| mix(hash, child),
         .ln => |child| mix(hash, child),
+    };
+}
+
+fn canonicalExponent(exponent: anytype) exact.Rational {
+    if (@TypeOf(exponent) == exact.Rational) return exponent;
+    return switch (@typeInfo(@TypeOf(exponent))) {
+        .comptime_int, .int => exact.Rational.fromInteger(@intCast(exponent)),
+        else => @compileError("Bombelli power exponent must be an exact rational"),
     };
 }
 

@@ -12,7 +12,7 @@ pub const Binary = struct {
 
 pub const Power = struct {
     base: NodeId,
-    exponent: u32,
+    exponent: exact.Rational,
 };
 
 pub const Node = union(enum) {
@@ -28,6 +28,9 @@ pub const Node = union(enum) {
     negate: NodeId,
     sin: NodeId,
     cos: NodeId,
+    tan: NodeId,
+    atan: NodeId,
+    abs: NodeId,
     exp: NodeId,
     ln: NodeId,
 };
@@ -67,6 +70,10 @@ pub const Expr = struct {
 
     pub fn eval(comptime self: Expr, values: anytype) f64 {
         return @import("evaluation.zig").evaluate(self, values);
+    }
+
+    pub fn evalInto(comptime self: Expr, output: *f64, values: anytype) void {
+        return @import("evaluation.zig").evaluateInto(self, output, values);
     }
 
     pub fn render(comptime self: Expr) []const u8 {
@@ -210,10 +217,13 @@ pub fn nodeEqual(left: Node, right: Node) bool {
         .mul => |binary| binaryEqual(binary, right.mul),
         .div => |binary| binaryEqual(binary, right.div),
         .pow => |power| power.base == right.pow.base and
-            power.exponent == right.pow.exponent,
+            power.exponent.eql(right.pow.exponent),
         .negate => |child| child == right.negate,
         .sin => |child| child == right.sin,
         .cos => |child| child == right.cos,
+        .tan => |child| child == right.tan,
+        .atan => |child| child == right.atan,
+        .abs => |child| child == right.abs,
         .exp => |child| child == right.exp,
         .ln => |child| child == right.ln,
     };

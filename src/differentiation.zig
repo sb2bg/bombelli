@@ -1,6 +1,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const build = @import("builder.zig");
+const exact = @import("exact.zig");
 
 pub fn differentiate(comptime expression: ast.Expr, comptime variable: []const u8) ast.Expr {
     var builder = build.Builder{};
@@ -67,10 +68,15 @@ const Context = struct {
                 break :blk self.builder.div(numerator, denominator);
             },
             .pow => |power| blk: {
-                if (power.exponent == 0) break :blk self.builder.integer(0);
-                const coefficient = self.builder.integer(@intCast(power.exponent));
+                if (power.exponent.isZero()) break :blk self.builder.integer(0);
+                const coefficient = self.builder.rational(power.exponent);
                 const base = self.clone(power.base);
-                const reduced_power = self.builder.power(base, power.exponent - 1);
+                const reduced_exponent = power.exponent.sub(
+                    exact.Rational.fromInteger(1),
+                ) catch @compileError(
+                    "Bombelli derivative exponent exceeds fixed-width rational range",
+                );
+                const reduced_power = self.builder.power(base, reduced_exponent);
                 const base_derivative = self.derivative(power.base);
                 const coefficient_times_power = self.builder.mul(
                     coefficient,
@@ -91,6 +97,23 @@ const Context = struct {
                 const sine = self.builder.sine(child_copy);
                 const negative_sine = self.builder.negate(sine);
                 break :blk self.builder.mul(negative_sine, self.derivative(child));
+            },
+            .tan => |child| blk: {
+                const cosine = self.builder.cosine(self.clone(child));
+                const denominator = self.builder.power(cosine, 2);
+                break :blk self.builder.div(self.derivative(child), denominator);
+            },
+            .atan => |child| blk: {
+                const child_copy = self.clone(child);
+                const square = self.builder.power(child_copy, 2);
+                const denominator = self.builder.add(self.builder.integer(1), square);
+                break :blk self.builder.div(self.derivative(child), denominator);
+            },
+            .abs => |child| blk: {
+                const child_copy = self.clone(child);
+                const absolute = self.builder.absolute(child_copy);
+                const slope = self.builder.div(child_copy, absolute);
+                break :blk self.builder.mul(slope, self.derivative(child));
             },
             .exp => |child| blk: {
                 const child_copy = self.clone(child);
@@ -141,6 +164,9 @@ const Context = struct {
             .negate => |child| self.builder.negate(self.clone(child)),
             .sin => |child| self.builder.sine(self.clone(child)),
             .cos => |child| self.builder.cosine(self.clone(child)),
+            .tan => |child| self.builder.tangent(self.clone(child)),
+            .atan => |child| self.builder.arctangent(self.clone(child)),
+            .abs => |child| self.builder.absolute(self.clone(child)),
             .exp => |child| self.builder.exponential(self.clone(child)),
             .ln => |child| self.builder.logarithm(self.clone(child)),
         };

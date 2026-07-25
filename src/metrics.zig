@@ -116,7 +116,7 @@ fn validateChildren(
             validateChild(binary.right, parent_index);
         },
         .pow => |power| validateChild(power.base, parent_index),
-        .negate, .sin, .cos, .exp, .ln => |child| {
+        .negate, .sin, .cos, .tan, .atan, .abs, .exp, .ln => |child| {
             validateChild(child, parent_index);
         },
     }
@@ -147,7 +147,7 @@ fn markReachable(
             markReachable(nodes, binary.right, reachable);
         },
         .pow => |power| markReachable(nodes, power.base, reachable),
-        .negate, .sin, .cos, .exp, .ln => |child| {
+        .negate, .sin, .cos, .tan, .atan, .abs, .exp, .ln => |child| {
             markReachable(nodes, child, reachable);
         },
     }

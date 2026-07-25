@@ -6,6 +6,14 @@ pub inline fn evaluate(comptime expression: ast.Expr, values: anytype) f64 {
     return results[@intCast(expression.root)];
 }
 
+pub inline fn evaluateInto(
+    comptime expression: ast.Expr,
+    output: *f64,
+    values: anytype,
+) void {
+    output.* = evaluate(expression, values);
+}
+
 pub inline fn evaluateVector(
     comptime N: usize,
     comptime expression: ast.ExprVector(N),
@@ -81,6 +89,9 @@ inline fn evaluateNodes(comptime nodes: []const ast.Node, values: anytype) [node
             .negate => |child| -results[@intCast(child)],
             .sin => |child| @sin(results[@intCast(child)]),
             .cos => |child| @cos(results[@intCast(child)]),
+            .tan => |child| @tan(results[@intCast(child)]),
+            .atan => |child| std.math.atan(results[@intCast(child)]),
+            .abs => |child| @abs(results[@intCast(child)]),
             .exp => |child| @exp(results[@intCast(child)]),
             .ln => |child| @log(results[@intCast(child)]),
         };
@@ -165,11 +176,35 @@ inline fn symbolValue(comptime name: []const u8, values: anytype) f64 {
     };
 }
 
-inline fn integerPower(base: f64, comptime exponent: u32) f64 {
+inline fn integerPower(base: f64, comptime exponent: @import("exact.zig").Rational) f64 {
+    if (exponent.numerator == 0) return 1.0;
+    if (exponent.numerator == 1 and exponent.denominator == 1) return base;
+
+    if (exponent.denominator == 1) {
+        const magnitude: u64 = @intCast(if (exponent.numerator < 0)
+            -@as(i128, exponent.numerator)
+        else
+            exponent.numerator);
+        const powered = unsignedIntegerPower(base, magnitude);
+        return if (exponent.numerator < 0) 1.0 / powered else powered;
+    }
+
+    const magnitude = std.math.pow(
+        f64,
+        @abs(base),
+        @as(f64, @floatFromInt(exponent.numerator)) /
+            @as(f64, @floatFromInt(exponent.denominator)),
+    );
+    if (base >= 0.0) return magnitude;
+    if (exponent.denominator % 2 == 0) return std.math.nan(f64);
+    return if (@mod(exponent.numerator, 2) == 0) magnitude else -magnitude;
+}
+
+inline fn unsignedIntegerPower(base: f64, comptime exponent: u64) f64 {
     if (exponent == 0) return 1.0;
     if (exponent == 1) return base;
 
-    const half = integerPower(base, exponent / 2);
+    const half = unsignedIntegerPower(base, exponent / 2);
     const square = half * half;
     return if (exponent % 2 == 0) square else square * base;
 }

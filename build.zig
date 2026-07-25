@@ -33,7 +33,7 @@ pub fn build(b: *std.Build) void {
             .expected = "Bombelli eval input is missing the field '.y'",
             .source_diagnostic = false,
         },
-        .{ .path = "tests/compile_fail/invalid_exponent.zig", .expected = "power exponent must be a non-negative integer literal" },
+        .{ .path = "tests/compile_fail/invalid_exponent.zig", .expected = "power exponent must be an exact rational literal" },
         .{ .path = "tests/compile_fail/missing_parenthesis.zig", .expected = "missing closing parenthesis" },
         .{ .path = "tests/compile_fail/unknown_function.zig", .expected = "unknown function" },
         .{ .path = "tests/compile_fail/power_chaining.zig", .expected = "power chaining is not supported; parenthesize the base" },
@@ -55,6 +55,11 @@ pub fn build(b: *std.Build) void {
         .{
             .path = "tests/compile_fail/rational_fold_overflow.zig",
             .expected = "exact rational constant folding exceeds fixed-width range",
+            .source_diagnostic = false,
+        },
+        .{
+            .path = "tests/compile_fail/rational_power_domain.zig",
+            .expected = "even-denominator rational power is not real for a negative base",
             .source_diagnostic = false,
         },
         .{

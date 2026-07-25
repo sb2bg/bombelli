@@ -5,7 +5,7 @@ const diagnostic = @import("diagnostic.zig");
 const exact = @import("exact.zig");
 
 const BinaryOperation = enum { add, sub, mul, div };
-const Function = enum { sin, cos, exp, ln };
+const Function = enum { sin, cos, tan, atan, abs, exp, ln };
 
 pub fn simplify(comptime expression: ast.Expr) ast.Expr {
     var current = expression;
@@ -108,6 +108,24 @@ const Context = struct {
                 self.simplifyNode(child),
                 self.expression.source,
             ),
+            .tan => |child| simplifyFunction(
+                self.builder,
+                .tan,
+                self.simplifyNode(child),
+                self.expression.source,
+            ),
+            .atan => |child| simplifyFunction(
+                self.builder,
+                .atan,
+                self.simplifyNode(child),
+                self.expression.source,
+            ),
+            .abs => |child| simplifyFunction(
+                self.builder,
+                .abs,
+                self.simplifyNode(child),
+                self.expression.source,
+            ),
             .exp => |child| simplifyFunction(
                 self.builder,
                 .exp,
@@ -154,10 +172,16 @@ const Context = struct {
                     }
                 },
                 .pow => |power| {
+                    if (power.exponent.denominator != 1 or
+                        power.exponent.numerator <= 0 or
+                        power.exponent.numerator > std.math.maxInt(u32))
+                    {
+                        continue;
+                    }
                     factor_workspace[index] = 0;
                     const weighted_exponent = checkedU32Mul(
                         weight,
-                        power.exponent,
+                        @intCast(power.exponent.numerator),
                     ) orelse return orderedMul(self.builder, left, right);
                     if (!addFactorWeight(
                         &factor_workspace,
@@ -192,7 +216,7 @@ const Context = struct {
                 const powered = simplifyPower(
                     self.builder,
                     factor,
-                    multiplicity,
+                    exact.Rational.fromInteger(multiplicity),
                     self.expression.source,
                 );
                 coefficient = if (coefficient) |current|
@@ -297,21 +321,42 @@ fn simplifyDiv(
 fn simplifyPower(
     builder: *build.Builder,
     base: ast.NodeId,
-    exponent: u32,
+    exponent: exact.Rational,
     comptime source: []const u8,
 ) ast.NodeId {
-    if (exponent == 0) return builder.integer(1);
-    if (exponent == 1) return base;
+    if (exponent.isZero()) return builder.integer(1);
+    if (exponent.isOne()) return base;
+    if (isZero(builder, base) and exponent.numerator < 0) {
+        foldFailure(
+            source,
+            operatorPosition(source, '^'),
+            "zero cannot be raised to a negative power",
+        );
+    }
 
     return switch (builder.node(base)) {
-        .integer => |value| builder.integer(integerPower(value, exponent, source)),
-        .rational => |value| builder.rational(
-            value.powUnsigned(exponent) catch
-                exactFoldFailure(source, error.Overflow),
-        ),
+        .integer => |value| if (exponent.isInteger())
+            builder.rational(
+                exact.Rational.fromInteger(value)
+                    .powInteger(exponent.numerator) catch
+                    foldFailure(
+                        source,
+                        operatorPosition(source, '^'),
+                        "integer constant folding exceeds i64 range",
+                    ),
+            )
+        else
+            builder.power(base, exponent),
+        .rational => |value| if (exponent.isInteger())
+            builder.rational(
+                value.powInteger(exponent.numerator) catch |err|
+                    exactFoldFailure(source, err),
+            )
+        else
+            builder.power(base, exponent),
         .float => |value| normalizedFloat(
             builder,
-            floatPower(value, exponent),
+            realPower(value, exponent, source),
             source,
             operatorPosition(source, '^'),
         ),
@@ -351,23 +396,60 @@ fn simplifyFunction(
     child: ast.NodeId,
     comptime source: []const u8,
 ) ast.NodeId {
-    if (constantValue(builder, child)) |value| {
+    if (exactValue(builder, child)) |value| {
+        const position = functionPosition(source, @tagName(function));
+        if (function == .ln and value.numerator <= 0) {
+            foldFailure(source, position, "ln is undefined for non-positive constants");
+        }
+
+        if (function == .abs) {
+            return builder.rational(
+                value.abs() catch exactFoldFailure(source, error.Overflow),
+            );
+        }
+        if (value.isZero()) {
+            return switch (function) {
+                .sin, .tan, .atan => builder.integer(0),
+                .cos, .exp => builder.integer(1),
+                .ln => unreachable,
+                .abs => builder.integer(0),
+            };
+        }
+        if (function == .ln and value.isOne()) return builder.integer(0);
+        return makeFunction(builder, function, child);
+    }
+
+    if (builder.node(child) == .float) {
+        const value = builder.node(child).float;
         const position = functionPosition(source, @tagName(function));
         if (function == .ln and value <= 0.0) {
             foldFailure(source, position, "ln is undefined for non-positive constants");
         }
-
         return normalizedFloat(builder, switch (function) {
             .sin => @sin(value),
             .cos => @cos(value),
+            .tan => @tan(value),
+            .atan => std.math.atan(value),
+            .abs => @abs(value),
             .exp => @exp(value),
             .ln => @log(value),
         }, source, position);
     }
 
+    return makeFunction(builder, function, child);
+}
+
+fn makeFunction(
+    builder: *build.Builder,
+    comptime function: Function,
+    child: ast.NodeId,
+) ast.NodeId {
     return switch (function) {
         .sin => builder.sine(child),
         .cos => builder.cosine(child),
+        .tan => builder.tangent(child),
+        .atan => builder.arctangent(child),
+        .abs => builder.absolute(child),
         .exp => builder.exponential(child),
         .ln => builder.logarithm(child),
     };
@@ -513,15 +595,29 @@ fn integerPower(
     return result;
 }
 
-fn floatPower(base: f64, exponent: u32) f64 {
-    var result: f64 = 1.0;
-    var factor = base;
-    var remaining = exponent;
-    while (remaining != 0) : (remaining /= 2) {
-        if (remaining % 2 == 1) result *= factor;
-        if (remaining > 1) factor *= factor;
+fn realPower(
+    base: f64,
+    exponent: exact.Rational,
+    comptime source: []const u8,
+) f64 {
+    if (base == 0.0 and exponent.numerator < 0) {
+        foldFailure(source, operatorPosition(source, '^'), "zero cannot be raised to a negative power");
     }
-    return result;
+    if (base < 0.0 and exponent.denominator % 2 == 0) {
+        foldFailure(
+            source,
+            operatorPosition(source, '^'),
+            "even-denominator rational power is not real for a negative base",
+        );
+    }
+
+    const magnitude = std.math.pow(
+        f64,
+        @abs(base),
+        exponent.toF64(),
+    );
+    if (base >= 0.0 or exponent.denominator % 2 == 0) return magnitude;
+    return if (@mod(exponent.numerator, 2) == 0) magnitude else -magnitude;
 }
 
 fn checkedIntegerAdd(
@@ -644,12 +740,18 @@ fn less(builder: *const build.Builder, left: ast.NodeId, right: ast.NodeId) bool
             @as(u64, @bitCast(value)) < @as(u64, @bitCast(right_node.float)),
         .symbol => |name| std.mem.order(u8, name, right_node.symbol) == .lt,
         .pow => |power| if (power.base == right_node.pow.base)
-            power.exponent < right_node.pow.exponent
+            if (power.exponent.numerator != right_node.pow.exponent.numerator)
+                power.exponent.numerator < right_node.pow.exponent.numerator
+            else
+                power.exponent.denominator < right_node.pow.exponent.denominator
         else
             less(builder, power.base, right_node.pow.base),
         .mul => |binary| lessBinary(builder, binary, right_node.mul),
         .sin => |child| less(builder, child, right_node.sin),
         .cos => |child| less(builder, child, right_node.cos),
+        .tan => |child| less(builder, child, right_node.tan),
+        .atan => |child| less(builder, child, right_node.atan),
+        .abs => |child| less(builder, child, right_node.abs),
         .exp => |child| less(builder, child, right_node.exp),
         .ln => |child| less(builder, child, right_node.ln),
         .negate => |child| less(builder, child, right_node.negate),
@@ -674,11 +776,14 @@ fn rank(node: ast.Node) u8 {
         .mul => 5,
         .sin => 6,
         .cos => 7,
-        .exp => 8,
-        .ln => 9,
-        .negate => 10,
-        .add => 11,
-        .sub => 12,
-        .div => 13,
+        .tan => 8,
+        .atan => 9,
+        .abs => 10,
+        .exp => 11,
+        .ln => 12,
+        .negate => 13,
+        .add => 14,
+        .sub => 15,
+        .div => 16,
     };
 }
