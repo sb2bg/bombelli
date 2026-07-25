@@ -201,6 +201,17 @@ pub fn build(b: *std.Build) void {
     );
     differential_step.dependOn(&differential.step);
 
+    const emission_validation = b.addSystemCommand(&.{
+        "python3",
+        "tests/codegen/validate_emission.py",
+    });
+    emission_validation.setName("standalone Zig emission validation");
+    const emission_step = b.step(
+        "test-emission",
+        "Generate and execute standalone emitted Zig",
+    );
+    emission_step.dependOn(&emission_validation.step);
+
     const example = b.addExecutable(.{
         .name = "bombelli-example",
         .root_module = b.createModule(.{
