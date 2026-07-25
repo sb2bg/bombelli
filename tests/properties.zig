@@ -13,6 +13,7 @@ test "canonicalization is idempotent and canonical rendering round trips" {
         "x + x + y/3 + y/6",
         "(x + y) + (2*x - 3*y)",
         "x * (y * x) * (x^2)",
+        "1 + (-2/3)*x*y*(x+y)",
         "(x^2 + 1)^(-2) + 3/7",
         "sin(x*y) + cos(x+y) + exp(x/3-y/4)",
         "ln(x^2 + 2) + atan(x-y) + sqrt(x^2+1)",

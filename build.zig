@@ -172,6 +172,17 @@ pub fn build(b: *std.Build) void {
     property_step.dependOn(&run_property_tests.step);
     test_step.dependOn(property_step);
 
+    const differential = b.addSystemCommand(&.{
+        "python3",
+        "tests/differential_sympy.py",
+    });
+    differential.setName("SymPy differential validation");
+    const differential_step = b.step(
+        "differential",
+        "Run seeded differential validation against SymPy",
+    );
+    differential_step.dependOn(&differential.step);
+
     const example = b.addExecutable(.{
         .name = "bombelli-example",
         .root_module = b.createModule(.{

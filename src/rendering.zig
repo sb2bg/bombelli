@@ -287,7 +287,7 @@ fn negativeMagnitude(
                 coefficient_node.integer;
             if (numerator == std.math.minInt(i64)) break :blk null;
             const magnitude_numerator = -numerator;
-            var magnitude = if (magnitude_numerator == 1)
+            var magnitude: []const u8 = if (magnitude_numerator == 1)
                 renderChild(expression, operands[1], .mul_right, rendered)
             else
                 std.fmt.comptimePrint(
