@@ -681,6 +681,19 @@ test "normalized rational functions preserve denominator conditions" {
     );
 }
 
+test "sparse polynomials support exact multivariate division" {
+    const dividend = comptime expr("a*b + a*c").asPolynomial();
+    const divisor = comptime expr("a").asPolynomial();
+    const quotient = comptime dividend.divideExact(divisor).?;
+    try std.testing.expect(
+        comptime quotient.eql(expr("b + c").asPolynomial()),
+    );
+    try std.testing.expect(
+        comptime expr("a + b").asPolynomial()
+            .divideExact(expr("a").asPolynomial()) == null,
+    );
+}
+
 test "equations and systems preserve statements and explicit unknowns" {
     const parsed = comptime equation("x + 1 = y");
     try std.testing.expectEqualStrings("x + 1 = y", comptime parsed.render());
@@ -801,6 +814,57 @@ test "symbolic Bareiss solving records the determinant pivot condition" {
     });
     try std.testing.expectApproxEqAbs(3.0, values[0], 1e-12);
     try std.testing.expectApproxEqAbs(1.0, values[1], 1e-12);
+}
+
+test "fraction-free Bareiss diagonalizes general symbolic square systems" {
+    const symbolic_problem = comptime system(.{
+        "a*x + y + z = e",
+        "x + b*y + z = f",
+        "x + y + c*z = g",
+    }, .{
+        .unknowns = .{ .x, .y, .z },
+        .domain = .real,
+    });
+    const result = comptime symbolic_problem.solve(.bareiss);
+    try std.testing.expect(result == .conditional);
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        result.conditional.conditions.len,
+    );
+    const inputs = .{
+        .a = 2.0,
+        .b = 3.0,
+        .c = 4.0,
+        .e = 7.0,
+        .f = 10.0,
+        .g = 15.0,
+    };
+    try std.testing.expectEqual(
+        @as(f64, 17.0),
+        result.conditional.conditions[0].expression.eval(inputs),
+    );
+    try std.testing.expectEqualDeep(
+        [3]f64{ 1.0, 2.0, 3.0 },
+        result.conditional.values.eval(inputs),
+    );
+
+    const row_swap = comptime system(.{
+        "y = e",
+        "a*x + b*y = f",
+    }, .{
+        .unknowns = .{ .x, .y },
+        .domain = .real,
+    }).solve(.bareiss);
+    try std.testing.expect(row_swap == .conditional);
+    try std.testing.expectEqualDeep(
+        [2]f64{ 3.0, 2.0 },
+        row_swap.conditional.values.eval(.{
+            .a = 2.0,
+            .b = 1.0,
+            .e = 2.0,
+            .f = 8.0,
+        }),
+    );
 }
 
 test "polynomial equation solver returns exact and radical branches" {

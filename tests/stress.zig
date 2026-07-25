@@ -78,6 +78,14 @@ const symbolic_system_problem = bombelli.system(.{
     .domain = .real,
 });
 const symbolic_system_solution = symbolic_system_problem.solve(.bareiss);
+const symbolic_system_3x3 = bombelli.system(.{
+    "a*x + y + z = e",
+    "x + b*y + z = f",
+    "x + y + c*z = g",
+}, .{
+    .unknowns = .{ .x, .y, .z },
+    .domain = .real,
+}).solve(.bareiss);
 const repeated_parts_integral = bombelli.expr(
     "x^8 * exp(2*x + 1)",
 ).integrate(.{
@@ -224,6 +232,11 @@ test "exact and symbolic coefficient systems retain shared solution DAGs" {
         @as(usize, 1),
         symbolic_system_solution.conditional.conditions.len,
     );
+
+    const symbolic_3x3_metrics =
+        comptime symbolic_system_3x3.conditional.values.metrics();
+    report("symbolic-system-3x3", "solution", symbolic_3x3_metrics);
+    try expectMeasuredVector(3, symbolic_3x3_metrics);
 }
 
 test "repeated integration by parts stays bounded" {

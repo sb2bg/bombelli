@@ -287,56 +287,83 @@ fn solveSymbolic(
     comptime problem_domain: domain.Domain,
 ) solution.SolutionSet(N) {
     _ = problem_domain;
-    if (M == 1 and N == 1) {
-        const value = rational_function.fromPolynomials(
-            rhs[0],
-            coefficients[0][0],
-        ).toExpr();
-        const values = multi.vector(1, .{value});
-        const condition = solution.Condition{
-            .expression = coefficients[0][0].toExpr(),
-            .relation = .nonzero,
-        };
-        return .{ .conditional = .{
-            .values = values,
-            .conditions = &.{condition},
-        } };
+    if (M != N) {
+        @compileError("Bombelli symbolic Bareiss elimination currently requires a square system");
     }
-    if (M == 2 and N == 2) {
-        const determinant = coefficients[0][0].mul(coefficients[1][1]).sub(
-            coefficients[0][1].mul(coefficients[1][0]),
-        );
-        if (determinant.terms.len == 0) {
-            @compileError("Bombelli symbolic Bareiss elimination found an identically zero determinant");
+
+    var matrix: [N][N + 1]polynomial.Polynomial = undefined;
+    inline for (0..N) |row| {
+        inline for (0..N) |column| {
+            matrix[row][column] = coefficients[row][column];
         }
-        // These are the two fraction-free 2x2 elimination numerators.
-        const first_numerator = rhs[0].mul(coefficients[1][1]).sub(
-            coefficients[0][1].mul(rhs[1]),
-        );
-        const second_numerator = coefficients[0][0].mul(rhs[1]).sub(
-            rhs[0].mul(coefficients[1][0]),
-        );
-        const expressions = [2]ast.Expr{
-            rational_function.fromPolynomials(
-                first_numerator,
-                determinant,
-            ).toExpr(),
-            rational_function.fromPolynomials(
-                second_numerator,
-                determinant,
-            ).toExpr(),
-        };
-        const values = multi.vector(2, expressions);
-        const condition = solution.Condition{
-            .expression = determinant.toExpr(),
-            .relation = .nonzero,
-        };
-        return .{ .conditional = .{
-            .values = values,
-            .conditions = &.{condition},
-        } };
+        matrix[row][N] = rhs[row];
     }
-    @compileError("Bombelli symbolic Bareiss elimination currently supports 1x1 and 2x2 systems");
+    var previous_pivot = polynomial.exactConstant(
+        exact.Rational.fromInteger(1),
+    );
+
+    for (0..N) |pivot_index| {
+        var pivot_row: ?usize = null;
+        for (pivot_index..N) |candidate| {
+            if (matrix[candidate][pivot_index].terms.len != 0) {
+                pivot_row = candidate;
+                break;
+            }
+        }
+        if (pivot_row == null) {
+            @compileError("Bombelli symbolic Bareiss elimination found an identically singular coefficient matrix");
+        }
+        if (pivot_row.? != pivot_index) {
+            const temporary = matrix[pivot_index];
+            matrix[pivot_index] = matrix[pivot_row.?];
+            matrix[pivot_row.?] = temporary;
+        }
+
+        const old = matrix;
+        const pivot = old[pivot_index][pivot_index];
+        for (0..N) |row| {
+            if (row == pivot_index) continue;
+            for (0..N + 1) |column| {
+                if (column == pivot_index) continue;
+                const numerator = pivot.mul(old[row][column]).sub(
+                    old[row][pivot_index].mul(old[pivot_index][column]),
+                );
+                matrix[row][column] = numerator.divideExact(
+                    previous_pivot,
+                ) orelse @compileError(
+                    "Bombelli Bareiss division was not exact in the polynomial coefficient domain",
+                );
+            }
+            matrix[row][pivot_index] = polynomial.exactConstant(
+                exact.Rational.fromInteger(0),
+            );
+        }
+        previous_pivot = pivot;
+    }
+
+    const determinant = matrix[0][0];
+    if (determinant.terms.len == 0) {
+        @compileError("Bombelli symbolic Bareiss elimination found an identically zero determinant");
+    }
+    var expressions: [N]ast.Expr = undefined;
+    inline for (0..N) |row| {
+        if (!matrix[row][row].eql(determinant)) {
+            @compileError("Bombelli fraction-free diagonalization produced inconsistent determinant pivots");
+        }
+        expressions[row] = rational_function.fromPolynomials(
+            matrix[row][N],
+            determinant,
+        ).toExpr();
+    }
+    const values = multi.vector(N, expressions);
+    const condition = solution.Condition{
+        .expression = determinant.toExpr(),
+        .relation = .nonzero,
+    };
+    return .{ .conditional = .{
+        .values = values,
+        .conditions = &.{condition},
+    } };
 }
 
 fn valuePolynomial(comptime value: anytype) polynomial.Polynomial {

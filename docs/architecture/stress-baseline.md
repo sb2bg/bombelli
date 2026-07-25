@@ -87,6 +87,7 @@ operand edges.
 | Canonical 32-factor product | Simplified | 33 | 32 | 63 | 961 | 1,232 |
 | Four-variable degree-8 polynomial | Expanded | 207 | 802 | 368 | 656 | 9,880 |
 | Degree-8 polynomial × exponential | Integrated | 53 | 60 | 61 | 963 | 1,984 |
+| Symbolic-coefficient 3×3 system | Bareiss solution | 36 | 47 | 36 | 988 | 1,428 |
 
 The polynomial expansion initially exposed a separate algorithmic construction
 peak: multiplying sparse intermediates queued 1,225 pair products even though
@@ -105,6 +106,8 @@ array is not the planned response.
 The first exact-system and bounded-integration workloads do not move that
 boundary: a symbolic 2×2 solution finishes at 20 nodes, while eight terminating
 integration-by-parts steps finish at 53 nodes with a 61-node construction peak.
+General fraction-free symbolic Bareiss elimination remains similarly compact:
+the measured 3×3 conditional solution finishes at 36 nodes.
 
 The ten-factor derivative gives a direct before-and-after comparison: its
 stored representation fell from 255 nodes to the same 58 unique nodes the old

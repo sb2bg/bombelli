@@ -87,6 +87,54 @@ pub const Polynomial = struct {
         return result;
     }
 
+    pub fn divideExact(
+        comptime self: Polynomial,
+        comptime divisor_input: Polynomial,
+    ) ?Polynomial {
+        if (divisor_input.terms.len == 0) {
+            @compileError("Bombelli exact polynomial division by zero");
+        }
+        const common_variables = comptime unionVariables(
+            self.variable_names,
+            divisor_input.variable_names,
+        );
+        var remainder = alignTo(self, common_variables);
+        const divisor = alignTo(divisor_input, common_variables);
+        var quotient = zero(common_variables);
+        var steps: usize = 0;
+        while (remainder.terms.len != 0) {
+            if (steps == term_limit) {
+                @compileError("Bombelli exact polynomial division did not terminate within the term limit");
+            }
+            const remainder_leading = remainder.terms[0];
+            const divisor_leading = divisor.terms[0];
+            var quotient_raw = RawTerm{
+                .coefficient = remainder_leading.coefficient.div(
+                    divisor_leading.coefficient,
+                ) catch exactCapacityFailure(),
+                .exponents = [_]u32{0} ** variable_limit,
+            };
+            for (0..common_variables.len) |index| {
+                if (remainder_leading.exponents[index] <
+                    divisor_leading.exponents[index])
+                {
+                    return null;
+                }
+                quotient_raw.exponents[index] =
+                    remainder_leading.exponents[index] -
+                    divisor_leading.exponents[index];
+            }
+            const quotient_term = finish(
+                common_variables,
+                &.{quotient_raw},
+            );
+            quotient = quotient.add(quotient_term);
+            remainder = remainder.sub(quotient_term.mul(divisor));
+            steps += 1;
+        }
+        return quotient;
+    }
+
     pub fn degree(comptime self: Polynomial) ?u32 {
         if (self.terms.len == 0) return null;
         var maximum: u32 = 0;
