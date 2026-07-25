@@ -1,4 +1,5 @@
 const std = @import("std");
+const exact = @import("exact.zig");
 
 pub const construction_node_limit = 1024;
 pub const NodeId = u32;
@@ -15,7 +16,8 @@ pub const Power = struct {
 };
 
 pub const Node = union(enum) {
-    integer: i64,
+    integer: exact.Integer,
+    rational: exact.Rational,
     float: f64,
     symbol: []const u8,
     add: Binary,
@@ -199,6 +201,7 @@ pub fn nodeEqual(left: Node, right: Node) bool {
 
     return switch (left) {
         .integer => |value| value == right.integer,
+        .rational => |value| value.eql(right.rational),
         .float => |value| @as(u64, @bitCast(value)) ==
             @as(u64, @bitCast(right.float)),
         .symbol => |name| std.mem.eql(u8, name, right.symbol),

@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const exact = @import("exact.zig");
 
 const hash_table_size = ast.construction_node_limit * 2;
 const hash_mask = hash_table_size - 1;
@@ -20,6 +21,11 @@ pub const Builder = struct {
 
     pub fn integer(self: *Builder, value: i64) ast.NodeId {
         return self.intern(.{ .integer = value });
+    }
+
+    pub fn rational(self: *Builder, value: exact.Rational) ast.NodeId {
+        if (value.denominator == 1) return self.integer(value.numerator);
+        return self.intern(.{ .rational = value });
     }
 
     pub fn float(self: *Builder, value: f64) ast.NodeId {
@@ -220,7 +226,7 @@ fn markReachable(
     reachable[index] = true;
 
     switch (builder.node(id)) {
-        .integer, .float, .symbol => {},
+        .integer, .rational, .float, .symbol => {},
         .add, .sub, .mul, .div => |binary| {
             markReachable(builder, binary.left, reachable);
             markReachable(builder, binary.right, reachable);
@@ -238,6 +244,7 @@ fn remapNode(
 ) ast.Node {
     return switch (node_value) {
         .integer => |value| .{ .integer = value },
+        .rational => |value| .{ .rational = value },
         .float => |value| .{ .float = value },
         .symbol => |name| .{ .symbol = name },
         .add => |binary| .{ .add = remapBinary(binary, remap) },
@@ -270,6 +277,10 @@ fn hashNode(node_value: ast.Node) u64 {
     var hash = mix(0xcbf29ce484222325, @intFromEnum(std.meta.activeTag(node_value)));
     return switch (node_value) {
         .integer => |value| mix(hash, @as(u64, @bitCast(value))),
+        .rational => |value| mix(
+            mix(hash, @as(u64, @bitCast(value.numerator))),
+            value.denominator,
+        ),
         .float => |value| mix(hash, @as(u64, @bitCast(value))),
         .symbol => |name| blk: {
             for (name) |byte| hash = mix(hash, byte);

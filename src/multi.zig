@@ -193,6 +193,7 @@ fn cloneNodes(
 
     const result = switch (nodes[index]) {
         .integer => |value| builder.integer(value),
+        .rational => |value| builder.rational(value),
         .float => |value| builder.float(value),
         .symbol => |name| builder.symbol(name),
         .add => |binary| builder.add(

@@ -110,7 +110,7 @@ fn validateChildren(
     comptime parent_index: usize,
 ) void {
     switch (node_value) {
-        .integer, .float, .symbol => {},
+        .integer, .rational, .float, .symbol => {},
         .add, .sub, .mul, .div => |binary| {
             validateChild(binary.left, parent_index);
             validateChild(binary.right, parent_index);
@@ -141,7 +141,7 @@ fn markReachable(
     reachable[index] = true;
 
     switch (nodes[index]) {
-        .integer, .float, .symbol => {},
+        .integer, .rational, .float, .symbol => {},
         .add, .sub, .mul, .div => |binary| {
             markReachable(nodes, binary.left, reachable);
             markReachable(nodes, binary.right, reachable);

@@ -33,7 +33,7 @@ const Context = struct {
         }
 
         const result = switch (self.expression.node(id)) {
-            .integer, .float => self.builder.integer(0),
+            .integer, .rational, .float => self.builder.integer(0),
             .symbol => |name| self.builder.integer(
                 if (std.mem.eql(u8, name, self.variable)) 1 else 0,
             ),
@@ -115,6 +115,7 @@ const Context = struct {
 
         const result = switch (self.expression.node(id)) {
             .integer => |value| self.builder.integer(value),
+            .rational => |value| self.builder.rational(value),
             .float => |value| self.builder.float(value),
             .symbol => |name| self.builder.symbol(name),
             .add => |binary| self.builder.add(

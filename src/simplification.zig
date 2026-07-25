@@ -2,6 +2,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const build = @import("builder.zig");
 const diagnostic = @import("diagnostic.zig");
+const exact = @import("exact.zig");
 
 const BinaryOperation = enum { add, sub, mul, div };
 const Function = enum { sin, cos, exp, ln };
@@ -59,6 +60,7 @@ const Context = struct {
 
         const result = switch (self.expression.node(id)) {
             .integer => |value| self.builder.integer(value),
+            .rational => |value| self.builder.rational(value),
             .float => |value| self.builder.float(value),
             .symbol => |name| self.builder.symbol(name),
             .add => |binary| simplifyAdd(
@@ -303,6 +305,10 @@ fn simplifyPower(
 
     return switch (builder.node(base)) {
         .integer => |value| builder.integer(integerPower(value, exponent, source)),
+        .rational => |value| builder.rational(
+            value.powUnsigned(exponent) catch
+                exactFoldFailure(source, error.Overflow),
+        ),
         .float => |value| normalizedFloat(
             builder,
             floatPower(value, exponent),
@@ -325,6 +331,9 @@ fn simplifyNegate(
             }
             break :blk builder.integer(-value);
         },
+        .rational => |value| builder.rational(
+            value.negate() catch exactFoldFailure(source, error.Overflow),
+        ),
         .float => |value| normalizedFloat(
             builder,
             -value,
@@ -382,20 +391,29 @@ fn foldBinary(
             .add => builder.integer(checkedIntegerAdd(a, b, source, position)),
             .sub => builder.integer(checkedIntegerSub(a, b, source, position)),
             .mul => builder.integer(checkedIntegerMul(a, b, source, position)),
-            .div => if (b == 0)
-                null
-            else if (a == std.math.minInt(i64) and b == -1)
-                foldFailure(source, position, "integer constant folding exceeds i64 range")
-            else if (@rem(a, b) == 0)
-                builder.integer(@divExact(a, b))
-            else
-                normalizedFloat(
-                    builder,
-                    @as(f64, @floatFromInt(a)) / @as(f64, @floatFromInt(b)),
-                    source,
-                    position,
-                ),
+            .div => if (b == 0) null else builder.rational(
+                exact.Rational.fromInteger(a)
+                    .div(exact.Rational.fromInteger(b)) catch
+                    foldFailure(
+                        source,
+                        position,
+                        "integer constant folding exceeds i64 range",
+                    ),
+            ),
         };
+    }
+
+    if (exactValue(builder, left)) |a| {
+        if (exactValue(builder, right)) |b| {
+            if (operation == .div and b.isZero()) return null;
+            const folded = switch (operation) {
+                .add => a.add(b),
+                .sub => a.sub(b),
+                .mul => a.mul(b),
+                .div => a.div(b),
+            } catch |err| exactFoldFailure(source, err);
+            return builder.rational(folded);
+        }
     }
 
     const a = constantValue(builder, left) orelse return null;
@@ -412,7 +430,16 @@ fn foldBinary(
 fn constantValue(builder: *const build.Builder, id: ast.NodeId) ?f64 {
     return switch (builder.node(id)) {
         .integer => |value| @floatFromInt(value),
+        .rational => |value| value.toF64(),
         .float => |value| value,
+        else => null,
+    };
+}
+
+fn exactValue(builder: *const build.Builder, id: ast.NodeId) ?exact.Rational {
+    return switch (builder.node(id)) {
+        .integer => |value| exact.Rational.fromInteger(value),
+        .rational => |value| value,
         else => null,
     };
 }
@@ -424,6 +451,7 @@ fn isConstant(builder: *const build.Builder, id: ast.NodeId) bool {
 fn isZero(builder: *const build.Builder, id: ast.NodeId) bool {
     return switch (builder.node(id)) {
         .integer => |value| value == 0,
+        .rational => |value| value.isZero(),
         .float => |value| value == 0.0,
         else => false,
     };
@@ -432,6 +460,7 @@ fn isZero(builder: *const build.Builder, id: ast.NodeId) bool {
 fn isOne(builder: *const build.Builder, id: ast.NodeId) bool {
     return switch (builder.node(id)) {
         .integer => |value| value == 1,
+        .rational => |value| value.isOne(),
         .float => |value| value == 1.0,
         else => false,
     };
@@ -548,6 +577,24 @@ fn foldFailure(
     diagnostic.failExpression(source, message);
 }
 
+fn exactFoldFailure(
+    comptime source: []const u8,
+    err: exact.Error,
+) noreturn {
+    switch (err) {
+        error.ZeroDenominator => foldFailure(
+            source,
+            operatorPosition(source, '/'),
+            "exact rational denominator cannot be zero",
+        ),
+        error.Overflow => foldFailure(
+            source,
+            0,
+            "exact rational constant folding exceeds fixed-width range",
+        ),
+    }
+}
+
 fn operationByte(comptime operation: BinaryOperation) u8 {
     return switch (operation) {
         .add => '+',
@@ -587,6 +634,10 @@ fn less(builder: *const build.Builder, left: ast.NodeId, right: ast.NodeId) bool
 
     return switch (left_node) {
         .integer => |value| value < right_node.integer,
+        .rational => |value| if (value.numerator != right_node.rational.numerator)
+            value.numerator < right_node.rational.numerator
+        else
+            value.denominator < right_node.rational.denominator,
         .float => |value| if (value != right_node.float)
             value < right_node.float
         else
@@ -616,17 +667,18 @@ fn lessBinary(builder: *const build.Builder, left: ast.Binary, right: ast.Binary
 fn rank(node: ast.Node) u8 {
     return switch (node) {
         .integer => 0,
-        .float => 1,
-        .symbol => 2,
-        .pow => 3,
-        .mul => 4,
-        .sin => 5,
-        .cos => 6,
-        .exp => 7,
-        .ln => 8,
-        .negate => 9,
-        .add => 10,
-        .sub => 11,
-        .div => 12,
+        .rational => 1,
+        .float => 2,
+        .symbol => 3,
+        .pow => 4,
+        .mul => 5,
+        .sin => 6,
+        .cos => 7,
+        .exp => 8,
+        .ln => 9,
+        .negate => 10,
+        .add => 11,
+        .sub => 12,
+        .div => 13,
     };
 }

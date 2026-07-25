@@ -63,6 +63,7 @@ inline fn evaluateNodes(comptime nodes: []const ast.Node, values: anytype) [node
     inline for (nodes, 0..) |node, index| {
         results[index] = switch (node) {
             .integer => |value| @floatFromInt(value),
+            .rational => |value| value.toF64(),
             .float => |value| value,
             .symbol => |name| symbolValue(name, values),
             .add => |binary| results[@intCast(binary.left)] +

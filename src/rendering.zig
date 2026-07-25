@@ -71,6 +71,10 @@ fn renderBare(
 ) []const u8 {
     return switch (node) {
         .integer => |value| std.fmt.comptimePrint("{d}", .{value}),
+        .rational => |value| std.fmt.comptimePrint(
+            "{d}/{d}",
+            .{ value.numerator, value.denominator },
+        ),
         .float => |value| renderFloat(value),
         .symbol => |name| name,
         .add => |binary| std.fmt.comptimePrint(
@@ -183,6 +187,7 @@ fn nodePrecedence(node: ast.Node) u8 {
         .negate => 30,
         .pow => 40,
         .integer => |value| if (value < 0) 30 else 50,
+        .rational => |value| if (value.numerator < 0) 30 else 50,
         .float => |value| if (value < 0.0) 30 else 50,
         .symbol, .sin, .cos, .exp, .ln => 50,
     };

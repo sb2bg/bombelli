@@ -1,6 +1,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const parser = @import("parser.zig");
+const exact = @import("exact.zig");
 
 pub const Expr = ast.Expr;
 pub const ExprVector = ast.ExprVector;
@@ -8,9 +9,18 @@ pub const ExprMatrix = ast.ExprMatrix;
 pub const Node = ast.Node;
 pub const NodeId = ast.NodeId;
 pub const Metrics = @import("metrics.zig").Metrics;
+pub const Integer = exact.Integer;
+pub const Rational = exact.Rational;
 
 pub fn expr(comptime source: []const u8) Expr {
     return parser.parse(source);
+}
+
+pub fn rational(comptime numerator: Integer, comptime denominator: Integer) Rational {
+    return Rational.init(numerator, denominator) catch |err| switch (err) {
+        error.ZeroDenominator => @compileError("Bombelli rational denominator cannot be zero"),
+        error.Overflow => @compileError("Bombelli rational does not fit fixed-width storage"),
+    };
 }
 
 pub fn exprVector(comptime sources: anytype) ExprVector(ast.tupleLength(@TypeOf(sources))) {
@@ -350,4 +360,44 @@ test "gradient jacobian and hessian are typed shared programs" {
         .{ 2.0, 1.0 },
         .{ 1.0, 2.0 },
     }, hessian_values);
+}
+
+test "exact rationals have one canonical representation" {
+    try std.testing.expectEqualDeep(
+        Rational{ .numerator = 1, .denominator = 2 },
+        comptime rational(2, 4),
+    );
+    try std.testing.expectEqualDeep(
+        Rational{ .numerator = 1, .denominator = 2 },
+        comptime rational(-2, -4),
+    );
+    try std.testing.expectEqualDeep(
+        Rational{ .numerator = -1, .denominator = 2 },
+        comptime rational(2, -4),
+    );
+    try std.testing.expectEqualDeep(
+        Rational{ .numerator = 0, .denominator = 1 },
+        comptime rational(0, -17),
+    );
+    try std.testing.expectEqualDeep(
+        Rational{ .numerator = 1, .denominator = 1 },
+        comptime rational(std.math.minInt(i64), std.math.minInt(i64)),
+    );
+}
+
+test "exact constants stay rational until numerical evaluation" {
+    const sum = comptime expr("1 / 3 + 1 / 6").simplify();
+    try std.testing.expectEqualStrings("1/2", comptime sum.render());
+    try std.testing.expectEqualDeep(
+        Rational{ .numerator = 1, .denominator = 2 },
+        sum.node(sum.root).rational,
+    );
+    try std.testing.expectApproxEqAbs(0.5, sum.eval(.{}), 0.0);
+
+    const large = comptime expr("9007199254740993 / 3").simplify();
+    try std.testing.expectEqualStrings("3002399751580331", comptime large.render());
+    try std.testing.expectEqual(
+        @as(i64, 3002399751580331),
+        large.node(large.root).integer,
+    );
 }

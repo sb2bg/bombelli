@@ -53,6 +53,11 @@ pub fn build(b: *std.Build) void {
             .source_diagnostic = false,
         },
         .{
+            .path = "tests/compile_fail/rational_fold_overflow.zig",
+            .expected = "exact rational constant folding exceeds fixed-width range",
+            .source_diagnostic = false,
+        },
+        .{
             .path = "tests/compile_fail/ln_domain.zig",
             .expected = "ln is undefined for non-positive constants",
             .source_diagnostic = false,
