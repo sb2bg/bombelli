@@ -9,6 +9,7 @@ pub fn substitute(
     comptime replacements: anytype,
 ) ast.Expr {
     validateReplacements(@TypeOf(replacements));
+    validateReplacementNames(@TypeOf(replacements), expression.nodes);
     var builder = build.Builder{};
     var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
     const root = rebuild(
@@ -48,6 +49,7 @@ pub fn substituteVector(
     comptime replacements: anytype,
 ) ast.ExprVector(N) {
     validateReplacements(@TypeOf(replacements));
+    validateReplacementNames(@TypeOf(replacements), expression.nodes);
     var builder = build.Builder{};
     var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
     var roots: [N]ast.NodeId = undefined;
@@ -70,6 +72,7 @@ pub fn substituteMatrix(
     comptime replacements: anytype,
 ) ast.ExprMatrix(R, C) {
     validateReplacements(@TypeOf(replacements));
+    validateReplacementNames(@TypeOf(replacements), expression.nodes);
     var builder = build.Builder{};
     var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
     var roots: [R][C]ast.NodeId = undefined;
@@ -506,6 +509,27 @@ fn validateReplacements(comptime T: type) void {
     switch (@typeInfo(T)) {
         .@"struct" => {},
         else => @compileError("Bombelli substitution expects a struct of named replacements"),
+    }
+}
+
+fn validateReplacementNames(
+    comptime T: type,
+    comptime nodes: []const ast.Node,
+) void {
+    inline for (@typeInfo(T).@"struct".fields) |field| {
+        var found = false;
+        for (nodes) |node| {
+            if (node == .symbol and std.mem.eql(u8, node.symbol, field.name)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            @compileError(std.fmt.comptimePrint(
+                "Bombelli substitution replacement '.{s}' does not name a symbol in the expression",
+                .{field.name},
+            ));
+        }
     }
 }
 

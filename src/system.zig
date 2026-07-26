@@ -31,8 +31,8 @@ pub fn make(
     const M = comptime ast.tupleLength(@TypeOf(sources));
     const N = comptime ast.tupleLength(@TypeOf(options.unknowns));
     const Assumptions = assumptionsType(@TypeOf(options));
-    if (M == 0) @panic("Bombelli system expects at least one equation");
-    if (N == 0) @panic("Bombelli system requires explicit unknowns");
+    if (M == 0) @compileError("Bombelli system expects at least one equation");
+    if (N == 0) @compileError("Bombelli system requires explicit unknowns");
 
     const equations = comptime blk: {
         var values: [M]equation_module.Equation = undefined;
@@ -55,7 +55,7 @@ pub fn make(
             values[index] = @tagName(unknown);
             for (0..index) |previous| {
                 if (std.mem.eql(u8, values[previous], values[index])) {
-                    @panic("Bombelli system unknowns must be unique");
+                    @compileError("Bombelli system unknowns must be unique");
                 }
             }
         }
@@ -84,11 +84,16 @@ pub fn makeEquationProblem(
 ) {
     const N = comptime ast.tupleLength(@TypeOf(options.unknowns));
     const Assumptions = assumptionsType(@TypeOf(options));
-    if (N == 0) @panic("Bombelli equation problem requires explicit unknowns");
+    if (N == 0) @compileError("Bombelli equation problem requires explicit unknowns");
     const unknowns = comptime blk: {
         var values: [N][]const u8 = undefined;
         for (options.unknowns, 0..) |unknown, index| {
             values[index] = @tagName(unknown);
+            for (0..index) |previous| {
+                if (std.mem.eql(u8, values[previous], values[index])) {
+                    @compileError("Bombelli equation problem unknowns must be unique");
+                }
+            }
         }
         break :blk values;
     };
