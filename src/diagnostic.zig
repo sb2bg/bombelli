@@ -24,13 +24,3 @@ pub fn fail(
         .{ message, safe_position, source[line_start..line_end], spaces[0..] },
     ));
 }
-
-pub fn failExpression(
-    comptime source: []const u8,
-    comptime message: []const u8,
-) noreturn {
-    @compileError(std.fmt.comptimePrint(
-        "{s}\nwhile simplifying:\n{s}",
-        .{ message, source },
-    ));
-}

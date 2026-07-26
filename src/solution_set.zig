@@ -129,10 +129,12 @@ pub fn finiteFromMatrix(
             sources[row * N + column] = values.sources[row][column];
         }
     }
+    const exact_roots = roots[0 .. K * N].*;
+    const exact_sources = sources[0 .. K * N].*;
     return .{
         .nodes = values.nodes,
-        .roots = &roots,
-        .sources = &sources,
+        .roots = &exact_roots,
+        .sources = &exact_sources,
         .branch_count = K,
     };
 }

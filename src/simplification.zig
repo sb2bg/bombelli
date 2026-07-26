@@ -9,7 +9,7 @@ const Function = enum { sin, cos, tan, atan, abs, exp, ln };
 
 pub fn simplify(comptime expression: ast.Expr) ast.Expr {
     var current = expression;
-    var construction_peak_nodes: usize = 0;
+    var construction_peak_nodes = expression.construction_peak_nodes;
     inline for (0..32) |_| {
         var next = simplifyOnce(current);
         construction_peak_nodes = @max(
@@ -29,9 +29,78 @@ pub fn simplify(comptime expression: ast.Expr) ast.Expr {
     );
 }
 
+pub fn simplifyVector(
+    comptime N: usize,
+    comptime expression: ast.ExprVector(N),
+) ast.ExprVector(N) {
+    if (N == 0) @compileError("Bombelli cannot simplify an empty expression vector");
+    var current = expression;
+    var construction_peak_nodes = expression.construction_peak_nodes;
+    inline for (0..32) |_| {
+        var next = simplifyVectorOnce(N, current);
+        construction_peak_nodes = @max(
+            construction_peak_nodes,
+            next.construction_peak_nodes,
+        );
+        if (std.mem.eql(ast.NodeId, &current.roots, &next.roots) and
+            canonicalNodesEqual(current.nodes, next.nodes))
+        {
+            next.construction_peak_nodes = construction_peak_nodes;
+            return next;
+        }
+        current = next;
+    }
+    diagnostic.fail(
+        expression.sources[0],
+        0,
+        "simplification did not converge within 32 passes",
+    );
+}
+
+pub fn simplifyMatrix(
+    comptime R: usize,
+    comptime C: usize,
+    comptime expression: ast.ExprMatrix(R, C),
+) ast.ExprMatrix(R, C) {
+    if (R == 0 or C == 0) {
+        @compileError("Bombelli cannot simplify an empty expression matrix");
+    }
+    var current = expression;
+    var construction_peak_nodes = expression.construction_peak_nodes;
+    inline for (0..32) |_| {
+        var next = simplifyMatrixOnce(R, C, current);
+        construction_peak_nodes = @max(
+            construction_peak_nodes,
+            next.construction_peak_nodes,
+        );
+        if (std.mem.eql(
+            u8,
+            std.mem.asBytes(&current.roots),
+            std.mem.asBytes(&next.roots),
+        ) and canonicalNodesEqual(current.nodes, next.nodes)) {
+            next.construction_peak_nodes = construction_peak_nodes;
+            return next;
+        }
+        current = next;
+    }
+    diagnostic.fail(
+        expression.sources[0][0],
+        0,
+        "simplification did not converge within 32 passes",
+    );
+}
+
 fn canonicalEqual(comptime left: ast.Expr, comptime right: ast.Expr) bool {
-    if (left.root != right.root or left.nodes.len != right.nodes.len) return false;
-    for (left.nodes, right.nodes) |left_node, right_node| {
+    return left.root == right.root and
+        canonicalNodesEqual(left.nodes, right.nodes);
+}
+
+fn canonicalNodesEqual(
+    comptime left: []const ast.Node,
+    comptime right: []const ast.Node,
+) bool {
+    if (left.len != right.len) return false;
+    for (left, right) |left_node, right_node| {
         if (!ast.nodeEqual(left_node, right_node)) return false;
     }
     return true;
@@ -42,23 +111,68 @@ fn simplifyOnce(comptime expression: ast.Expr) ast.Expr {
     var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
     var context = Context{
         .builder = &builder,
-        .expression = expression,
+        .nodes = expression.nodes,
+        .source = expression.source,
         .cache = &cache,
     };
     const root = context.simplifyNode(expression.root);
     return builder.finish(root, expression.source);
 }
 
+fn simplifyVectorOnce(
+    comptime N: usize,
+    comptime expression: ast.ExprVector(N),
+) ast.ExprVector(N) {
+    var builder = build.Builder{};
+    var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
+    var context = Context{
+        .builder = &builder,
+        .nodes = expression.nodes,
+        .source = expression.sources[0],
+        .cache = &cache,
+    };
+    var roots: [N]ast.NodeId = undefined;
+    inline for (expression.roots, 0..) |root, index| {
+        context.source = expression.sources[index];
+        roots[index] = context.simplifyNode(root);
+    }
+    return builder.finishVector(N, roots, expression.sources);
+}
+
+fn simplifyMatrixOnce(
+    comptime R: usize,
+    comptime C: usize,
+    comptime expression: ast.ExprMatrix(R, C),
+) ast.ExprMatrix(R, C) {
+    var builder = build.Builder{};
+    var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
+    var context = Context{
+        .builder = &builder,
+        .nodes = expression.nodes,
+        .source = expression.sources[0][0],
+        .cache = &cache,
+    };
+    var roots: [R][C]ast.NodeId = undefined;
+    inline for (expression.roots, 0..) |row, row_index| {
+        inline for (row, 0..) |root, column_index| {
+            context.source = expression.sources[row_index][column_index];
+            roots[row_index][column_index] = context.simplifyNode(root);
+        }
+    }
+    return builder.finishMatrix(R, C, roots, expression.sources);
+}
+
 const Context = struct {
     builder: *build.Builder,
-    expression: ast.Expr,
+    nodes: []const ast.Node,
+    source: []const u8,
     cache: []ast.NodeId,
 
     fn simplifyNode(self: *Context, id: ast.NodeId) ast.NodeId {
         const index: usize = @intCast(id);
         if (self.cache[index] != ast.invalid_node) return self.cache[index];
 
-        const result = switch (self.expression.node(id)) {
+        const result = switch (self.nodes[index]) {
             .integer => |value| self.builder.integer(value),
             .rational => |value| self.builder.rational(value),
             .float => |value| self.builder.float(value),
@@ -67,7 +181,7 @@ const Context = struct {
                 self.builder,
                 self.simplifyNode(binary.left),
                 self.simplifyNode(binary.right),
-                self.expression.source,
+                self.source,
             ),
             .add_nary => |operands| blk: {
                 var simplified: [ast.construction_node_limit]ast.NodeId = undefined;
@@ -77,14 +191,14 @@ const Context = struct {
                 break :blk canonicalAdd(
                     self.builder,
                     simplified[0..operands.len],
-                    self.expression.source,
+                    self.source,
                 );
             },
             .sub => |binary| simplifySub(
                 self.builder,
                 self.simplifyNode(binary.left),
                 self.simplifyNode(binary.right),
-                self.expression.source,
+                self.source,
             ),
             .mul => |binary| canonicalMul(
                 self.builder,
@@ -92,7 +206,7 @@ const Context = struct {
                     self.simplifyNode(binary.left),
                     self.simplifyNode(binary.right),
                 },
-                self.expression.source,
+                self.source,
             ),
             .mul_nary => |operands| blk: {
                 var simplified: [ast.construction_node_limit]ast.NodeId = undefined;
@@ -102,67 +216,67 @@ const Context = struct {
                 break :blk canonicalMul(
                     self.builder,
                     simplified[0..operands.len],
-                    self.expression.source,
+                    self.source,
                 );
             },
             .div => |binary| simplifyDiv(
                 self.builder,
                 self.simplifyNode(binary.left),
                 self.simplifyNode(binary.right),
-                self.expression.source,
+                self.source,
             ),
             .pow => |power| simplifyPower(
                 self.builder,
                 self.simplifyNode(power.base),
                 power.exponent,
-                self.expression.source,
+                self.source,
             ),
             .negate => |child| simplifyNegate(
                 self.builder,
                 self.simplifyNode(child),
-                self.expression.source,
+                self.source,
             ),
             .sin => |child| simplifyFunction(
                 self.builder,
                 .sin,
                 self.simplifyNode(child),
-                self.expression.source,
+                self.source,
             ),
             .cos => |child| simplifyFunction(
                 self.builder,
                 .cos,
                 self.simplifyNode(child),
-                self.expression.source,
+                self.source,
             ),
             .tan => |child| simplifyFunction(
                 self.builder,
                 .tan,
                 self.simplifyNode(child),
-                self.expression.source,
+                self.source,
             ),
             .atan => |child| simplifyFunction(
                 self.builder,
                 .atan,
                 self.simplifyNode(child),
-                self.expression.source,
+                self.source,
             ),
             .abs => |child| simplifyFunction(
                 self.builder,
                 .abs,
                 self.simplifyNode(child),
-                self.expression.source,
+                self.source,
             ),
             .exp => |child| simplifyFunction(
                 self.builder,
                 .exp,
                 self.simplifyNode(child),
-                self.expression.source,
+                self.source,
             ),
             .ln => |child| simplifyFunction(
                 self.builder,
                 .ln,
                 self.simplifyNode(child),
-                self.expression.source,
+                self.source,
             ),
         };
 
@@ -302,13 +416,17 @@ fn canonicalAdd(
     var result_operands: [ast.construction_node_limit]ast.NodeId = undefined;
     var result_len: usize = 0;
     for (bases[0..term_count], coefficients[0..term_count]) |basis, coefficient| {
-        result_operands[result_len] = makeCoefficientTerm(
-            builder,
-            coefficient,
-            basis,
-            source,
+        appendCanonicalResult(
+            &result_operands,
+            &result_len,
+            makeCoefficientTerm(
+                builder,
+                coefficient,
+                basis,
+                source,
+            ),
+            "addition",
         );
-        result_len += 1;
     }
 
     if (has_approximate_constant) {
@@ -320,12 +438,20 @@ fn canonicalAdd(
             operatorPosition(source, '+'),
         );
         if (!isZero(builder, constant)) {
-            result_operands[result_len] = constant;
-            result_len += 1;
+            appendCanonicalResult(
+                &result_operands,
+                &result_len,
+                constant,
+                "addition",
+            );
         }
     } else if (!exact_constant.isZero()) {
-        result_operands[result_len] = builder.rational(exact_constant);
-        result_len += 1;
+        appendCanonicalResult(
+            &result_operands,
+            &result_len,
+            builder.rational(exact_constant),
+            "addition",
+        );
     }
 
     return switch (result_len) {
@@ -436,20 +562,32 @@ fn canonicalMul(
         );
         if (isZero(builder, folded)) return builder.integer(0);
         if (!isOne(builder, folded)) {
-            result_factors[result_len] = folded;
-            result_len += 1;
+            appendCanonicalResult(
+                &result_factors,
+                &result_len,
+                folded,
+                "multiplication",
+            );
         }
     } else if (!coefficient.isOne()) {
-        result_factors[result_len] = builder.rational(coefficient);
-        result_len += 1;
+        appendCanonicalResult(
+            &result_factors,
+            &result_len,
+            builder.rational(coefficient),
+            "multiplication",
+        );
     }
 
     for (bases[0..factor_count], exponents[0..factor_count]) |base, exponent| {
-        result_factors[result_len] = if (exponent == 1)
-            base
-        else
-            builder.power(base, exact.Rational.fromInteger(exponent));
-        result_len += 1;
+        appendCanonicalResult(
+            &result_factors,
+            &result_len,
+            if (exponent == 1)
+                base
+            else
+                builder.power(base, exact.Rational.fromInteger(exponent)),
+            "multiplication",
+        );
     }
 
     return switch (result_len) {
@@ -457,6 +595,22 @@ fn canonicalMul(
         1 => result_factors[0],
         else => builder.mulNary(result_factors[0..result_len]),
     };
+}
+
+fn appendCanonicalResult(
+    storage: *[ast.construction_node_limit]ast.NodeId,
+    len: *usize,
+    value: ast.NodeId,
+    comptime operation: []const u8,
+) void {
+    if (len.* == storage.len) {
+        @compileError(std.fmt.comptimePrint(
+            "Bombelli canonical {s} exceeds construction workspace",
+            .{operation},
+        ));
+    }
+    storage[len.*] = value;
+    len.* += 1;
 }
 
 const Term = struct {
@@ -603,6 +757,25 @@ fn simplifyPower(
             source,
             operatorPosition(source, '^'),
         ),
+        .pow => |inner| blk: {
+            if (!exponent.isInteger()) break :blk builder.power(base, exponent);
+            const combined = inner.exponent.mul(exponent) catch |err|
+                exactFoldFailure(source, err);
+            // For negative real bases, an even-denominator inner power is
+            // undefined. Preserve that restriction if multiplying exponents
+            // would cancel the even denominator (for example, sqrt(x)^2).
+            if (inner.exponent.denominator % 2 == 0 and
+                combined.denominator % 2 != 0)
+            {
+                break :blk builder.power(base, exponent);
+            }
+            break :blk simplifyPower(
+                builder,
+                inner.base,
+                combined,
+                source,
+            );
+        },
         else => builder.power(base, exponent),
     };
 }
@@ -769,10 +942,6 @@ fn exactValue(builder: *const build.Builder, id: ast.NodeId) ?exact.Rational {
     };
 }
 
-fn isConstant(builder: *const build.Builder, id: ast.NodeId) bool {
-    return constantValue(builder, id) != null;
-}
-
 fn isZero(builder: *const build.Builder, id: ast.NodeId) bool {
     return switch (builder.node(id)) {
         .integer => |value| value == 0,
@@ -807,35 +976,6 @@ fn normalizedFloat(
     if (value == 0.0) return builder.integer(0);
     if (value == 1.0) return builder.integer(1);
     return builder.float(value);
-}
-
-fn integerPower(
-    base: i64,
-    exponent: u32,
-    comptime source: []const u8,
-) i64 {
-    var result: i64 = 1;
-    var factor = base;
-    var remaining = exponent;
-    while (remaining != 0) : (remaining /= 2) {
-        if (remaining % 2 == 1) {
-            result = checkedIntegerMul(
-                result,
-                factor,
-                source,
-                operatorPosition(source, '^'),
-            );
-        }
-        if (remaining > 1) {
-            factor = checkedIntegerMul(
-                factor,
-                factor,
-                source,
-                operatorPosition(source, '^'),
-            );
-        }
-    }
-    return result;
 }
 
 fn realPower(
@@ -902,18 +1042,12 @@ fn checkedIntegerMul(
     return result[0];
 }
 
-fn checkedU32Mul(left: u32, right: u32) ?u32 {
-    const result = @mulWithOverflow(left, right);
-    return if (result[1] == 0) result[0] else null;
-}
-
 fn foldFailure(
     comptime source: []const u8,
     comptime position: usize,
     comptime message: []const u8,
 ) noreturn {
-    _ = position;
-    diagnostic.failExpression(source, message);
+    diagnostic.fail(source, position, message);
 }
 
 fn exactFoldFailure(
@@ -967,17 +1101,6 @@ fn functionPosition(comptime source: []const u8, comptime name: []const u8) usiz
     return std.mem.indexOf(u8, source, name) orelse 0;
 }
 
-fn orderedMul(
-    builder: *build.Builder,
-    left: ast.NodeId,
-    right: ast.NodeId,
-) ast.NodeId {
-    return if (less(builder, right, left))
-        builder.mul(right, left)
-    else
-        builder.mul(left, right);
-}
-
 fn less(builder: *const build.Builder, left: ast.NodeId, right: ast.NodeId) bool {
     if (left == right) return false;
 
@@ -986,6 +1109,13 @@ fn less(builder: *const build.Builder, left: ast.NodeId, right: ast.NodeId) bool
     const left_rank = rank(left_node);
     const right_rank = rank(right_node);
     if (left_rank != right_rank) return left_rank < right_rank;
+    const left_tag = std.meta.activeTag(left_node);
+    const right_tag = std.meta.activeTag(right_node);
+    if (left_tag != right_tag) {
+        // Binary and n-ary nodes intentionally share a rank. Order unlike
+        // tags before reading either union payload.
+        return @intFromEnum(left_tag) < @intFromEnum(right_tag);
+    }
 
     return switch (left_node) {
         .integer => |value| value < right_node.integer,

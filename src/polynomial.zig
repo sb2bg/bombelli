@@ -467,9 +467,11 @@ fn finish(
             .exponents = &exact_exponents,
         };
     }
+    const exact_variables = variable_storage[0..variables.len].*;
+    const exact_terms = term_storage[0..count].*;
     return .{
-        .variable_names = variable_storage[0..variables.len],
-        .terms = term_storage[0..count],
+        .variable_names = &exact_variables,
+        .terms = &exact_terms,
     };
 }
 
@@ -659,13 +661,13 @@ fn unsupported(comptime reason: []const u8) noreturn {
 }
 
 fn exactCapacityFailure() noreturn {
-    @panic("Bombelli exact polynomial arithmetic exceeds fixed-width rational range");
+    @compileError("Bombelli exact polynomial arithmetic exceeds fixed-width rational range");
 }
 
 fn polynomialCapacityFailure() noreturn {
-    @panic("Bombelli sparse polynomial exceeds the current term construction limit");
+    @compileError("Bombelli sparse polynomial exceeds the current term construction limit");
 }
 
 fn polynomialVariableCapacityFailure() noreturn {
-    @panic("Bombelli polynomial has too many variables");
+    @compileError("Bombelli polynomial has too many variables");
 }

@@ -42,6 +42,9 @@ pub const Builder = struct {
 
     pub fn addNary(self: *Builder, operands: []const ast.NodeId) ast.NodeId {
         if (operands.len < 2) @compileError("Bombelli n-ary addition requires at least two operands");
+        if (operands.len > ast.construction_node_limit) {
+            @compileError("Bombelli n-ary addition exceeds construction workspace");
+        }
         var storage: [ast.construction_node_limit]ast.NodeId = undefined;
         @memcpy(storage[0..operands.len], operands);
         const exact_operands = storage[0..operands.len].*;
@@ -58,6 +61,9 @@ pub const Builder = struct {
 
     pub fn mulNary(self: *Builder, operands: []const ast.NodeId) ast.NodeId {
         if (operands.len < 2) @compileError("Bombelli n-ary multiplication requires at least two operands");
+        if (operands.len > ast.construction_node_limit) {
+            @compileError("Bombelli n-ary multiplication exceeds construction workspace");
+        }
         var storage: [ast.construction_node_limit]ast.NodeId = undefined;
         @memcpy(storage[0..operands.len], operands);
         const exact_operands = storage[0..operands.len].*;
