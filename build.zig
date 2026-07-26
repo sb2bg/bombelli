@@ -33,6 +33,11 @@ pub fn build(b: *std.Build) void {
             .expected = "Bombelli eval input is missing the field '.y'",
             .source_diagnostic = false,
         },
+        .{
+            .path = "tests/compile_fail/substitution_unknown_symbol.zig",
+            .expected = "Bombelli substitution replacement '.z' does not name a symbol in the expression",
+            .source_diagnostic = false,
+        },
         .{ .path = "tests/compile_fail/invalid_exponent.zig", .expected = "power exponent must be an exact rational literal" },
         .{ .path = "tests/compile_fail/missing_parenthesis.zig", .expected = "missing closing parenthesis" },
         .{ .path = "tests/compile_fail/unknown_function.zig", .expected = "unknown function" },
@@ -81,6 +86,16 @@ pub fn build(b: *std.Build) void {
         .{ .path = "tests/compile_fail/equation_missing_equals.zig", .expected = "equation must contain exactly one '='" },
         .{ .path = "tests/compile_fail/equation_multiple_equals.zig", .expected = "equation must contain exactly one '='" },
         .{
+            .path = "tests/compile_fail/equation_duplicate_unknown.zig",
+            .expected = "Bombelli equation problem unknowns must be unique",
+            .source_diagnostic = false,
+        },
+        .{
+            .path = "tests/compile_fail/system_duplicate_unknown.zig",
+            .expected = "Bombelli system unknowns must be unique",
+            .source_diagnostic = false,
+        },
+        .{
             .path = "tests/compile_fail/require_unique_multiple.zig",
             .expected = "Bombelli expected one solution, but found 2",
             .source_diagnostic = false,
@@ -120,6 +135,11 @@ pub fn build(b: *std.Build) void {
             .expected = "Bombelli adaptive quadrature is not differentiable because its runtime subdivision branches may change",
             .source_diagnostic = false,
         },
+        .{
+            .path = "tests/compile_fail/emission_keyword_name.zig",
+            .expected = "Bombelli emitted Zig function name must not be a Zig keyword",
+            .source_diagnostic = false,
+        },
     };
     for (compile_fail_cases) |case| {
         const check = b.addSystemCommand(&.{
@@ -153,6 +173,7 @@ pub fn build(b: *std.Build) void {
     const run_stress_tests = b.addRunArtifact(stress_tests);
     const stress_step = b.step("stress", "Run compile-time expression stress tests");
     stress_step.dependOn(&run_stress_tests.step);
+    test_step.dependOn(stress_step);
 
     const property_tests = b.addTest(.{
         .root_module = b.createModule(.{

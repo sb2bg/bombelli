@@ -1,7 +1,9 @@
 const std = @import("std");
 const bombelli = @import("bombelli");
 
-const expression = bombelli.expr("sin(x*y) + x^3");
+const expression = bombelli.expr(
+    "9007199254740993 / 7 + 1e300 + sin(x*y) + x^3",
+);
 const generated = expression.emit(.{
     .target = .zig,
     .mode = .out_of_place,
@@ -27,7 +29,7 @@ pub fn main(init: std.process.Init) !void {
         \\test "emitted expression matches direct compiled object" {{
         \\    var output: f64 = undefined;
         \\    generated_expression(.{{ .x = 1.25, .y = -0.75 }}, &output);
-        \\    try std.testing.expectApproxEqAbs({d}, output, 1e-15);
+        \\    try std.testing.expectApproxEqAbs({e}, output, 1e-15);
         \\}}
         \\
     , .{expected});

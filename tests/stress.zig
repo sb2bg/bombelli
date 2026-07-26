@@ -105,10 +105,6 @@ test "twenty-factor product fits in the compact DAG" {
     const derivative = comptime product_derivative.metrics();
     const simplified = comptime product_simplified.metrics();
 
-    report("product-20", "source", source);
-    report("product-20", "derivative", derivative);
-    report("product-20", "simplified", simplified);
-
     try expectMeasuredExpression(source);
     try expectMeasuredExpression(derivative);
     try expectMeasuredExpression(simplified);
@@ -120,10 +116,6 @@ test "stress metrics cover deep composition" {
     const source = comptime composition_source.metrics();
     const derivative = comptime composition_derivative.metrics();
     const simplified = comptime composition_simplified.metrics();
-
-    report("deep-composition", "source", source);
-    report("deep-composition", "derivative", derivative);
-    report("deep-composition", "simplified", simplified);
 
     try expectMeasuredExpression(source);
     try expectMeasuredExpression(derivative);
@@ -139,12 +131,6 @@ test "stress metrics cover four repeated derivatives" {
     const d3 = comptime repeated_d3.metrics();
     const d4 = comptime repeated_d4.metrics();
 
-    report("repeated-x^12", "source", source);
-    report("repeated-x^12", "d1", d1);
-    report("repeated-x^12", "d2", d2);
-    report("repeated-x^12", "d3", d3);
-    report("repeated-x^12", "d4", d4);
-
     try expectMeasuredExpression(source);
     try expectMeasuredExpression(d1);
     try expectMeasuredExpression(d2);
@@ -158,10 +144,6 @@ test "repeated structural subtrees are hash-consed" {
     const derivative = comptime shared_derivative.metrics();
     const simplified = comptime shared_simplified.metrics();
 
-    report("shared-subtree", "source", source);
-    report("shared-subtree", "derivative", derivative);
-    report("shared-subtree", "simplified", simplified);
-
     try expectMeasuredExpression(source);
     try expectMeasuredExpression(derivative);
     try expectMeasuredExpression(simplified);
@@ -170,9 +152,6 @@ test "repeated structural subtrees are hash-consed" {
 test "large repeated products stay factored" {
     const source = comptime factored_source.metrics();
     const simplified = comptime factored_simplified.metrics();
-
-    report("factored-x^20", "source", source);
-    report("factored-x^20", "simplified", simplified);
 
     try expectMeasuredExpression(source);
     try expectMeasuredExpression(simplified);
@@ -185,8 +164,6 @@ test "coupled multi-root Jacobian remains shared and within measured capacity" {
     const functions = comptime coupled_functions.metrics();
     const jacobian = comptime coupled_jacobian.metrics();
 
-    report("coupled-4x4", "functions", functions);
-    report("coupled-4x4", "jacobian", jacobian);
     try expectMeasuredVector(4, functions);
     try std.testing.expect(jacobian.node_count > functions.node_count);
     try std.testing.expect(jacobian.construction_peak_nodes < 512);
@@ -197,11 +174,6 @@ test "large canonical sums and products use proportional operand storage" {
     const sum = comptime large_sum_simplified.metrics();
     const product_source_metrics = comptime large_product_source.metrics();
     const product = comptime large_product_simplified.metrics();
-
-    report("canonical-sum-48", "source", sum_source);
-    report("canonical-sum-48", "simplified", sum);
-    report("canonical-product-32", "source", product_source_metrics);
-    report("canonical-product-32", "simplified", product);
 
     try expectMeasuredExpression(sum_source);
     try expectMeasuredExpression(sum);
@@ -215,7 +187,6 @@ test "large canonical sums and products use proportional operand storage" {
 
 test "sparse polynomial expansion stays within measured construction headroom" {
     const expanded = comptime polynomial_expansion.metrics();
-    report("polynomial-4var-degree8", "expanded", expanded);
     try expectMeasuredExpression(expanded);
     try std.testing.expect(expanded.operand_count >= 165);
     try std.testing.expect(expanded.construction_peak_nodes < 512);
@@ -224,8 +195,6 @@ test "sparse polynomial expansion stays within measured construction headroom" {
 test "exact and symbolic coefficient systems retain shared solution DAGs" {
     const exact_metrics = comptime exact_system_solution.metrics();
     const symbolic_metrics = comptime symbolic_system_solution.conditional.values.metrics();
-    report("exact-system-4x4", "solution", exact_metrics);
-    report("symbolic-system-2x2", "solution", symbolic_metrics);
     try expectMeasuredVector(4, exact_metrics);
     try expectMeasuredVector(2, symbolic_metrics);
     try std.testing.expectEqual(
@@ -235,13 +204,11 @@ test "exact and symbolic coefficient systems retain shared solution DAGs" {
 
     const symbolic_3x3_metrics =
         comptime symbolic_system_3x3.conditional.values.metrics();
-    report("symbolic-system-3x3", "solution", symbolic_3x3_metrics);
     try expectMeasuredVector(3, symbolic_3x3_metrics);
 }
 
 test "repeated integration by parts stays bounded" {
     const integral_metrics = comptime repeated_parts_integral.metrics();
-    report("integration-by-parts-degree8", "antiderivative", integral_metrics);
     try expectMeasuredExpression(integral_metrics);
     try std.testing.expect(integral_metrics.construction_peak_nodes < 512);
 
@@ -283,20 +250,5 @@ fn expectMeasuredVector(comptime N: usize, metrics: bombelli.Metrics) !void {
             metrics.node_count * @sizeOf(bombelli.Node) +
             metrics.operand_count * @sizeOf(bombelli.NodeId),
         metrics.backing_bytes,
-    );
-}
-
-fn report(case_name: []const u8, phase: []const u8, metrics: bombelli.Metrics) void {
-    std.debug.print(
-        "{s}\t{s}\tnodes={d}\toperands={d}\tconstruction_peak={d}\theadroom={d}\tbacking_bytes={d}\n",
-        .{
-            case_name,
-            phase,
-            metrics.node_count,
-            metrics.operand_count,
-            metrics.construction_peak_nodes,
-            metrics.constructionHeadroom(),
-            metrics.backing_bytes,
-        },
     );
 }

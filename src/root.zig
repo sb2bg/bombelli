@@ -367,6 +367,19 @@ test "power factors have a canonical total order and combine" {
     try std.testing.expectEqualStrings("0", comptime cancellation.render());
 }
 
+test "nested power simplification preserves real-domain restrictions" {
+    const odd_root = comptime expr("(x^(1/3))^3").simplify();
+    try std.testing.expectEqualStrings("x", comptime odd_root.render());
+    const repeated_odd_root = comptime expr(
+        "x^(1/3) * x^(1/3) * x^(1/3)",
+    ).simplify();
+    try std.testing.expectEqualStrings("x", comptime repeated_odd_root.render());
+
+    const square_root = comptime expr("(x^(1/2))^2").simplify();
+    try std.testing.expectEqualStrings("(x^(1/2))^2", comptime square_root.render());
+    try std.testing.expect(std.math.isNan(square_root.eval(.{ .x = -1.0 })));
+}
+
 test "rendered floating-point literals preserve their type and round trip" {
     const original = comptime expr("2.0 * x + 1.0 / 0.0");
     const source = comptime original.render();
@@ -375,6 +388,13 @@ test "rendered floating-point literals preserve their type and round trip" {
     try std.testing.expectEqualStrings("2.0 * x + 1.0 / 0.0", source);
     try std.testing.expectEqual(original.metrics().node_count, reparsed.metrics().node_count);
     try std.testing.expectEqualStrings(source, comptime reparsed.render());
+
+    const huge = comptime expr("1e300");
+    try std.testing.expectEqualStrings("1e300", comptime huge.render());
+    try std.testing.expectEqualStrings(
+        comptime huge.render(),
+        comptime expr(huge.render()).render(),
+    );
 }
 
 test "multi-root programs share nodes and evaluate into caller storage" {
@@ -576,6 +596,13 @@ test "substitution is a simultaneous memoized DAG rebuild" {
         })
         .simplify();
     try std.testing.expectEqualStrings("x / 3 + 2", comptime exact_replacement.render());
+
+    const rational_denominator = comptime expr("x/a")
+        .substitute(.{ .a = rational(1, 3) });
+    try std.testing.expectEqualStrings(
+        "x / (1/3)",
+        comptime rational_denominator.render(),
+    );
 
     const shared = comptime expr("sin(y) + cos(y)")
         .substitute(.{ .y = expr("x^2") });
@@ -1000,6 +1027,18 @@ test "symbolic integration handles exact polynomials and rational powers" {
     try std.testing.expectEqualStrings(
         "ln(abs(x))",
         comptime reciprocal.render(),
+    );
+
+    const rational_power_coefficient = comptime expr(
+        "(4/9)^(1/2) * sin(x)",
+    ).integrate(.{
+        .variable = .x,
+        .domain = .real,
+    }).unwrap().simplify();
+    try std.testing.expectApproxEqAbs(
+        -2.0 / 3.0,
+        rational_power_coefficient.eval(.{ .x = 0.0 }),
+        1e-15,
     );
 }
 
@@ -1484,6 +1523,47 @@ test "Zig emission computes shared DAG nodes once" {
         vector_source,
         "output[1]",
     ) != null);
+
+    const exact_literal_source = comptime expr("9007199254740993").emit(.{
+        .target = .zig,
+        .mode = .out_of_place,
+        .name = "evaluate_exact_literal",
+    });
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        exact_literal_source,
+        "9007199254740993",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        exact_literal_source,
+        "@floatFromInt",
+    ) != null);
+
+    const exact_rational_source = comptime expr(
+        "9007199254740993 / 7",
+    ).simplify().emit(.{
+        .target = .zig,
+        .mode = .out_of_place,
+        .name = "evaluate_exact_rational",
+    });
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        exact_rational_source,
+        "9007199254740993",
+    ) != null);
+
+    const huge_float_source = comptime expr("1e300").emit(.{
+        .target = .zig,
+        .mode = .out_of_place,
+        .name = "evaluate_huge_float",
+    });
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        huge_float_source,
+        "1e300",
+    ) != null);
+    try std.testing.expect(huge_float_source.len < 2_000);
 }
 
 test "fixed quadrature Zig emission contains only the selected table" {

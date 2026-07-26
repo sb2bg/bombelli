@@ -15,6 +15,8 @@ test "canonicalization is idempotent and canonical rendering round trips" {
         "x * (y * x) * (x^2)",
         "1 + (-2/3)*x*y*(x+y)",
         "(x^2 + 1)^(-2) + 3/7",
+        "(4/9)^(1/2)",
+        "x/(1/3)",
         "sin(x*y) + cos(x+y) + exp(x/3-y/4)",
         "ln(x^2 + 2) + atan(x-y) + sqrt(x^2+1)",
     }) |source| {
@@ -100,6 +102,7 @@ test "closed symbolic antiderivatives differentiate back to their integrands" {
         "sin(3*x+2)",
         "cos(2*x-1)",
         "exp(4*x+3)",
+        "(4/9)^(1/2)*sin(x)",
         "x^4*sin(2*x+1)",
         "x^3*cos(3*x-2)",
         "x^5*exp(2*x)",
