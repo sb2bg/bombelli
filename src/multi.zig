@@ -138,11 +138,7 @@ pub fn simplifyVector(
     comptime N: usize,
     comptime expression: ast.ExprVector(N),
 ) ast.ExprVector(N) {
-    var simplified: [N]ast.Expr = undefined;
-    inline for (0..N) |index| {
-        simplified[index] = vectorElement(N, expression, index).simplify();
-    }
-    return vector(N, simplified);
+    return @import("simplification.zig").simplifyVector(N, expression);
 }
 
 pub fn simplifyMatrix(
@@ -150,13 +146,7 @@ pub fn simplifyMatrix(
     comptime C: usize,
     comptime expression: ast.ExprMatrix(R, C),
 ) ast.ExprMatrix(R, C) {
-    var simplified: [R][C]ast.Expr = undefined;
-    inline for (0..R) |row| {
-        inline for (0..C) |column| {
-            simplified[row][column] = matrixElement(R, C, expression, row, column).simplify();
-        }
-    }
-    return matrix(R, C, simplified);
+    return @import("simplification.zig").simplifyMatrix(R, C, expression);
 }
 
 pub fn differentiateVector(

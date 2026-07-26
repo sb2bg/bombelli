@@ -1,4 +1,5 @@
 const ast = @import("ast.zig");
+const build = @import("builder.zig");
 
 pub const Metrics = struct {
     node_count: usize,
@@ -98,16 +99,14 @@ fn validateProgram(
         var reachable = [_]bool{false} ** nodes.len;
         for (roots) |root| markReachable(nodes, root, &reachable);
 
+        var uniqueness = build.Builder{};
         for (nodes, 0..) |node_value, index| {
             validateChildren(node_value, index);
             if (!reachable[index]) {
                 @compileError("Bombelli invariant failure: expression contains an unreachable node");
             }
-
-            for (nodes[0..index]) |previous| {
-                if (ast.nodeEqual(node_value, previous)) {
-                    @compileError("Bombelli invariant failure: expression contains duplicate nodes");
-                }
+            if (uniqueness.intern(node_value) != index) {
+                @compileError("Bombelli invariant failure: expression contains duplicate nodes");
             }
         }
     }
