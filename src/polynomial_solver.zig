@@ -1,10 +1,10 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const composition = @import("composition.zig");
 const domain = @import("domain.zig");
 const equation_module = @import("equation.zig");
 const exact = @import("exact.zig");
 const multi = @import("multi.zig");
-const parser = @import("parser.zig");
 const polynomial = @import("polynomial.zig");
 const solution = @import("solution_set.zig");
 
@@ -45,7 +45,7 @@ pub fn solve(
                 .{ .empty = problem_domain };
         }
         const root = checked(c.negate()).div(b) catch
-            @panic("Bombelli exact linear root overflowed");
+            @compileError("Bombelli exact linear root overflowed");
         return finiteOne(rationalExpression(root));
     }
 
@@ -66,17 +66,23 @@ pub fn solve(
         return finiteTwo(rationalExpression(first), rationalExpression(second));
     }
 
-    const b_source = rationalSource(b);
-    const discriminant_source = rationalSource(discriminant);
-    const denominator_source = rationalSource(denominator);
-    const first = parser.parse(std.fmt.comptimePrint(
-        "(-({s}) - sqrt({s})) / ({s})",
-        .{ b_source, discriminant_source, denominator_source },
-    )).simplify();
-    const second = parser.parse(std.fmt.comptimePrint(
-        "(-({s}) + sqrt({s})) / ({s})",
-        .{ b_source, discriminant_source, denominator_source },
-    )).simplify();
+    const negative_b = composition.unary(
+        .negate,
+        composition.rational(b),
+    );
+    const square_root = composition.power(
+        composition.rational(discriminant),
+        exact.Rational.init(1, 2) catch unreachable,
+    );
+    const denominator_expression = composition.rational(denominator);
+    const first = composition.divide(
+        composition.subtract(negative_b, square_root),
+        denominator_expression,
+    ).simplify();
+    const second = composition.divide(
+        composition.add(&.{ negative_b, square_root }),
+        denominator_expression,
+    ).simplify();
     return finiteTwo(first, second);
 }
 
@@ -126,19 +132,9 @@ fn integerSquareRoot(value: u64) u64 {
 }
 
 fn rationalExpression(comptime value: exact.Rational) ast.Expr {
-    return parser.parse(rationalSource(value)).simplify();
-}
-
-fn rationalSource(comptime value: exact.Rational) []const u8 {
-    return if (value.denominator == 1)
-        std.fmt.comptimePrint("{d}", .{value.numerator})
-    else
-        std.fmt.comptimePrint("({d}/{d})", .{
-            value.numerator,
-            value.denominator,
-        });
+    return composition.rational(value);
 }
 
 fn checked(result: exact.Error!exact.Rational) exact.Rational {
-    return result catch @panic("Bombelli exact polynomial root arithmetic overflowed");
+    return result catch @compileError("Bombelli exact polynomial root arithmetic overflowed");
 }

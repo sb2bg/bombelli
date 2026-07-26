@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const composition = @import("composition.zig");
 const parser = @import("parser.zig");
 const diagnostic = @import("diagnostic.zig");
 
@@ -34,11 +35,7 @@ pub fn parse(comptime source: []const u8) Equation {
     }
     const lhs = comptime parser.parse(lhs_source);
     const rhs = comptime parser.parse(rhs_source);
-    const residual_source = comptime std.fmt.comptimePrint(
-        "({s}) - ({s})",
-        .{ lhs_source, rhs_source },
-    );
-    const residual = comptime parser.parse(residual_source).simplify();
+    const residual = comptime composition.subtract(lhs, rhs).simplify();
     return .{
         .lhs = lhs,
         .rhs = rhs,

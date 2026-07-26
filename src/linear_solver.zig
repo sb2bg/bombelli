@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const composition = @import("composition.zig");
 const domain = @import("domain.zig");
 const exact = @import("exact.zig");
 const multi = @import("multi.zig");
@@ -39,18 +40,14 @@ pub fn Factorization(
             }
             var expressions: [N]ast.Expr = undefined;
             inline for (0..N) |row| {
-                var source: []const u8 = "0";
+                var terms: [N]ast.Expr = undefined;
                 inline for (0..N) |column| {
-                    source = std.fmt.comptimePrint(
-                        "({s}) + ({s}) * ({s})",
-                        .{
-                            source,
-                            self.inverse_program.at(row, column).render(),
-                            right_hand_side[column].toExpr().render(),
-                        },
+                    terms[column] = composition.multiply(
+                        self.inverse_program.at(row, column),
+                        right_hand_side[column].toExpr(),
                     );
                 }
-                expressions[row] = parser.parse(source).simplify();
+                expressions[row] = composition.add(&terms).simplify();
             }
             const values = multi.vector(N, expressions);
             if (self.conditions.len != 0) {
@@ -348,26 +345,25 @@ fn solveExact(
     var value_expressions: [N]ast.Expr = undefined;
     for (0..N) |unknown_column| {
         if (!is_pivot[unknown_column]) {
-            value_expressions[unknown_column] = parser.parse(
+            value_expressions[unknown_column] = composition.symbol(
                 parameter_for_column[unknown_column].?,
             );
             continue;
         }
         var pivot_row: usize = 0;
         while (pivot_columns[pivot_row] != unknown_column) : (pivot_row += 1) {}
-        var source = rationalSource(matrix[pivot_row][N]);
+        var expression = composition.rational(matrix[pivot_row][N]);
         for (0..N) |free_column| {
             if (is_pivot[free_column] or matrix[pivot_row][free_column].isZero()) continue;
-            source = std.fmt.comptimePrint(
-                "({s}) - ({s})*{s}",
-                .{
-                    source,
-                    rationalSource(matrix[pivot_row][free_column]),
-                    parameter_for_column[free_column].?,
-                },
+            expression = composition.subtract(
+                expression,
+                composition.multiply(
+                    composition.rational(matrix[pivot_row][free_column]),
+                    composition.symbol(parameter_for_column[free_column].?),
+                ),
             );
         }
-        value_expressions[unknown_column] = parser.parse(source).simplify();
+        value_expressions[unknown_column] = expression.simplify();
     }
     const values = multi.vector(N, value_expressions);
     const exact_parameters = parameter_names[0..parameter_count].*;
@@ -490,21 +486,11 @@ fn valuePolynomial(comptime value: anytype) polynomial.Polynomial {
 }
 
 fn rationalExpression(comptime value: exact.Rational) ast.Expr {
-    return parser.parse(rationalSource(value)).simplify();
-}
-
-fn rationalSource(comptime value: exact.Rational) []const u8 {
-    return if (value.denominator == 1)
-        std.fmt.comptimePrint("{d}", .{value.numerator})
-    else
-        std.fmt.comptimePrint("({d}/{d})", .{
-            value.numerator,
-            value.denominator,
-        });
+    return composition.rational(value);
 }
 
 fn checked(result: exact.Error!exact.Rational) exact.Rational {
-    return result catch @panic("Bombelli exact linear elimination overflowed");
+    return result catch @compileError("Bombelli exact linear elimination overflowed");
 }
 
 fn parseAlgorithm(comptime value: anytype) problem_module.SolveAlgorithm {

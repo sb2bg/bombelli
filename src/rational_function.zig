@@ -1,7 +1,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const composition = @import("composition.zig");
 const exact = @import("exact.zig");
-const parser = @import("parser.zig");
 const polynomial = @import("polynomial.zig");
 
 const condition_limit = 128;
@@ -117,15 +117,14 @@ pub const RationalFunction = struct {
     }
 
     pub fn toExpr(comptime self: RationalFunction) ast.Expr {
-        const numerator_source = self.numerator.toExpr().render();
+        const numerator = self.numerator.toExpr();
         if (polynomial.constantValue(self.denominator)) |value| {
-            if (value.isOne()) return self.numerator.toExpr();
+            if (value.isOne()) return numerator;
         }
-        const denominator_source = self.denominator.toExpr().render();
-        return parser.parse(std.fmt.comptimePrint(
-            "({s}) / ({s})",
-            .{ numerator_source, denominator_source },
-        )).simplify();
+        return composition.divide(
+            numerator,
+            self.denominator.toExpr(),
+        ).simplify();
     }
 };
 
@@ -213,7 +212,7 @@ fn normalized(
     var denominator = denominator_input;
     const leading = denominator.terms[0].coefficient;
     const reciprocal = exact.Rational.fromInteger(1).div(leading) catch
-        @panic("Bombelli rational-function normalization overflowed");
+        @compileError("Bombelli rational-function normalization overflowed");
     numerator = numerator.scale(reciprocal);
     denominator = denominator.scale(reciprocal);
 
@@ -264,13 +263,13 @@ fn appendCondition(
     }
     const reciprocal = exact.Rational.fromInteger(1).div(
         condition_input.terms[0].coefficient,
-    ) catch @panic("Bombelli denominator-condition normalization overflowed");
+    ) catch @compileError("Bombelli denominator-condition normalization overflowed");
     const condition = condition_input.scale(reciprocal);
     for (storage[0..len.*]) |existing| {
         if (existing.polynomial.eql(condition)) return;
     }
     if (len.* == condition_limit) {
-        @panic("Bombelli rational function has too many denominator conditions");
+        @compileError("Bombelli rational function has too many denominator conditions");
     }
     storage[len.*] = .{ .polynomial = condition };
     len.* += 1;

@@ -1,6 +1,8 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const build = @import("builder.zig");
+const composition = @import("composition.zig");
+const dependsOn = @import("dependency.zig").dependsOn;
 const differentiation = @import("differentiation.zig");
 const domain_module = @import("domain.zig");
 const exact = @import("exact.zig");
@@ -229,7 +231,7 @@ fn integrateClosed(
     if (!dependsOn(simplified, problem.variable)) {
         return multiplyExpressions(
             simplified,
-            parser.parse(problem.variable),
+            composition.symbol(problem.variable),
         ).simplify();
     }
 
@@ -314,23 +316,25 @@ fn integratePower(
     }
     if (power.exponent.eql(exact.Rational.fromInteger(-1))) {
         if (problem.domain != .real) return null;
-        return parser.parse(std.fmt.comptimePrint(
-            "ln(abs({s}))",
-            .{problem.variable},
-        ));
+        return composition.unary(
+            .logarithm,
+            composition.unary(
+                .absolute,
+                composition.symbol(problem.variable),
+            ),
+        );
     }
     const raised_exponent = power.exponent.add(
         exact.Rational.fromInteger(1),
-    ) catch @panic("Bombelli integral power exponent overflowed");
+    ) catch @compileError("Bombelli integral power exponent overflowed");
     if (raised_exponent.isZero()) return null;
-    return parser.parse(std.fmt.comptimePrint(
-        "({s}^{s}) / ({s})",
-        .{
-            problem.variable,
-            rationalExponentSource(raised_exponent),
-            rationalValueSource(raised_exponent),
-        },
-    )).simplify();
+    return divideExpressions(
+        composition.power(
+            composition.symbol(problem.variable),
+            raised_exponent,
+        ),
+        composition.rational(raised_exponent),
+    ).simplify();
 }
 
 fn integrateDivision(
@@ -351,10 +355,13 @@ fn integrateDivision(
         expression.source,
     );
     if (dependsOn(numerator, problem.variable)) return null;
-    const logarithm = parser.parse(std.fmt.comptimePrint(
-        "ln(abs({s}))",
-        .{problem.variable},
-    ));
+    const logarithm = composition.unary(
+        .logarithm,
+        composition.unary(
+            .absolute,
+            composition.symbol(problem.variable),
+        ),
+    );
     return multiplyExpressions(numerator, logarithm).simplify();
 }
 
@@ -396,20 +403,13 @@ fn integrateAffineFunction(
     comptime problem: IntegralProblem,
 ) ?ast.Expr {
     const affine = affineArgument(expression, child, problem) orelse return null;
-    const argument_source = affine.argument.render();
     const numerator = switch (function) {
-        .sin => parser.parse(std.fmt.comptimePrint(
-            "-cos({s})",
-            .{argument_source},
-        )),
-        .cos => parser.parse(std.fmt.comptimePrint(
-            "sin({s})",
-            .{argument_source},
-        )),
-        .exp => parser.parse(std.fmt.comptimePrint(
-            "exp({s})",
-            .{argument_source},
-        )),
+        .sin => composition.unary(
+            .negate,
+            composition.unary(.cosine, affine.argument),
+        ),
+        .cos => composition.unary(.sine, affine.argument),
+        .exp => composition.unary(.exponential, affine.argument),
     };
     return divideExpressions(numerator, affine.slope).simplify();
 }
@@ -456,7 +456,7 @@ fn integrateProduct(
             polynomial_factor_count += 1;
         }
         const polynomial_expression = if (polynomial_factor_count == 0)
-            parser.parse("1")
+            composition.integer(1)
         else
             expressionFromFactors(
                 expression,
@@ -518,20 +518,13 @@ fn integratePolynomialFunction(
     comptime variable: []const u8,
 ) ast.Expr {
     const coefficient_expression = coefficient.toExpr();
-    const argument_source = argument.render();
     const boundary_factor = switch (function) {
-        .sin => parser.parse(std.fmt.comptimePrint(
-            "-cos({s})",
-            .{argument_source},
-        )),
-        .cos => parser.parse(std.fmt.comptimePrint(
-            "sin({s})",
-            .{argument_source},
-        )),
-        .exp => parser.parse(std.fmt.comptimePrint(
-            "exp({s})",
-            .{argument_source},
-        )),
+        .sin => composition.unary(
+            .negate,
+            composition.unary(.cosine, argument),
+        ),
+        .cos => composition.unary(.sine, argument),
+        .exp => composition.unary(.exponential, argument),
     };
     const boundary = divideExpressions(
         multiplyExpressions(coefficient_expression, boundary_factor),
@@ -646,76 +639,36 @@ fn expressionFromFactors(
     comptime expression: ast.Expr,
     comptime factors: []const ast.NodeId,
 ) ast.Expr {
-    var sources: [ast.construction_node_limit][]const u8 = undefined;
-    for (factors, 0..) |factor, index| {
-        sources[index] = multi.extractRoot(
-            expression.nodes,
-            factor,
-            expression.source,
-        ).render();
-    }
-    return parseProduct(sources[0..factors.len]).simplify();
+    return composition.productRoots(expression, factors).simplify();
 }
 
 fn addExpressions(comptime expressions: []const ast.Expr) ast.Expr {
-    if (expressions.len == 0) return parser.parse("0");
-    var source: []const u8 = std.fmt.comptimePrint(
-        "({s})",
-        .{expressions[0].render()},
-    );
-    for (expressions[1..]) |expression| {
-        source = std.fmt.comptimePrint(
-            "{s} + ({s})",
-            .{ source, expression.render() },
-        );
-    }
-    return parser.parse(source);
-}
-
-fn parseProduct(comptime sources: []const []const u8) ast.Expr {
-    if (sources.len == 0) return parser.parse("1");
-    var source: []const u8 = std.fmt.comptimePrint("({s})", .{sources[0]});
-    for (sources[1..]) |factor| {
-        source = std.fmt.comptimePrint("{s} * ({s})", .{ source, factor });
-    }
-    return parser.parse(source);
+    return composition.add(expressions);
 }
 
 fn multiplyExpressions(
     comptime left: ast.Expr,
     comptime right: ast.Expr,
 ) ast.Expr {
-    return parser.parse(std.fmt.comptimePrint(
-        "({s}) * ({s})",
-        .{ left.render(), right.render() },
-    ));
+    return composition.multiply(left, right);
 }
 
 fn divideExpressions(
     comptime numerator: ast.Expr,
     comptime denominator: ast.Expr,
 ) ast.Expr {
-    return parser.parse(std.fmt.comptimePrint(
-        "({s}) / ({s})",
-        .{ numerator.render(), denominator.render() },
-    ));
+    return composition.divide(numerator, denominator);
 }
 
 fn subtractExpressions(
     comptime left: ast.Expr,
     comptime right: ast.Expr,
 ) ast.Expr {
-    return parser.parse(std.fmt.comptimePrint(
-        "({s}) - ({s})",
-        .{ left.render(), right.render() },
-    ));
+    return composition.subtract(left, right);
 }
 
 fn negateExpression(comptime expression: ast.Expr) ast.Expr {
-    return parser.parse(std.fmt.comptimePrint(
-        "-({s})",
-        .{expression.render()},
-    ));
+    return composition.unary(.negate, expression);
 }
 
 fn polynomialConvertible(comptime expression: ast.Expr) bool {
@@ -740,30 +693,6 @@ fn polynomialConvertible(comptime expression: ast.Expr) bool {
         };
     }
     return convertible[@intCast(expression.root)];
-}
-
-fn dependsOn(
-    comptime expression: ast.Expr,
-    comptime variable: []const u8,
-) bool {
-    var dependent = [_]bool{false} ** expression.nodes.len;
-    inline for (expression.nodes, 0..) |node, index| {
-        dependent[index] = switch (node) {
-            .integer, .rational, .float => false,
-            .symbol => |name| std.mem.eql(u8, name, variable),
-            .add, .sub, .mul, .div => |binary| dependent[@intCast(binary.left)] or
-                dependent[@intCast(binary.right)],
-            .add_nary, .mul_nary => |operands| blk: {
-                var any = false;
-                for (operands) |child| any =
-                    any or dependent[@intCast(child)];
-                break :blk any;
-            },
-            .pow => |power| dependent[@intCast(power.base)],
-            .negate, .sin, .cos, .tan, .atan, .abs, .exp, .ln => |child| dependent[@intCast(child)],
-        };
-    }
-    return dependent[@intCast(expression.root)];
 }
 
 fn provablyNonzero(
@@ -818,26 +747,6 @@ fn isZeroExpression(comptime expression: ast.Expr) bool {
         .float => |value| value == 0.0,
         else => false,
     };
-}
-
-fn rationalExponentSource(comptime value: exact.Rational) []const u8 {
-    return if (value.denominator == 1)
-        std.fmt.comptimePrint("{d}", .{value.numerator})
-    else
-        std.fmt.comptimePrint("({d}/{d})", .{
-            value.numerator,
-            value.denominator,
-        });
-}
-
-fn rationalValueSource(comptime value: exact.Rational) []const u8 {
-    return if (value.denominator == 1)
-        std.fmt.comptimePrint("{d}", .{value.numerator})
-    else
-        std.fmt.comptimePrint("({d}/{d})", .{
-            value.numerator,
-            value.denominator,
-        });
 }
 
 fn isStringPointer(comptime pointer: std.builtin.Type.Pointer) bool {
