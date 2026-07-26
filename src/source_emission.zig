@@ -417,12 +417,12 @@ fn nodeSource(
     comptime bindings: []const Binding,
 ) []const u8 {
     return switch (node) {
-        .integer => |value| floatSource(@floatFromInt(value)),
+        .integer => |value| signedIntegerFloatSource(value),
         .rational => |value| std.fmt.comptimePrint(
             "({s} / {s})",
             .{
-                floatSource(@floatFromInt(value.numerator)),
-                floatSource(@floatFromInt(value.denominator)),
+                signedIntegerFloatSource(value.numerator),
+                unsignedIntegerFloatSource(value.denominator),
             },
         ),
         .float => |value| floatSource(value),
@@ -536,6 +536,9 @@ fn validateIdentifier(comptime name: []const u8) void {
             @compileError("Bombelli emitted Zig function name must be an identifier");
         }
     }
+    if (std.zig.Token.getKeyword(name) != null) {
+        @compileError("Bombelli emitted Zig function name must not be a Zig keyword");
+    }
 }
 
 fn identifierStart(character: u8) bool {
@@ -548,11 +551,32 @@ fn floatSource(comptime value: f64) []const u8 {
     if (!std.math.isFinite(value)) {
         @compileError("Bombelli cannot emit a non-finite constant");
     }
-    const formatted = std.fmt.comptimePrint("{d}", .{value});
-    return if (std.mem.indexOfAny(u8, formatted, ".eE") == null)
-        std.fmt.comptimePrint("{s}.0", .{formatted})
+    const decimal = std.fmt.comptimePrint("{d}", .{value});
+    const typed_decimal = if (std.mem.indexOfAny(u8, decimal, ".eE") == null)
+        std.fmt.comptimePrint("{s}.0", .{decimal})
     else
-        formatted;
+        decimal;
+    const scientific = std.fmt.comptimePrint("{e}", .{value});
+    return if (scientific.len < typed_decimal.len)
+        scientific
+    else
+        typed_decimal;
+}
+
+fn signedIntegerFloatSource(comptime value: i64) []const u8 {
+    // Preserve the exact source integer and make the evaluator's f64 lowering
+    // explicit instead of pre-rounding it while generating source.
+    return std.fmt.comptimePrint(
+        "@as(f64, @floatFromInt(@as(i64, {d})))",
+        .{value},
+    );
+}
+
+fn unsignedIntegerFloatSource(comptime value: u64) []const u8 {
+    return std.fmt.comptimePrint(
+        "@as(f64, @floatFromInt(@as(u64, {d})))",
+        .{value},
+    );
 }
 
 fn append(comptime left: []const u8, comptime right: []const u8) []const u8 {

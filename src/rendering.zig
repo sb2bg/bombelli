@@ -346,11 +346,16 @@ fn renderFloat(comptime value: f64) []const u8 {
         @compileError("Bombelli cannot render a non-finite floating-point literal");
     }
 
-    const formatted = std.fmt.comptimePrint("{d}", .{value});
-    return if (std.mem.indexOfAny(u8, formatted, ".eE") == null)
-        std.fmt.comptimePrint("{s}.0", .{formatted})
+    const decimal = std.fmt.comptimePrint("{d}", .{value});
+    const typed_decimal = if (std.mem.indexOfAny(u8, decimal, ".eE") == null)
+        std.fmt.comptimePrint("{s}.0", .{decimal})
     else
-        formatted;
+        decimal;
+    const scientific = std.fmt.comptimePrint("{e}", .{value});
+    return if (scientific.len < typed_decimal.len)
+        scientific
+    else
+        typed_decimal;
 }
 
 fn needsParentheses(node: ast.Node, context: Context) bool {
@@ -379,7 +384,9 @@ fn nodePrecedence(node: ast.Node) u8 {
         .negate => 30,
         .pow => 40,
         .integer => |value| if (value < 0) 30 else 50,
-        .rational => |value| if (value.numerator < 0) 30 else 50,
+        // Rationals render as infix division, so they must retain division
+        // precedence even when their numerator is non-negative.
+        .rational => 20,
         .float => |value| if (value < 0.0) 30 else 50,
         .symbol, .sin, .cos, .tan, .atan, .abs, .exp, .ln => 50,
     };
