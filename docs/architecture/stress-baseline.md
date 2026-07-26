@@ -9,7 +9,7 @@ zig build stress --summary all
 ```
 
 The v0.1.0 release candidate took 18.56 seconds of wall time and reached
-1,118,289,920 bytes (1.04 GiB) maximum RSS. The complete 76-test target,
+1,118,289,920 bytes (1.04 GiB) maximum RSS. The then-complete 76-test target,
 including compile-fail, property, and hardening suites, took 19.41 seconds and
 reached 813,711,360 bytes (776 MiB). The first compact-DAG baseline took 9.83
 seconds and 280 MiB; the pre-DAG build took 8.34 seconds and 283 MiB. The
