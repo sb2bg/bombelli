@@ -41,9 +41,10 @@ pub fn emitFixedQuadrature(
             .{ floatSource(weight), prefix, rule.integrand.root },
         ));
     }
-    return append(source,
+    source = append(source,
         \\    output.* = half_width * weighted_sum;
         \\}
         \\
     );
+    return support.applyScalar(source, support.scalarOption(options), name);
 }

@@ -167,6 +167,37 @@ pub fn validateOptions(comptime options: anytype) []const u8 {
     return name;
 }
 
+pub const Scalar = enum { f32, f64 };
+
+pub fn scalarOption(comptime options: anytype) Scalar {
+    if (!@hasField(@TypeOf(options), "scalar")) return .f64;
+    const scalar: Scalar = options.scalar;
+    return scalar;
+}
+
+/// The emission templates are written in terms of `f64`, where every
+/// occurrence means "the emitted scalar type". Retargeting rewrites the
+/// finished source instead of threading a type name through every template.
+pub fn applyScalar(
+    comptime source: []const u8,
+    comptime scalar: Scalar,
+    comptime name: []const u8,
+) []const u8 {
+    if (scalar == .f64) return source;
+    if (std.mem.indexOf(u8, name, "f64") != null) {
+        @compileError(
+            "Bombelli emitted function name must not contain 'f64' when emitting another scalar type",
+        );
+    }
+    var rewritten: []const u8 = "";
+    var index: usize = 0;
+    while (std.mem.indexOfPos(u8, source, index, "f64")) |found| {
+        rewritten = rewritten ++ source[index..found] ++ @tagName(scalar);
+        index = found + "f64".len;
+    }
+    return rewritten ++ source[index..];
+}
+
 fn validateIdentifier(comptime name: []const u8) void {
     if (name.len == 0 or !identifierStart(name[0])) {
         @compileError("Bombelli emitted Zig function name must be an identifier");

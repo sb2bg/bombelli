@@ -22,7 +22,7 @@ pub fn emitExpr(
         "    output.* = n{d};\n}}\n",
         .{expression.root},
     ));
-    return source;
+    return support.applyScalar(source, support.scalarOption(options), name);
 }
 
 pub fn emitVector(
@@ -43,7 +43,8 @@ pub fn emitVector(
             .{ index, root },
         ));
     }
-    return append(source, "}\n");
+    source = append(source, "}\n");
+    return support.applyScalar(source, support.scalarOption(options), name);
 }
 
 pub fn emitMatrix(
@@ -67,5 +68,6 @@ pub fn emitMatrix(
             ));
         }
     }
-    return append(source, "}\n");
+    source = append(source, "}\n");
+    return support.applyScalar(source, support.scalarOption(options), name);
 }

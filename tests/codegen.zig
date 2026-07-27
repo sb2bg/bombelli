@@ -183,3 +183,42 @@ test "Zig emission spells pi as an explicit std constant" {
     try std.testing.expect(std.mem.indexOf(u8, source, "inputs.pi") == null);
     try std.testing.expect(std.mem.indexOf(u8, source, "inputs.r") != null);
 }
+
+test "Zig emission can retarget the scalar type to f32" {
+    const source = comptime expr("sin(x) + x^2").emit(.{
+        .target = .zig,
+        .mode = .out_of_place,
+        .name = "evaluate_single",
+        .scalar = .f32,
+    });
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "pub fn evaluate_single(inputs: anytype, output: *f32)",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "f64") == null);
+
+    const default_source = comptime expr("sin(x) + x^2").emit(.{
+        .target = .zig,
+        .mode = .out_of_place,
+        .name = "evaluate_single",
+    });
+    try std.testing.expect(std.mem.indexOf(u8, default_source, "f32") == null);
+
+    const quadrature_source = comptime expr("exp(-x^2)").quadrature(.{
+        .variable = .x,
+        .rule = .gauss_legendre,
+        .order = 4,
+    }).emit(.{
+        .target = .zig,
+        .mode = .out_of_place,
+        .name = "integrate_single",
+        .scalar = .f32,
+    });
+    try std.testing.expect(std.mem.indexOf(u8, quadrature_source, "f64") == null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        quadrature_source,
+        "var weighted_sum: f32 = 0.0;",
+    ) != null);
+}

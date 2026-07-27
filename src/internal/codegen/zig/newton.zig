@@ -212,7 +212,7 @@ pub fn emitNewton(
             .{ index, root },
         ));
     }
-    return append(source, std.fmt.comptimePrint(
+    source = append(source, std.fmt.comptimePrint(
         \\        residual_norm = bombelliInfinityNorm({d}, residual);
         \\        if (!bombelliFiniteVector({d}, values) or
         \\            !bombelliFiniteVector({d}, residual) or
@@ -261,4 +261,5 @@ pub fn emitNewton(
         finish_name,
         max_iterations,
     }));
+    return support.applyScalar(source, support.scalarOption(options), name);
 }
