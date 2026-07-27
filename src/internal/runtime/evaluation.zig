@@ -10,7 +10,12 @@ pub const BatchOptions = struct {
     /// Zero selects the number of logical CPUs visible to the process.
     max_threads: usize = 0,
     /// Batches at or below this length remain on the calling thread.
-    min_batch_len: usize = 262_144,
+    /// Measured against serial evaluation of a polynomial fixture,
+    /// spawning costs more than it saves below roughly 65,536 items
+    /// (0.65x at 32,768), breaks even through 131,072, then pays: 1.65x
+    /// at 262,144 and 2.45x at 524,288. The default sits at the top of
+    /// the break-even band so threads are spawned only once they earn it.
+    min_batch_len: usize = 131_072,
     /// Target chunk size used to cap the number of worker threads.
     min_items_per_thread: usize = 65_536,
 };
