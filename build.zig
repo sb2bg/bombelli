@@ -99,6 +99,42 @@ pub fn build(b: *std.Build) void {
     );
     emission_step.dependOn(&emission_validation.step);
 
+    const docs_object = b.addObject(.{
+        .name = "bombelli-docs",
+        .root_module = bombelli,
+    });
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = docs_object.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    const docs_step = b.step("docs", "Generate API documentation in zig-out/docs");
+    docs_step.dependOn(&install_docs.step);
+
+    const formatting = b.addSystemCommand(&.{
+        b.graph.zig_exe,
+        "fmt",
+        "--check",
+        "build.zig",
+        "src",
+        "tests",
+        "examples",
+        "benchmarks",
+    });
+    formatting.setName("Zig formatting check");
+    const formatting_step = b.step("fmt-check", "Check Zig source formatting");
+    formatting_step.dependOn(&formatting.step);
+
+    const check_step = b.step(
+        "check",
+        "Run formatting, tests, differential checks, emission validation, and docs",
+    );
+    check_step.dependOn(formatting_step);
+    check_step.dependOn(test_step);
+    check_step.dependOn(differential_step);
+    check_step.dependOn(emission_step);
+    check_step.dependOn(docs_step);
+
     const example = b.addExecutable(.{
         .name = "bombelli-example",
         .root_module = b.createModule(.{

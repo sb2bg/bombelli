@@ -295,6 +295,11 @@ loops and explicit status branches appropriate to quadrature and solvers.
 bytes while also validating reachability, structural uniqueness, and
 topological order.
 
+The implementation layout and dependency rules are documented in
+[docs/architecture/code-organization.md](docs/architecture/code-organization.md).
+Run `zig build check` for the complete formatting, test, differential,
+standalone-emission, and documentation validation path.
+
 ## Validation
 
 The release candidate passes:
