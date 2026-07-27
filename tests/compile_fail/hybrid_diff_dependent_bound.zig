@@ -1,3 +1,4 @@
+// expect-error: error: Bombelli hybrid integration has parameter-dependent bounds; explicit Leibniz boundary terms are required
 const bombelli = @import("bombelli");
 
 comptime {

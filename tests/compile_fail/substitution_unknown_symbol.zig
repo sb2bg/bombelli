@@ -1,3 +1,4 @@
+// expect-error: error: Bombelli substitution replacement '.z' does not name a symbol in the expression
 const bombelli = @import("bombelli");
 
 comptime {

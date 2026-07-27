@@ -11,154 +11,20 @@ pub fn build(b: *std.Build) void {
     });
 
     const tests = b.addTest(.{
-        .root_module = bombelli,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/root.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "bombelli", .module = bombelli },
+            },
+        }),
     });
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run the Bombelli test suite");
     test_step.dependOn(&run_tests.step);
 
-    const compile_fail_step = b.step(
-        "test-compile-fail",
-        "Verify source-focused compile-time diagnostics",
-    );
-    const compile_fail_cases = [_]struct {
-        path: []const u8,
-        expected: []const u8,
-        source_diagnostic: bool = true,
-    }{
-        .{ .path = "tests/compile_fail/trailing_token.zig", .expected = "unexpected trailing token" },
-        .{ .path = "tests/compile_fail/unexpected_character.zig", .expected = "unexpected character" },
-        .{
-            .path = "tests/compile_fail/missing_input_field.zig",
-            .expected = "Bombelli eval input is missing the field '.y'",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/substitution_unknown_symbol.zig",
-            .expected = "Bombelli substitution replacement '.z' does not name a symbol in the expression",
-            .source_diagnostic = false,
-        },
-        .{ .path = "tests/compile_fail/invalid_exponent.zig", .expected = "power exponent must be an exact rational literal" },
-        .{ .path = "tests/compile_fail/missing_parenthesis.zig", .expected = "missing closing parenthesis" },
-        .{ .path = "tests/compile_fail/unknown_function.zig", .expected = "unknown function" },
-        .{ .path = "tests/compile_fail/power_chaining.zig", .expected = "power chaining is not supported; parenthesize the base" },
-        .{
-            .path = "tests/compile_fail/integer_fold_overflow.zig",
-            .expected = "integer constant folding exceeds i64 range",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/nested_integer_fold_overflow.zig",
-            .expected = "integer constant folding exceeds i64 range",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/power_fold_overflow.zig",
-            .expected = "integer constant folding exceeds i64 range",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/rational_fold_overflow.zig",
-            .expected = "exact rational constant folding exceeds fixed-width range",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/rational_power_domain.zig",
-            .expected = "even-denominator rational power is not real for a negative base",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/ln_domain.zig",
-            .expected = "ln is undefined for non-positive constants",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/ln_negative_domain.zig",
-            .expected = "ln is undefined for non-positive constants",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/exp_fold_overflow.zig",
-            .expected = "constant folding produced a non-finite floating-point value",
-            .source_diagnostic = false,
-        },
-        .{ .path = "tests/compile_fail/float_literal_overflow.zig", .expected = "floating-point literal is out of range" },
-        .{ .path = "tests/compile_fail/equation_missing_equals.zig", .expected = "equation must contain exactly one '='" },
-        .{ .path = "tests/compile_fail/equation_multiple_equals.zig", .expected = "equation must contain exactly one '='" },
-        .{
-            .path = "tests/compile_fail/equation_duplicate_unknown.zig",
-            .expected = "Bombelli equation problem unknowns must be unique",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/system_duplicate_unknown.zig",
-            .expected = "Bombelli system unknowns must be unique",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/require_unique_multiple.zig",
-            .expected = "Bombelli expected one solution, but found 2",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/unwrap_partial_integral.zig",
-            .expected = "Bombelli integration is partial; unresolved remainder: exp(x^2)",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/unsupported_quadrature_order.zig",
-            .expected = "Bombelli Gauss-Legendre quadrature supports orders 4, 8, 16, and 32; received 12",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/quadrature_diff_bound.zig",
-            .expected = "Bombelli quadrature endpoints are runtime inputs; parameter-dependent bounds require explicit Leibniz terms",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/hybrid_diff_dependent_bound.zig",
-            .expected = "Bombelli hybrid integration has parameter-dependent bounds; explicit Leibniz boundary terms are required",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/newton_missing_initial.zig",
-            .expected = "Bombelli Newton eval input requires '.initial'",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/newton_diff_unknown.zig",
-            .expected = "Bombelli Newton sensitivity parameter must not be one of the solved unknowns",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/callable_unsupported_diff.zig",
-            .expected = "Bombelli adaptive quadrature is not differentiable because its runtime subdivision branches may change",
-            .source_diagnostic = false,
-        },
-        .{
-            .path = "tests/compile_fail/emission_keyword_name.zig",
-            .expected = "Bombelli emitted Zig function name must not be a Zig keyword",
-            .source_diagnostic = false,
-        },
-    };
-    for (compile_fail_cases) |case| {
-        const check = b.addSystemCommand(&.{
-            b.graph.zig_exe,
-            "test",
-            "--dep",
-            "bombelli",
-        });
-        check.setName(b.fmt("compile-fail {s}", .{case.path}));
-        check.addPrefixedFileArg("-Mroot=", b.path(case.path));
-        check.addPrefixedFileArg("-Mbombelli=", b.path("src/root.zig"));
-        check.expectExitCode(1);
-        check.expectStdErrMatch(if (case.source_diagnostic)
-            b.fmt("error: {s} at byte", .{case.expected})
-        else
-            b.fmt("error: {s}", .{case.expected}));
-        compile_fail_step.dependOn(&check.step);
-    }
-    test_step.dependOn(compile_fail_step);
+    addCompileFailTests(b, test_step);
 
     const stress_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -250,4 +116,96 @@ pub fn build(b: *std.Build) void {
     run_example.step.dependOn(b.getInstallStep());
     const run_step = b.step("run", "Run the Bombelli example");
     run_step.dependOn(&run_example.step);
+}
+
+fn addCompileFailTests(b: *std.Build, test_step: *std.Build.Step) void {
+    const directory_path = "tests/compile_fail";
+    const expectation_prefix = "// expect-error: ";
+    const io = b.graph.io;
+
+    var directory = b.build_root.handle.openDir(
+        io,
+        directory_path,
+        .{ .iterate = true },
+    ) catch |err| {
+        std.debug.panic(
+            "unable to open {s}: {s}",
+            .{ directory_path, @errorName(err) },
+        );
+    };
+    defer directory.close(io);
+
+    const compile_fail_step = b.step(
+        "test-compile-fail",
+        "Verify automatically discovered compile-time diagnostics",
+    );
+    var discovered: usize = 0;
+    var iterator = directory.iterate();
+    while (iterator.next(io) catch |err| {
+        std.debug.panic(
+            "unable to enumerate {s}: {s}",
+            .{ directory_path, @errorName(err) },
+        );
+    }) |entry| {
+        if (entry.kind != .file or
+            !std.mem.endsWith(u8, entry.name, ".zig"))
+        {
+            continue;
+        }
+
+        const contents = directory.readFileAlloc(
+            io,
+            entry.name,
+            b.allocator,
+            .limited(64 * 1024),
+        ) catch |err| {
+            std.debug.panic(
+                "unable to read {s}/{s}: {s}",
+                .{ directory_path, entry.name, @errorName(err) },
+            );
+        };
+        const line_end = std.mem.indexOfScalar(u8, contents, '\n') orelse
+            contents.len;
+        const first_line = std.mem.trimEnd(
+            u8,
+            contents[0..line_end],
+            "\r",
+        );
+        if (!std.mem.startsWith(u8, first_line, expectation_prefix)) {
+            std.debug.panic(
+                "{s}/{s} must begin with '{s}<diagnostic>'",
+                .{ directory_path, entry.name, expectation_prefix },
+            );
+        }
+        const expected = first_line[expectation_prefix.len..];
+        if (expected.len == 0) {
+            std.debug.panic(
+                "{s}/{s} has an empty compile-fail expectation",
+                .{ directory_path, entry.name },
+            );
+        }
+
+        const case_path = b.fmt(
+            "{s}/{s}",
+            .{ directory_path, entry.name },
+        );
+        const check = b.addSystemCommand(&.{
+            b.graph.zig_exe,
+            "test",
+            "--dep",
+            "bombelli",
+        });
+        check.setName(b.fmt("compile-fail {s}", .{entry.name}));
+        check.addPrefixedFileArg("-Mroot=", b.path(case_path));
+        check.addPrefixedFileArg("-Mbombelli=", b.path("src/root.zig"));
+        check.expectExitCode(1);
+        check.expectStdErrMatch(expected);
+        compile_fail_step.dependOn(&check.step);
+        discovered += 1;
+    }
+
+    if (discovered == 0) {
+        std.debug.panic("no compile-fail cases found in {s}", .{directory_path});
+    }
+    test_step.dependOn(compile_fail_step);
 }

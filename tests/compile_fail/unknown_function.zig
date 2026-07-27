@@ -1,3 +1,4 @@
+// expect-error: error: unknown function at byte
 const bombelli = @import("bombelli");
 
 comptime {

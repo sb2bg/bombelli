@@ -1,3 +1,4 @@
+// expect-error: error: integer constant folding exceeds i64 range
 const bombelli = @import("bombelli");
 
 comptime {

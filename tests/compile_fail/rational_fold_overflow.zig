@@ -1,3 +1,4 @@
+// expect-error: error: exact rational constant folding exceeds fixed-width range
 const bombelli = @import("bombelli");
 
 comptime {

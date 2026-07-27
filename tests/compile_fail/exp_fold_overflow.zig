@@ -1,3 +1,4 @@
+// expect-error: error: constant folding produced a non-finite floating-point value
 const bombelli = @import("bombelli");
 
 comptime {

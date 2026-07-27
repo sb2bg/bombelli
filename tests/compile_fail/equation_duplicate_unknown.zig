@@ -1,3 +1,4 @@
+// expect-error: error: Bombelli equation problem unknowns must be unique
 const bombelli = @import("bombelli");
 
 comptime {

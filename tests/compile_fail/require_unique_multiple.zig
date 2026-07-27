@@ -1,3 +1,4 @@
+// expect-error: error: Bombelli expected one solution, but found 2
 const bombelli = @import("bombelli");
 
 comptime {

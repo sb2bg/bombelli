@@ -1,3 +1,4 @@
+// expect-error: error: Bombelli integration is partial; unresolved remainder: exp(x^2)
 const bombelli = @import("bombelli");
 
 comptime {

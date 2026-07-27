@@ -1,3 +1,4 @@
+// expect-error: error: Bombelli quadrature endpoints are runtime inputs; parameter-dependent bounds require explicit Leibniz terms
 const bombelli = @import("bombelli");
 
 comptime {

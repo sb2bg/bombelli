@@ -1,3 +1,4 @@
+// expect-error: error: Bombelli system unknowns must be unique
 const bombelli = @import("bombelli");
 
 comptime {

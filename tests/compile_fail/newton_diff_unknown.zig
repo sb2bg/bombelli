@@ -1,3 +1,4 @@
+// expect-error: error: Bombelli Newton sensitivity parameter must not be one of the solved unknowns
 const bombelli = @import("bombelli");
 
 comptime {

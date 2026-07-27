@@ -1,3 +1,4 @@
+// expect-error: error: Bombelli adaptive quadrature is not differentiable because its runtime subdivision branches may change
 const bombelli = @import("bombelli");
 
 comptime {
