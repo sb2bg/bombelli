@@ -19,6 +19,13 @@ pub fn QuadratureRule(comptime N: usize) type {
         const Self = @This();
 
         pub inline fn eval(comptime self: Self, inputs: anytype) f64 {
+            comptime evaluation.validateInputFields(
+                @TypeOf(inputs),
+                &.{self.integrand.nodes},
+                &.{ "from", "to" },
+                &.{self.variable},
+                "quadrature eval",
+            );
             const from = inputValue(inputs, "from");
             const to = inputValue(inputs, "to");
             return self.evalRange(inputs, from, to);

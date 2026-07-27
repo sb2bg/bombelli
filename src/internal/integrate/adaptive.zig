@@ -42,6 +42,13 @@ pub fn AdaptiveQuadratureRule(comptime max_depth: usize) type {
         const Self = @This();
 
         pub inline fn eval(comptime self: Self, inputs: anytype) AdaptiveResult {
+            comptime evaluation.validateInputFields(
+                @TypeOf(inputs),
+                &.{self.integrand.nodes},
+                &.{ "from", "to" },
+                &.{self.variable},
+                "adaptive quadrature eval",
+            );
             const from = inputValue(inputs, "from");
             const to = inputValue(inputs, "to");
             if (from == to) return .{

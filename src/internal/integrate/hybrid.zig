@@ -16,6 +16,21 @@ pub fn HybridIntegral(comptime order: usize) type {
         const Self = @This();
 
         pub inline fn eval(comptime self: Self, inputs: anytype) f64 {
+            comptime evaluation.validateInputFields(
+                @TypeOf(inputs),
+                if (self.bounds) |bounds| &.{
+                    self.closed_portion.nodes,
+                    self.remainder_rule.integrand.nodes,
+                    bounds.from.nodes,
+                    bounds.to.nodes,
+                } else &.{
+                    self.closed_portion.nodes,
+                    self.remainder_rule.integrand.nodes,
+                },
+                if (self.bounds == null) &.{ "from", "to" } else &.{},
+                &.{self.variable},
+                "compiled integral eval",
+            );
             const from = if (self.bounds) |bounds|
                 bounds.from.eval(inputs)
             else

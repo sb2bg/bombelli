@@ -53,6 +53,13 @@ pub fn NewtonSolver(
             comptime self: Self,
             inputs: anytype,
         ) NewtonResult(N) {
+            comptime evaluation.validateInputFields(
+                @TypeOf(inputs),
+                &.{self.residuals.nodes},
+                &.{"initial"},
+                &self.unknowns,
+                "Newton eval",
+            );
             var values = initialValues(N, self.unknowns, inputs);
             var residual = evaluation.evaluateVectorWithVariables(
                 N,
@@ -456,6 +463,17 @@ inline fn initialValues(
     const Initial = @TypeOf(initial);
     if (@typeInfo(Initial) != .@"struct") {
         @compileError("Bombelli Newton '.initial' must be a struct of unknown values");
+    }
+    comptime {
+        field_check: for (@typeInfo(Initial).@"struct".fields) |field| {
+            for (unknowns) |name| {
+                if (std.mem.eql(u8, field.name, name)) continue :field_check;
+            }
+            @compileError(std.fmt.comptimePrint(
+                "Bombelli Newton initial point field '.{s}' does not name an unknown",
+                .{field.name},
+            ));
+        }
     }
     var values: [N]f64 = undefined;
     inline for (unknowns, 0..) |name, index| {

@@ -24,6 +24,8 @@ compiler for Zig 0.16.0.
 - Fixed-size Newton solvers and implicit parameter sensitivities
 - Canonical and pretty rendering plus standalone Zig source emission
 - Emission scalar retargeting via `.scalar = .f32` (default `.f64`)
+- Strict eval input contracts on quadrature, compiled-integral, and Newton
+  callables (unknown fields are compile errors)
 
 ### Runtime contract
 

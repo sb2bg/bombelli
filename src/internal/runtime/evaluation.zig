@@ -22,6 +22,55 @@ pub inline fn evaluate(comptime expression: ast.Expr, values: anytype) f64 {
     return results[@intCast(expression.root)];
 }
 
+/// Rejects input struct fields that name neither a symbol in any of the
+/// node stores nor a reserved field. Fields naming a bound variable get a
+/// dedicated diagnostic because they are the likeliest confusion.
+/// Plain expression eval stays permissive: transformations such as
+/// differentiation legitimately eliminate symbols, and evaluating the
+/// result at a full point must keep working. Structured callables with
+/// explicit input contracts (quadrature, compiled integrals, Newton)
+/// validate strictly.
+pub fn validateInputFields(
+    comptime Values: type,
+    comptime node_sets: []const []const ast.Node,
+    comptime reserved: []const []const u8,
+    comptime bound: []const []const u8,
+    comptime description: []const u8,
+) void {
+    if (@typeInfo(Values) != .@"struct") return;
+    for (@typeInfo(Values).@"struct".fields) |field| {
+        const name = field.name;
+        var expected = false;
+        for (reserved) |entry| {
+            if (std.mem.eql(u8, entry, name)) expected = true;
+        }
+        for (bound) |entry| {
+            if (std.mem.eql(u8, entry, name)) {
+                @compileError(std.fmt.comptimePrint(
+                    "Bombelli {s} input field '.{s}' names a bound variable, not an input",
+                    .{ description, name },
+                ));
+            }
+        }
+        if (!expected) {
+            outer: for (node_sets) |nodes| {
+                for (nodes) |node| {
+                    if (node == .symbol and std.mem.eql(u8, node.symbol, name)) {
+                        expected = true;
+                        break :outer;
+                    }
+                }
+            }
+        }
+        if (!expected) {
+            @compileError(std.fmt.comptimePrint(
+                "Bombelli {s} input field '.{s}' does not name an input of this callable",
+                .{ description, name },
+            ));
+        }
+    }
+}
+
 pub inline fn evaluateInto(
     comptime expression: ast.Expr,
     output: *f64,
