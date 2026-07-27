@@ -597,3 +597,49 @@ test "substitution is a simultaneous memoized DAG rebuild" {
     try std.testing.expectEqualStrings("2 * x", rendered[0]);
     try std.testing.expectEqualStrings("x^2", rendered[1]);
 }
+
+test "pi is an exact symbolic constant" {
+    const circumference = comptime expr("2 * pi * r");
+    try std.testing.expectEqualStrings(
+        "2 * pi * r",
+        comptime circumference.simplify().render(),
+    );
+    try std.testing.expectApproxEqAbs(
+        2.0 * std.math.pi * 3.0,
+        circumference.eval(.{ .r = 3.0 }),
+        1e-12,
+    );
+
+    const round_trip = comptime expr(expr("pi").render());
+    try std.testing.expectEqual(std.math.pi, round_trip.eval(.{}));
+
+    const area_derivative = comptime expr("pi * r^2").diff(.r).simplify();
+    try std.testing.expectEqualStrings(
+        "2 * pi * r",
+        comptime area_derivative.render(),
+    );
+    try std.testing.expectApproxEqAbs(
+        2.0 * std.math.pi * 2.0,
+        area_derivative.eval(.{ .r = 2.0 }),
+        1e-12,
+    );
+
+    // pi never becomes an eval input, and repeated uses share one node.
+    const wave = comptime expr("sin(pi * x) + cos(pi * x)");
+    try std.testing.expectApproxEqAbs(
+        -1.0,
+        wave.eval(.{ .x = 1.0 }),
+        1e-12,
+    );
+
+    // pi is provably nonzero, so affine integration needs no assumption.
+    const integral = comptime expr("exp(pi*x + 1)").integrate(.{
+        .variable = .x,
+        .domain = .real,
+    }).unwrap().simplify();
+    try std.testing.expectApproxEqAbs(
+        @exp(std.math.pi + 1.0) / std.math.pi,
+        integral.eval(.{ .x = 1.0 }),
+        1e-11,
+    );
+}

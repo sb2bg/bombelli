@@ -8,7 +8,7 @@ pub fn dependsOn(
     var dependent = [_]bool{false} ** expression.nodes.len;
     inline for (expression.nodes, 0..) |node, index| {
         dependent[index] = switch (node) {
-            .integer, .rational, .float => false,
+            .integer, .rational, .float, .constant => false,
             .symbol => |name| std.mem.eql(u8, name, variable),
             .add, .sub, .mul, .div => |binary| dependent[@intCast(binary.left)] or
                 dependent[@intCast(binary.right)],

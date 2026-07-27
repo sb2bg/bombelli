@@ -200,6 +200,7 @@ fn cloneNodes(
         .integer => |value| builder.integer(value),
         .rational => |value| builder.rational(value),
         .float => |value| builder.float(value),
+        .constant => |value| builder.constant(value),
         .symbol => |name| builder.symbol(name),
         .add => |binary| builder.add(
             cloneNodes(builder, nodes, binary.left, cache),

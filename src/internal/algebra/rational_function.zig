@@ -184,6 +184,7 @@ const ConversionContext = struct {
             },
             .negate => |child| self.convert(child).negate(),
             .float => unsupported("floating-point constants are not exact rational functions"),
+            .constant => unsupported("transcendental constants are not exact rational functions"),
             .sin, .cos, .tan, .atan, .abs, .exp, .ln => unsupported(
                 "transcendental functions are not rational functions",
             ),

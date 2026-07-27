@@ -680,7 +680,7 @@ fn polynomialConvertible(comptime expression: ast.Expr) bool {
     inline for (expression.nodes, 0..) |node, index| {
         convertible[index] = switch (node) {
             .integer, .rational, .symbol => true,
-            .float, .div, .sin, .cos, .tan, .atan, .abs, .exp, .ln => false,
+            .float, .constant, .div, .sin, .cos, .tan, .atan, .abs, .exp, .ln => false,
             .add, .sub, .mul => |binary| convertible[@intCast(binary.left)] and
                 convertible[@intCast(binary.right)],
             .add_nary, .mul_nary => |operands| blk: {
@@ -709,6 +709,7 @@ fn provablyNonzero(
             .integer => |value| value != 0,
             .rational => |value| !value.isZero(),
             .float => |value| value != 0.0,
+            .constant => true,
             .symbol => |name| symbolNonzero(name, assumptions),
             .mul => |binary| nonzero_nodes[@intCast(binary.left)] and
                 nonzero_nodes[@intCast(binary.right)],

@@ -119,6 +119,7 @@ fn renderBare(
             .{ value.numerator, value.denominator },
         ),
         .float => |value| renderFloat(value),
+        .constant => |value| value.name(),
         .symbol => |name| name,
         .add => |binary| std.fmt.comptimePrint(
             "{s} + {s}",
@@ -388,6 +389,6 @@ fn nodePrecedence(node: ast.Node) u8 {
         // precedence even when their numerator is non-negative.
         .rational => 20,
         .float => |value| if (value < 0.0) 30 else 50,
-        .symbol, .sin, .cos, .tan, .atan, .abs, .exp, .ln => 50,
+        .constant, .symbol, .sin, .cos, .tan, .atan, .abs, .exp, .ln => 50,
     };
 }

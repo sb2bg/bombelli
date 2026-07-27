@@ -18,10 +18,29 @@ pub const Power = struct {
     exponent: exact.Rational,
 };
 
+pub const Constant = enum {
+    pi,
+
+    /// Returns the closest `f64` to the mathematical constant.
+    pub fn value(self: Constant) f64 {
+        return switch (self) {
+            .pi => std.math.pi,
+        };
+    }
+
+    /// Returns the canonical, re-parsable spelling.
+    pub fn name(self: Constant) []const u8 {
+        return switch (self) {
+            .pi => "pi",
+        };
+    }
+};
+
 pub const Node = union(enum) {
     integer: exact.Integer,
     rational: exact.Rational,
     float: f64,
+    constant: Constant,
     symbol: []const u8,
     add: Binary,
     add_nary: []const NodeId,
@@ -430,6 +449,7 @@ pub fn nodeEqual(left: Node, right: Node) bool {
         .rational => |value| value.eql(right.rational),
         .float => |value| @as(u64, @bitCast(value)) ==
             @as(u64, @bitCast(right.float)),
+        .constant => |value| value == right.constant,
         .symbol => |name| std.mem.eql(u8, name, right.symbol),
         .add => |binary| binaryEqual(binary, right.add),
         .add_nary => |operands| std.mem.eql(NodeId, operands, right.add_nary),

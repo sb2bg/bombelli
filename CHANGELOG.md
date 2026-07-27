@@ -9,6 +9,8 @@ compiler for Zig 0.16.0.
 
 - Compact, hash-consed single- and multi-root symbolic DAGs
 - Checked exact integers, canonical rationals, and rational powers
+- `pi` as an exact symbolic constant (`e` stays an ordinary symbol; use
+  `exp(1)`)
 - Canonical n-ary algebra, substitution, sparse polynomials, and rational
   functions with retained denominator conditions
 - Symbolic differentiation, gradients, Jacobians, Hessians, and explicit

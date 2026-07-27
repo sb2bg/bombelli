@@ -285,6 +285,7 @@ inline fn evaluateNodesWithResolver(
             ),
             .rational => |value| numberValue(Number, value.toF64()),
             .float => |value| numberValue(Number, value),
+            .constant => |value| numberValue(Number, value.value()),
             .symbol => |name| resolveSymbol(Number, name, context),
             .add => |binary| results[@intCast(binary.left)] +
                 results[@intCast(binary.right)],
@@ -356,6 +357,7 @@ inline fn evaluateNodesWithVariables(
             .integer => |value| @floatFromInt(value),
             .rational => |value| value.toF64(),
             .float => |value| value,
+            .constant => |value| value.value(),
             .symbol => |name| variableValue(
                 N,
                 name,

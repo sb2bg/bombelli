@@ -389,6 +389,7 @@ const ConversionContext = struct {
                 exact.Rational.fromInteger(-1),
             ),
             .float => unsupported("floating-point constants are not exact polynomials"),
+            .constant => unsupported("transcendental constants are not exact polynomials"),
             .sin, .cos, .tan, .atan, .abs, .exp, .ln => unsupported(
                 "transcendental functions are not polynomials",
             ),

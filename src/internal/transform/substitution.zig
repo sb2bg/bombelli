@@ -108,6 +108,7 @@ fn rebuild(
         .integer => |value| builder.integer(value),
         .rational => |value| builder.rational(value),
         .float => |value| builder.float(value),
+        .constant => |value| builder.constant(value),
         .add => |binary| builder.add(
             rebuild(builder, nodes, binary.left, cache, replacements),
             rebuild(builder, nodes, binary.right, cache, replacements),
@@ -208,6 +209,7 @@ fn rebuildName(
         .integer => |value| builder.integer(value),
         .rational => |value| builder.rational(value),
         .float => |value| builder.float(value),
+        .constant => |value| builder.constant(value),
         .add => |binary| builder.add(
             rebuildName(
                 builder,
@@ -457,6 +459,7 @@ fn cloneNode(
         .integer => |value| builder.integer(value),
         .rational => |value| builder.rational(value),
         .float => |value| builder.float(value),
+        .constant => |value| builder.constant(value),
         .symbol => |name| builder.symbol(name),
         .add => |binary| builder.add(
             cloneNode(builder, nodes, binary.left, cache),

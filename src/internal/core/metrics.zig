@@ -118,7 +118,7 @@ fn validateChildren(
     comptime parent_index: usize,
 ) void {
     switch (node_value) {
-        .integer, .rational, .float, .symbol => {},
+        .integer, .rational, .float, .constant, .symbol => {},
         .add, .sub, .mul, .div => |binary| {
             validateChild(binary.left, parent_index);
             validateChild(binary.right, parent_index);

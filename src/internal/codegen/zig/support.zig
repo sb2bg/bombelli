@@ -59,6 +59,7 @@ fn nodeSource(
             },
         ),
         .float => |value| floatSource(value),
+        .constant => |value| constantSource(value),
         .symbol => |name| symbolSource(name, bindings),
         .add => |binary| binarySource(binary, prefix, "+"),
         .sub => |binary| binarySource(binary, prefix, "-"),
@@ -83,6 +84,12 @@ fn nodeSource(
         .abs => |child| unarySource(prefix, child, "@abs"),
         .exp => |child| unarySource(prefix, child, "@exp"),
         .ln => |child| unarySource(prefix, child, "@log"),
+    };
+}
+
+fn constantSource(comptime value: ast.Constant) []const u8 {
+    return switch (value) {
+        .pi => "std.math.pi",
     };
 }
 

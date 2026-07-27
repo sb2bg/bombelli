@@ -172,3 +172,14 @@ test "Newton Zig emission is standalone fixed-size numerical code" {
     ) == null);
     try std.testing.expect(std.mem.indexOf(u8, source, "ast.Node") == null);
 }
+
+test "Zig emission spells pi as an explicit std constant" {
+    const source = comptime expr("pi * r^2").emit(.{
+        .target = .zig,
+        .mode = .out_of_place,
+        .name = "evaluate_area",
+    });
+    try std.testing.expect(std.mem.indexOf(u8, source, "std.math.pi") != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "inputs.pi") == null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "inputs.r") != null);
+}

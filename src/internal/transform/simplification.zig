@@ -176,6 +176,7 @@ const Context = struct {
             .integer => |value| self.builder.integer(value),
             .rational => |value| self.builder.rational(value),
             .float => |value| self.builder.float(value),
+            .constant => |value| self.builder.constant(value),
             .symbol => |name| self.builder.symbol(name),
             .add => |binary| simplifyAdd(
                 self.builder,
@@ -1127,6 +1128,7 @@ fn less(builder: *const build.Builder, left: ast.NodeId, right: ast.NodeId) bool
             value < right_node.float
         else
             @as(u64, @bitCast(value)) < @as(u64, @bitCast(right_node.float)),
+        .constant => |value| @intFromEnum(value) < @intFromEnum(right_node.constant),
         .symbol => |name| std.mem.order(u8, name, right_node.symbol) == .lt,
         .pow => |power| if (power.base == right_node.pow.base)
             if (power.exponent.numerator != right_node.pow.exponent.numerator)
@@ -1183,6 +1185,7 @@ fn rank(node: ast.Node) u8 {
         .integer => 0,
         .rational => 1,
         .float => 2,
+        .constant => 2,
         .symbol => 3,
         .pow => 4,
         .mul => 5,

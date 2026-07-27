@@ -12,7 +12,7 @@ pub fn markReachable(
     reachable[index] = true;
 
     switch (nodes[index]) {
-        .integer, .rational, .float, .symbol => {},
+        .integer, .rational, .float, .constant, .symbol => {},
         .add, .sub, .mul, .div => |binary| {
             markReachable(nodes, binary.left, reachable);
             markReachable(nodes, binary.right, reachable);

@@ -33,6 +33,10 @@ pub const Builder = struct {
         return self.intern(.{ .float = value });
     }
 
+    pub fn constant(self: *Builder, value: ast.Constant) ast.NodeId {
+        return self.intern(.{ .constant = value });
+    }
+
     pub fn symbol(self: *Builder, name: []const u8) ast.NodeId {
         return self.intern(.{ .symbol = name });
     }
@@ -246,6 +250,7 @@ fn remapNode(
         .integer => |value| .{ .integer = value },
         .rational => |value| .{ .rational = value },
         .float => |value| .{ .float = value },
+        .constant => |value| .{ .constant = value },
         .symbol => |name| .{ .symbol = name },
         .add => |binary| .{ .add = remapBinary(binary, remap) },
         .add_nary => |operands| .{ .add_nary = remapOperands(operands, remap) },
@@ -299,6 +304,7 @@ fn hashNode(node_value: ast.Node) u64 {
             value.denominator,
         ),
         .float => |value| mix(hash, @as(u64, @bitCast(value))),
+        .constant => |value| mix(hash, @intFromEnum(value)),
         .symbol => |name| blk: {
             for (name) |byte| hash = mix(hash, byte);
             break :blk hash;
