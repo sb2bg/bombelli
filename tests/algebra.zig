@@ -2,33 +2,29 @@ const std = @import("std");
 const bombelli = @import("bombelli");
 
 const expr = bombelli.expr;
-const exprVector = bombelli.exprVector;
-const exprMatrix = bombelli.exprMatrix;
 const rational = bombelli.rational;
-const equation = bombelli.equation;
-const system = bombelli.system;
-const equationProblem = bombelli.equationProblem;
-const Expr = bombelli.Expr;
-const Rational = bombelli.Rational;
-const Domain = bombelli.Domain;
 const positive = bombelli.positive;
 const nonzero = bombelli.nonzero;
-const SolutionSet = bombelli.SolutionSet;
-const AdaptiveQuadratureStatus = bombelli.AdaptiveQuadratureStatus;
-const NewtonStatus = bombelli.NewtonStatus;
-const NewtonSensitivityStatus = bombelli.NewtonSensitivityStatus;
-const callable = bombelli.callable;
 
-test "domains and assumptions are operation-local values" {
-    const assumptions = .{
-        positive(.x),
-        nonzero(.a),
-    };
-    try std.testing.expectEqual(Domain.real, .real);
-    try std.testing.expectEqualStrings("x", assumptions[0].symbol);
-    try std.testing.expectEqualStrings("a", assumptions[1].symbol);
-    try std.testing.expect(assumptions[0].kind == .positive);
-    try std.testing.expect(assumptions[1].kind == .nonzero);
+test "a positivity assumption discharges a nonzero requirement" {
+    // Integrating exp(a*x + b) needs a != 0. Asserting positivity is
+    // strictly stronger, so it must unlock the same closed form.
+    const unassumed = comptime expr("exp(a*x + b)").integrate(.{
+        .variable = .x,
+        .domain = .real,
+    });
+    try std.testing.expect(unassumed == .unsupported);
+
+    const assumed = comptime expr("exp(a*x + b)").integrate(.{
+        .variable = .x,
+        .domain = .real,
+        .assumptions = .{positive(.a)},
+    }).unwrap().simplify();
+    try std.testing.expectApproxEqAbs(
+        @exp(7.0) / 2.0,
+        assumed.eval(.{ .x = 3.0, .a = 2.0, .b = 1.0 }),
+        1e-12,
+    );
 }
 
 test "sparse exact polynomial conversion algebra and expansion" {
