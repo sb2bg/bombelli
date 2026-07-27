@@ -174,41 +174,6 @@ pub fn build(b: *std.Build) void {
         "Check the Jacobian conjecture counterexample at compile time",
     );
     jacobian_step.dependOn(&run_jacobian.step);
-
-    addBenchmarks(b, target, bombelli);
-}
-
-fn addBenchmarks(
-    b: *std.Build,
-    target: std.Build.ResolvedTarget,
-    bombelli: *std.Build.Module,
-) void {
-    const bench_step = b.step(
-        "bench",
-        "Run runtime benchmarks in ReleaseFast",
-    );
-    const cases = [_]struct { name: []const u8, path: []const u8 }{
-        .{ .name = "bench-batch", .path = "benchmarks/runtime_batch.zig" },
-        .{
-            .name = "bench-quadrature-simd",
-            .path = "benchmarks/runtime_quadrature_simd.zig",
-        },
-    };
-    for (cases) |case| {
-        const executable = b.addExecutable(.{
-            .name = case.name,
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(case.path),
-                .target = target,
-                // Timings are meaningless in Debug.
-                .optimize = .ReleaseFast,
-                .imports = &.{
-                    .{ .name = "bombelli", .module = bombelli },
-                },
-            }),
-        });
-        bench_step.dependOn(&b.addRunArtifact(executable).step);
-    }
 }
 
 fn addCompileFailTests(b: *std.Build, test_step: *std.Build.Step) void {
