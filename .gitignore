@@ -2,3 +2,7 @@
 zig-out/
 .DS_Store
 __pycache__/
+
+# Positioning and launch drafts stay local; a public playbook of
+# venue-tuned posts and objection scripts reads as astroturf.
+docs/marketing/
