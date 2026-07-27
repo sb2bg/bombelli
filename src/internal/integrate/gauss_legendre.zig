@@ -41,7 +41,7 @@ pub fn QuadratureRule(comptime N: usize) type {
             const half_width = (to - from) * 0.5;
             const selected = table(N);
             var weighted_sum: f64 = 0.0;
-            if (comptime prefersExplicitSimd(self.integrand)) {
+            if (comptime evaluation.prefersVectorLanes(self.integrand)) {
                 const lane_count = @min(N, evaluation.batch_vector_length);
                 const Lanes = @Vector(lane_count, f64);
                 const midpoint_lanes: Lanes = @splat(midpoint);
@@ -312,18 +312,6 @@ fn validateOrder(comptime order: usize) void {
             .{order},
         )),
     }
-}
-
-fn prefersExplicitSimd(comptime expression: ast.Expr) bool {
-    if (evaluation.batch_vector_length == 1) return false;
-    inline for (expression.nodes) |node| {
-        switch (node) {
-            .sin, .cos, .tan, .atan, .exp, .ln => return false,
-            .pow => |power| if (power.exponent.denominator != 1) return false,
-            else => {},
-        }
-    }
-    return true;
 }
 
 inline fn inputValue(inputs: anytype, comptime name: []const u8) f64 {

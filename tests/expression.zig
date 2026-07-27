@@ -643,3 +643,41 @@ test "pi is an exact symbolic constant" {
         1e-11,
     );
 }
+
+test "batch evaluation vectorizes lane-friendly programs including the tail" {
+    // Integer powers and rational arithmetic only: this is the shape that
+    // takes the explicit-lane path, unlike the transcendental cases above.
+    const program = comptime expr(
+        "x^4/7 + y^3/5 + 3*x^2*y - 2*x*y^2 + x/11 - y/13",
+    ).simplify();
+
+    // A prime length guarantees a partial final vector.
+    const count = 23;
+    var xs: [count]f64 = undefined;
+    var ys: [count]f64 = undefined;
+    for (&xs, &ys, 0..) |*x, *y, index| {
+        x.* = @as(f64, @floatFromInt(index)) / 8.0 - 1.5;
+        y.* = @as(f64, @floatFromInt((index * 13) % count)) / 6.0 - 2.0;
+    }
+
+    var actual: [count]f64 = undefined;
+    try program.evalBatchInto(&actual, .{ .x = xs[0..], .y = ys[0..] });
+    for (actual, xs, ys) |batch_value, x, y| {
+        try std.testing.expectApproxEqAbs(
+            program.eval(.{ .x = x, .y = y }),
+            batch_value,
+            2e-14,
+        );
+    }
+
+    var parallel: [count]f64 = undefined;
+    try program.evalBatchParallelInto(&parallel, .{
+        .x = xs[0..],
+        .y = ys[0..],
+    }, .{
+        .max_threads = 3,
+        .min_batch_len = 0,
+        .min_items_per_thread = 1,
+    });
+    try std.testing.expectEqualDeep(actual, parallel);
+}

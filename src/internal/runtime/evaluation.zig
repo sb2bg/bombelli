@@ -655,29 +655,48 @@ inline fn evaluateBatchRange(
     end: usize,
 ) void {
     const Values = @typeInfo(@TypeOf(values)).pointer.child;
-    const Number = @Vector(batch_vector_length, f64);
     const Context = BatchContext(Values);
     var offset = start;
-    while (offset + batch_vector_length <= end) : (offset += batch_vector_length) {
-        const results = evaluateNodesWithResolver(
-            Number,
-            expression.nodes,
-            Context{ .values = values, .offset = offset },
-            batchSymbolValue,
-        );
-        output[offset..][0..batch_vector_length].* =
-            results[@intCast(expression.root)];
+    if (comptime prefersVectorLanes(expression)) {
+        const Number = @Vector(batch_vector_length, f64);
+        while (offset + batch_vector_length <= end) : (offset += batch_vector_length) {
+            const results = evaluateNodesWithResolver(
+                Number,
+                expression.nodes,
+                Context{ .values = values, .offset = offset },
+                batchSymbolValue,
+            );
+            output[offset..][0..batch_vector_length].* =
+                results[@intCast(expression.root)];
+        }
     }
+    // Also the whole range when lanes are unprofitable. Evaluating the tail
+    // as f64 rather than a one-lane vector keeps the node evaluator from
+    // being instantiated a second time.
     while (offset < end) : (offset += 1) {
-        const Tail = @Vector(1, f64);
         const results = evaluateNodesWithResolver(
-            Tail,
+            f64,
             expression.nodes,
             Context{ .values = values, .offset = offset },
             batchSymbolValue,
         );
-        output[offset] = results[@intCast(expression.root)][0];
+        output[offset] = results[@intCast(expression.root)];
     }
+}
+
+/// Explicit lanes pay off only when every node lowers to vector hardware.
+/// Transcendentals and rational powers lower to per-lane scalar library
+/// calls, so vectorizing them costs lane assembly for no arithmetic win.
+pub fn prefersVectorLanes(comptime expression: ast.Expr) bool {
+    if (batch_vector_length == 1) return false;
+    inline for (expression.nodes) |node| {
+        switch (node) {
+            .sin, .cos, .tan, .atan, .exp, .ln => return false,
+            .pow => |power| if (power.exponent.denominator != 1) return false,
+            else => {},
+        }
+    }
+    return true;
 }
 
 fn BatchContext(comptime Values: type) type {
@@ -704,12 +723,16 @@ inline fn batchSymbolValue(
     }
 
     const value = @field(context.values.*, name);
-    const vector = @typeInfo(Number).vector;
-    var result: Number = undefined;
-    inline for (0..vector.len) |lane| {
-        result[lane] = batchFieldValue(name, value, context.offset + lane);
-    }
-    return result;
+    return switch (@typeInfo(Number)) {
+        .vector => |vector| blk: {
+            var result: Number = undefined;
+            inline for (0..vector.len) |lane| {
+                result[lane] = batchFieldValue(name, value, context.offset + lane);
+            }
+            break :blk result;
+        },
+        else => batchFieldValue(name, value, context.offset),
+    };
 }
 
 inline fn validateBatchInputs(
