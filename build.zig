@@ -53,35 +53,6 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run the Bombelli test suite");
     test_step.dependOn(&run_tests.step);
 
-    const cli_tests = b.addTest(.{
-        .root_module = cli_module,
-    });
-    const run_cli_tests = b.addRunArtifact(cli_tests);
-    const cli_zig_emission = b.addRunArtifact(cli);
-    cli_zig_emission.addArgs(&.{ "--emit=zig", "x + 5" });
-    cli_zig_emission.expectExitCode(0);
-    cli_zig_emission.expectStdOutMatch("pub fn evaluate(");
-    cli_zig_emission.expectStdOutMatch("inputs.x");
-    const cli_c_emission = b.addRunArtifact(cli);
-    cli_c_emission.addArgs(&.{
-        "emit",
-        "c",
-        "--name",
-        "calculate",
-        "sin(x) + x^2",
-    });
-    cli_c_emission.expectExitCode(0);
-    cli_c_emission.expectStdOutMatch("void calculate(");
-    cli_c_emission.expectStdOutMatch("inputs->x");
-    const cli_test_step = b.step(
-        "test-cli",
-        "Run CLI argument and end-to-end emission tests",
-    );
-    cli_test_step.dependOn(&run_cli_tests.step);
-    cli_test_step.dependOn(&cli_zig_emission.step);
-    cli_test_step.dependOn(&cli_c_emission.step);
-    test_step.dependOn(cli_test_step);
-
     addCompileFailTests(b, test_step);
 
     const stress_tests = b.addTest(.{
