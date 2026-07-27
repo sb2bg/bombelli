@@ -18,7 +18,7 @@ const problem = @import("internal/solve/problem.zig");
 const rational_function = @import("internal/algebra/rational_function.zig");
 const rendering = @import("internal/codegen/rendering.zig");
 const solution_set = @import("internal/solve/solution_set.zig");
-const zig_codegen = @import("internal/codegen/zig.zig");
+const emit_codegen = @import("internal/codegen/emit.zig");
 const system_module = @import("internal/solve/system.zig");
 
 /// A compile-time scalar expression backed by a canonical shared DAG.
@@ -105,9 +105,9 @@ pub const NewtonSensitivitySolver = newton.NewtonSensitivitySolver;
 /// Human-readable expression rendering modes.
 pub const RenderMode = rendering.RenderMode;
 /// Source languages supported by Bombelli emission.
-pub const EmitTarget = zig_codegen.EmitTarget;
+pub const EmitTarget = emit_codegen.EmitTarget;
 /// Calling conventions supported by Bombelli emission.
-pub const EmitMode = zig_codegen.EmitMode;
+pub const EmitMode = emit_codegen.EmitMode;
 /// Structural helpers for evaluating and emitting compiled Bombelli values.
 pub const callable = @import("callable.zig");
 /// Unstable utilities for Bombelli's tests and downstream package tests.

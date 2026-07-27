@@ -1,6 +1,6 @@
 const std = @import("std");
 const ast = @import("../../../expression.zig");
-const options_validation = @import("../../core/options.zig");
+const scalar_options = @import("../scalar.zig");
 
 pub const Binding = struct {
     symbol: []const u8,
@@ -145,20 +145,10 @@ fn unarySource(
     );
 }
 
+/// Validates the Zig-specific options and returns the emitted function name.
+/// The target and mode are already validated by the emission dispatcher.
 pub fn validateOptions(comptime options: anytype) []const u8 {
     const Options = @TypeOf(options);
-    options_validation.requireTag(
-        options,
-        "target",
-        "zig",
-        "Bombelli source emission currently requires '.target = .zig'",
-    );
-    options_validation.requireTag(
-        options,
-        "mode",
-        "out_of_place",
-        "Bombelli source emission currently requires '.mode = .out_of_place'",
-    );
     const name = if (@hasField(Options, "name"))
         @as([]const u8, options.name)
     else
@@ -167,13 +157,8 @@ pub fn validateOptions(comptime options: anytype) []const u8 {
     return name;
 }
 
-pub const Scalar = enum { f32, f64 };
-
-pub fn scalarOption(comptime options: anytype) Scalar {
-    if (!@hasField(@TypeOf(options), "scalar")) return .f64;
-    const scalar: Scalar = options.scalar;
-    return scalar;
-}
+pub const Scalar = scalar_options.Scalar;
+pub const scalarOption = scalar_options.scalarOption;
 
 /// The emission templates are written in terms of `f64`, where every
 /// occurrence means "the emitted scalar type". Retargeting rewrites the

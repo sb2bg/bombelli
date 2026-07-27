@@ -26,11 +26,22 @@ without making those details part of the stable top-level API.
   solving, Newton compilation, and solution types.
 - `internal/integrate`: symbolic, fixed, adaptive, and hybrid integration.
 - `internal/runtime`: specialized runtime evaluation.
-- `internal/codegen`: human-readable rendering and standalone Zig emission.
+- `internal/codegen`: human-readable rendering and standalone source emission.
 
-Standalone Zig emission is split again by generated artifact:
-`zig/expression.zig`, `zig/quadrature.zig`, and `zig/newton.zig` use the
-private primitives in `zig/support.zig`.
+`codegen/emit.zig` owns `EmitTarget` and `EmitMode`, validates the
+target-independent options, and dispatches to one backend per language.
+Each backend is split again by generated artifact, so `zig/expression.zig`,
+`zig/quadrature.zig`, and `zig/newton.zig` use the private primitives in
+`zig/support.zig`, and the `c/` directory mirrors that shape. Backends share
+only `codegen/scalar.zig`: a backend renders its own language and never reads
+another's spellings.
+
+The two targets differ in how a caller supplies inputs. Zig emission takes
+`inputs: anytype` and reads fields from it; C has no such type, so C emission
+declares a `<name>_inputs` struct alongside the function. Fields are
+alphabetical, which keeps the struct stable under unrelated edits to the
+expression, and named fields cannot be silently transposed the way positional
+`double` parameters can.
 
 ## Dependency rule
 

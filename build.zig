@@ -92,10 +92,10 @@ pub fn build(b: *std.Build) void {
         "python3",
         "tests/codegen/validate_emission.py",
     });
-    emission_validation.setName("standalone Zig emission validation");
+    emission_validation.setName("standalone source emission validation");
     const emission_step = b.step(
         "test-emission",
-        "Generate and execute standalone emitted Zig",
+        "Generate and execute standalone emitted Zig and C",
     );
     emission_step.dependOn(&emission_validation.step);
 

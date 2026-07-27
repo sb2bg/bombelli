@@ -3,6 +3,7 @@ const bombelli = @import("bombelli");
 
 const expr = bombelli.expr;
 const exprVector = bombelli.exprVector;
+const exprMatrix = bombelli.exprMatrix;
 const system = bombelli.system;
 
 test "human rendering modes remain separate from source emission" {
@@ -99,6 +100,234 @@ test "Zig emission computes shared DAG nodes once" {
         "1e300",
     ) != null);
     try std.testing.expect(huge_float_source.len < 2_000);
+}
+
+test "C emission computes shared DAG nodes once" {
+    const expression = comptime expr("sin(x*y) + sin(x*y) + x^3").simplify();
+    const source = comptime expression.emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "evaluate_expression",
+    });
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "void evaluate_expression(const evaluate_expression_inputs *inputs, double *output)",
+    ) != null);
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        std.mem.count(u8, source, "sin("),
+    );
+    try std.testing.expect(std.mem.indexOf(u8, source, "ast.Node") == null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "@import") == null);
+
+    const vector_source = comptime exprVector(.{
+        "sin(x*y) + x",
+        "sin(x*y) + y",
+    }).simplify().emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "evaluate_vector",
+    });
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        std.mem.count(u8, vector_source, "sin("),
+    );
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        vector_source,
+        "double output[2]",
+    ) != null);
+}
+
+test "C emission writes matrices through a sized output parameter" {
+    const source = comptime exprMatrix(.{
+        .{ "x * y", "x" },
+        .{ "y", "1" },
+    }).simplify().emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "evaluate_matrix",
+    });
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "double output[2][2]",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "output[1][1] =",
+    ) != null);
+}
+
+test "C emission names its inputs instead of ordering them" {
+    // Positional parameters would let a caller transpose two arguments
+    // silently, so inputs arrive as a struct whose fields are alphabetical
+    // rather than in the order the DAG happens to visit them.
+    const source = comptime expr("y * b + a * x").simplify().emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "evaluate_named",
+    });
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "typedef struct evaluate_named_inputs {\n" ++
+            "    double a;\n" ++
+            "    double b;\n" ++
+            "    double x;\n" ++
+            "    double y;\n" ++
+            "} evaluate_named_inputs;",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "inputs->a") != null);
+}
+
+test "C emission gives an input-free callable a usable struct" {
+    // C rejects an empty struct, and an unused parameter is a warning, so a
+    // callable that reads nothing still has to emit something compilable.
+    const source = comptime expr("2 * x").diff(.x).simplify().emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "evaluate_constant",
+    });
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "char bombelli_unused;",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "(void)inputs;") != null);
+}
+
+test "C emission spells pi as a literal rather than a math.h extension" {
+    const source = comptime expr("pi * r^2").emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "evaluate_area",
+    });
+    try std.testing.expect(std.mem.indexOf(u8, source, "M_PI") == null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "3.141592653589793",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "inputs->r") != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "inputs->pi") == null);
+}
+
+test "C emission can retarget the scalar type to f32" {
+    const source = comptime expr("sin(x) + x^(1/2)").emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "evaluate_single",
+        .scalar = .f32,
+    });
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "void evaluate_single(const evaluate_single_inputs *inputs, float *output)",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "sinf(") != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "powf(") != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "double") == null);
+
+    const default_source = comptime expr("sin(x)").emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "evaluate_single",
+    });
+    try std.testing.expect(std.mem.indexOf(u8, default_source, "float") == null);
+    try std.testing.expect(std.mem.indexOf(u8, default_source, "sinf(") == null);
+}
+
+test "fixed quadrature C emission contains only the selected table" {
+    const rule = comptime expr("exp(-k*x^2)").quadrature(.{
+        .variable = .x,
+        .rule = .gauss_legendre,
+        .order = 16,
+    });
+    const source = comptime rule.emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "evaluate_integral",
+    });
+    try std.testing.expectEqual(
+        @as(usize, 16),
+        std.mem.count(u8, source, "exp("),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 16),
+        std.mem.count(u8, source, "weighted_sum +="),
+    );
+    try std.testing.expect(std.mem.indexOf(u8, source, "Builder") == null);
+    // The integration bounds are already fields, so `k` is the only addition.
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "    double from;\n    double to;\n    double k;\n",
+    ) != null);
+}
+
+test "Newton C emission is standalone fixed-size numerical code" {
+    const solver = comptime system(.{
+        "x^2 + y^2 = r^2",
+        "x - y = 0",
+    }, .{
+        .unknowns = .{ .x, .y },
+        .domain = .real,
+    }).compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 32,
+        .tolerance = 1e-12,
+    });
+    const source = comptime solver.emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "solve_system",
+    });
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "void solve_system(const solve_system_inputs *inputs, solve_system_result *output)",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "for (iteration = 0; iteration < 32; ++iteration)",
+    ) != null);
+    // The initial iterate is nested so an unknown and a parameter may share
+    // a name without colliding in one struct.
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "solve_system_initial initial;",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "inputs->initial.x",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "@import") == null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "ast.Node") == null);
+}
+
+test "the two targets emit the same callable without sharing spellings" {
+    const expression = comptime expr("sin(x) + x^3").simplify();
+    const zig_source = comptime expression.emit(.{
+        .target = .zig,
+        .mode = .out_of_place,
+        .name = "evaluate_shared",
+    });
+    const c_source = comptime expression.emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "evaluate_shared",
+    });
+    try std.testing.expect(std.mem.indexOf(u8, zig_source, "@sin(") != null);
+    try std.testing.expect(std.mem.indexOf(u8, zig_source, "inputs.x") != null);
+    try std.testing.expect(std.mem.indexOf(u8, c_source, "@sin(") == null);
+    try std.testing.expect(std.mem.indexOf(u8, c_source, "inputs->x") != null);
 }
 
 test "fixed quadrature Zig emission contains only the selected table" {

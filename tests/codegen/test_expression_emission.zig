@@ -1,18 +1,13 @@
 const std = @import("std");
-const bombelli = @import("bombelli");
+const cases = @import("cases.zig");
 const generated = @import("generated");
 
-const expression = bombelli.expr(
-    "9007199254740993 / 7 + 1e300 + sin(x*y) + x^3",
-);
-
 test "emitted expression matches direct compiled object" {
-    const inputs = .{ .x = 1.25, .y = -0.75 };
     var actual: f64 = undefined;
-    generated.generated_expression(inputs, &actual);
+    generated.generated_expression(cases.expression_inputs, &actual);
 
     try std.testing.expectApproxEqAbs(
-        expression.eval(inputs),
+        cases.expression.eval(cases.expression_inputs),
         actual,
         1e-15,
     );

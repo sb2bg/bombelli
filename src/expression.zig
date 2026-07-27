@@ -234,7 +234,7 @@ pub const Expr = struct {
         comptime options: anytype,
     ) []const u8 {
         @setEvalBranchQuota(limits.eval_branch.transform);
-        return @import("internal/codegen/zig.zig").emitExpr(self, options);
+        return @import("internal/codegen/emit.zig").emitExpr(self, options);
     }
 
     /// Measures and validates the expression DAG.
@@ -327,7 +327,7 @@ pub fn ExprVector(comptime N: usize) type {
             comptime options: anytype,
         ) []const u8 {
             @setEvalBranchQuota(limits.eval_branch.polynomial);
-            return @import("internal/codegen/zig.zig").emitVector(N, self, options);
+            return @import("internal/codegen/emit.zig").emitVector(N, self, options);
         }
 
         /// Measures and validates the vector's shared DAG.
@@ -420,7 +420,7 @@ pub fn ExprMatrix(comptime R: usize, comptime C: usize) type {
             comptime options: anytype,
         ) []const u8 {
             @setEvalBranchQuota(limits.eval_branch.rational);
-            return @import("internal/codegen/zig.zig").emitMatrix(
+            return @import("internal/codegen/emit.zig").emitMatrix(
                 R,
                 C,
                 self,

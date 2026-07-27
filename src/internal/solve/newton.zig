@@ -197,7 +197,7 @@ pub fn NewtonSolver(
             comptime options: anytype,
         ) []const u8 {
             @setEvalBranchQuota(limits.eval_branch.solve);
-            return @import("../codegen/zig.zig").emitNewton(self, options);
+            return @import("../codegen/emit.zig").emitNewton(self, options);
         }
     };
 }

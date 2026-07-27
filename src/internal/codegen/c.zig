@@ -1,8 +1,8 @@
-//! Zig source emission, organized by the artifact being generated.
+//! C source emission, organized by the artifact being generated.
 
-const expression = @import("zig/expression.zig");
-const newton = @import("zig/newton.zig");
-const quadrature = @import("zig/quadrature.zig");
+const expression = @import("c/expression.zig");
+const newton = @import("c/newton.zig");
+const quadrature = @import("c/quadrature.zig");
 
 pub const emitExpr = expression.emitExpr;
 pub const emitVector = expression.emitVector;

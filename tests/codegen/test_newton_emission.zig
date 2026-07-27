@@ -1,28 +1,11 @@
 const std = @import("std");
-const bombelli = @import("bombelli");
+const cases = @import("cases.zig");
 const generated = @import("generated");
 
-const solver = bombelli.system(.{
-    "x^2 + y^2 = r^2",
-    "x - y = 0",
-}, .{
-    .unknowns = .{ .x, .y },
-    .domain = .real,
-}).compile(.{
-    .algorithm = .newton,
-    .jacobian = .symbolic,
-    .max_iterations = 32,
-    .tolerance = 1e-12,
-});
-
 test "emitted Newton solver matches direct compiled object" {
-    const inputs = .{
-        .initial = .{ .x = 0.7, .y = 0.7 },
-        .r = 1.0,
-    };
     var actual: generated.generated_newtonResult = undefined;
-    generated.generated_newton(inputs, &actual);
-    const expected = solver.eval(inputs);
+    generated.generated_newton(cases.solver_inputs, &actual);
+    const expected = cases.solver.eval(cases.solver_inputs);
 
     try std.testing.expectEqual(
         @intFromEnum(expected.status),

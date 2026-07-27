@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `.target = .c` emission for every callable that already emitted Zig:
+  expressions, vectors, matrices, fixed quadrature, and Newton solvers. The
+  emitted unit is C99 that includes only `<math.h>` and `<stddef.h>`.
+- Inputs reach emitted C through a generated `<name>_inputs` struct with
+  alphabetical fields, since C has no `anytype` and positional `double`
+  parameters can be transposed silently. A Newton solver's initial iterate is
+  nested in `<name>_initial` so an unknown and a parameter may share a name.
+- `.scalar = .f32` applies to C as well, selecting `float` and the `sinf`
+  family.
+- Compile-time diagnostics for an unsupported or missing `.target`, and for a
+  function or input name that collides with a C keyword.
+
+### Changed
+
+- Emission dispatches through `internal/codegen/emit.zig`, which owns
+  `EmitTarget`, validates the target-independent options, and selects a
+  backend. `EmitTarget` gained a `c` member.
+- Emission validation generates each case for both targets from one shared
+  definition, compiles the C with `-std=c99 -Wall -Wextra -Werror`, executes
+  it, and compares it against Bombelli's own evaluator. A multi-output
+  gradient case was added, so vector emission is now covered end to end.
+
 ## 0.1.0 — 2026-07-25
 
 First public release. Bombelli is a compile-time symbolic mathematics

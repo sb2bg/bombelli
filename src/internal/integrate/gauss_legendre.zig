@@ -105,7 +105,7 @@ pub fn QuadratureRule(comptime N: usize) type {
             comptime options: anytype,
         ) []const u8 {
             @setEvalBranchQuota(limits.eval_branch.rational);
-            return @import("../codegen/zig.zig").emitFixedQuadrature(
+            return @import("../codegen/emit.zig").emitFixedQuadrature(
                 self,
                 options,
             );

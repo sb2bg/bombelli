@@ -1,19 +1,7 @@
 const std = @import("std");
-const bombelli = @import("bombelli");
+const cases = @import("cases.zig");
 
-const solver = bombelli.system(.{
-    "x^2 + y^2 = r^2",
-    "x - y = 0",
-}, .{
-    .unknowns = .{ .x, .y },
-    .domain = .real,
-}).compile(.{
-    .algorithm = .newton,
-    .jacobian = .symbolic,
-    .max_iterations = 32,
-    .tolerance = 1e-12,
-});
-const generated = solver.emit(.{
+const generated = cases.solver.emit(.{
     .target = .zig,
     .mode = .out_of_place,
     .name = "generated_newton",

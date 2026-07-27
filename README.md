@@ -57,6 +57,36 @@ pub fn evaluate_derivative(inputs: anytype, output: *f64) void {
 (`bombelliNumber` and `bombelliRationalPower` are small inline helpers emitted
 into the same file)
 
+Ask for `.target = .c` instead and the same object becomes a standalone C99
+translation unit that depends only on the C standard library:
+
+```c
+typedef struct evaluate_derivative_inputs {
+    double x;
+    double y;
+} evaluate_derivative_inputs;
+
+void evaluate_derivative(const evaluate_derivative_inputs *inputs, double *output) {
+    const double n0 = (double)(3LL);
+    const double n1 = inputs->x;
+    const double n2 = bombelli_rational_power_f64(n1, 2LL, 1ULL);
+    const double n3 = n0 * n2;
+    const double n4 = inputs->y;
+    const double n5 = n1 * n4;
+    const double n6 = cos(n5);
+    const double n7 = n4 * n6;
+    const double n8 = n3 + n7;
+    *output = n8;
+}
+```
+
+C has no `anytype`, so inputs arrive in a generated struct rather than as
+positional parameters: a caller cannot transpose `x` and `y` the way
+`evaluate_derivative(y, x)` would let them. `.scalar = .f32` switches both
+targets to single precision, which in C also selects the `sinf`/`powf` family.
+The test suite compiles the emitted C with `-std=c99 -Wall -Wextra -Werror`,
+runs it, and compares it against Bombelli's own evaluator.
+
 On a five-million-evaluation benchmark, a Bombelli-compiled expression ran at
 0.9991× the speed of equivalent handwritten Zig. Parity, as it should be,
 because by runtime it _is_ handwritten-shaped code
