@@ -1,5 +1,7 @@
 # Bombelli
 
+[![CI](https://github.com/sb2bg/bombelli/actions/workflows/ci.yml/badge.svg)](https://github.com/sb2bg/bombelli/actions/workflows/ci.yml)
+
 > A compile-time symbolic mathematics compiler for Zig. Write formulas as
 > strings, differentiate, simplify, solve, and integrate them during
 > compilation, and ship straight-line numerical code with zero runtime
@@ -204,82 +206,32 @@ zig fetch --save git+https://github.com/sb2bg/bombelli
 Then in `build.zig`:
 
 ```zig
-const bombelli = b.dependency("bombelli", .{});
+const bombelli = b.dependency("bombelli", .{
+    .target = target,
+    .optimize = optimize,
+});
 exe.root_module.addImport("bombelli", bombelli.module("bombelli"));
 ```
 
+Forwarding `target` and `optimize` matters: without them the module resolves
+for the host, which breaks cross-compilation.
+
 Run the flagship example from a checkout with `zig build run`.
 
-## v0.1.0 scope
+## Scope and limits
 
-The release includes:
+v0.1.0 is deliberately bounded: the real domain only, checked fixed-width
+exact rationals (overflow is a precise compile error, not a wrap), symbolic
+integration as a terminating subset that reports `unsupported` rather than
+guessing, polynomial equation solving to degree two, and a guarded
+1,024-node construction workspace (the largest release stress case peaks at
+368). Simplification never erases singularities through unconditional
+cancellation such as `x/x -> 1`, and assumptions like `nonzero(.a)` are
+operation-local; symbols never acquire global attributes that silently alter
+later behavior.
 
-- Checked `i64` exact integers and canonical rationals with `u64`
-  denominators
-- Exact rational powers with explicit real-valued numerical behavior
-- Canonical n-ary addition and multiplication without automatic expansion
-- `sin`, `cos`, `tan`, `atan`, `abs`, `sqrt`, `exp`, and `ln`
-- Memoized substitution, differentiation, gradients, Jacobians, and Hessians
-- Sparse multivariate polynomials over exact rationals and explicit expansion
-- Normalized rational functions that retain denominator conditions
-- First-class equations, systems, and structured solution sets
-- Exact rational RREF and fraction-free symbolic Bareiss solving
-- Reusable square-system factorizations
-- Linear and quadratic polynomial equation solving over the real domain
-- Closed, partial, and unsupported symbolic integration results
-- Fixed Gauss–Legendre rules of orders 4, 8, 16, and 32
-- Allocation-free bounded adaptive quadrature with explicit status
-- Symbolic-plus-quadrature compiled integrals
-- Fixed-size Newton solvers with symbolic Jacobians and convergence metadata
-- Implicit parameter sensitivities with nonsingularity checks
-- Canonical/pretty rendering and standalone Zig source emission
-
-`render()` is the canonical, re-parsable form. `renderMode(.pretty)` may use
-presentation sugar such as `sqrt(x)`, while `renderMode(.canonical)` selects
-the explicit canonical mode. Zig has no method overloading or default
-arguments, so `renderMode` preserves the original zero-argument API.
-
-## Deliberate limits
-
-Bombelli keeps the v0.1.0 promise bounded and explicit:
-
-- The only mathematical domain currently exposed is `.real`; Bombelli does
-  not introduce complex branches.
-- Exact arithmetic is fixed-width and checked. Overflow produces a precise
-  compile-time diagnostic rather than wrapping or allocating a big integer.
-- The construction workspace is guarded at 1,024 nodes. Finished DAG storage
-  remains proportional to actual nodes and operand edges. The largest release
-  stress case peaks at 368 nodes.
-- Simplification preserves factored forms and does not erase singularities
-  through unconditional cancellation such as `x/x -> 1`.
-- Symbolic integration is a terminating subset: linearity, constant
-  extraction, exact polynomials, the power rule, real `1/x`, affine
-  sine/cosine/exponential forms, and decreasing-degree integration by parts.
-  A heuristic stop is `unsupported`, never a claim of no elementary form.
-- Exact Gaussian solving classifies constant rational systems. Symbolic
-  Bareiss solving currently requires square systems and reports the
-  determinant condition for its unique branch.
-- Polynomial equation solving currently supports degree at most two with
-  constant coefficients.
-- Fixed quadrature supports only the four prevalidated orders above.
-  Differentiating a rule differentiates the fixed approximation; it does not
-  prove interchange of differentiation and mathematical integration.
-- Adaptive quadrature is intentionally not differentiable because subdivision
-  branches can change. `max_depth` is capped at 64.
-- Newton compilation requires a square nonlinear system and a symbolic
-  Jacobian. It reports singular, non-convergent, and non-finite outcomes.
-- Source emission currently supports Zig and out-of-place callables only.
-
-Assumptions are operation-local. Symbols never acquire global attributes that
-silently alter later behavior:
-
-```zig
-const result = comptime bombelli.expr("exp(a*x + b)").integrate(.{
-    .variable = .x,
-    .domain = .real,
-    .assumptions = .{bombelli.nonzero(.a)},
-});
-```
+The full list of what ships and where it stops is in the
+[changelog](CHANGELOG.md).
 
 ## Design
 
@@ -304,8 +256,8 @@ standalone-emission, and documentation validation path.
 
 The release candidate passes:
 
-- 77 core, compile-fail, property, and dangerous-case hardening tests
-- 11 stress tests, including the original twenty-factor derivative
+- Core, compile-fail, property, and dangerous-case hardening suites
+- Stress tests, including the original twenty-factor derivative
 - 342 seeded programs/problems and 4,984 independent SymPy oracle assertions
 - Standalone behavioral tests for emitted expression, quadrature, and Newton
   code, including forbidden-symbolic-machinery inspection
@@ -334,6 +286,11 @@ python3 -B benchmarks/measure_release.py
 
 ## More
 
+- [Changelog and v0.1.0 scope](CHANGELOG.md)
 - [Expression-growth and construction baseline](docs/architecture/stress-baseline.md)
 - [Building a Symbolic Differentiator That Compiles Away Completely in Zig](docs/blog/building-a-symbolic-differentiator-that-compiles-away.md)
-- [Checking the Jacobian Conjecture Counterexample with Bombelli](docs/blog/disproving-the-jacobian-conjecture-with-bombelli.md)
+- [Checking the Jacobian Conjecture Counterexample with Bombelli](docs/blog/checking-the-jacobian-conjecture-counterexample-with-bombelli.md)
+
+## License
+
+[MIT](LICENSE)

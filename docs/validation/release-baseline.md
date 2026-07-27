@@ -8,8 +8,8 @@ performance promises.
 
 | Surface | Result |
 | --- | ---: |
-| Core, property, hardening, and compile-fail tests | 76 passed |
-| Stress tests | 11 passed |
+| Core, property, hardening, and compile-fail tests | all passed |
+| Stress tests | all passed |
 | SymPy differential programs/problems | 342 passed |
 | Independent SymPy oracle assertions | 4,984 passed |
 | Standalone emitted callable types | 3 passed |

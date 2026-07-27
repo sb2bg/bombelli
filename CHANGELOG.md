@@ -31,8 +31,7 @@ numeric loops and explicit failure handling.
 
 ### Validation
 
-- 76 core, property, hardening, and compile-fail tests
-- 11 stress tests
+- Core, property, hardening, compile-fail, and stress suites
 - 342 seeded programs/problems and 4,984 SymPy oracle assertions
 - Standalone behavioral validation of emitted expression, quadrature, and
   Newton code

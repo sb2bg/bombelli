@@ -1,4 +1,4 @@
-# Disproving the Jacobian Conjecture with Bombelli
+# Checking the Jacobian Conjecture Counterexample with Bombelli
 
 On July 20, 2026, Levent Alpöge announced an explicit polynomial map in three
 complex variables that has constant nonzero Jacobian determinant and is not
