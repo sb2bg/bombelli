@@ -14,24 +14,5 @@ pub fn main(init: std.process.Init) !void {
     var buffer: [4096]u8 = undefined;
     var writer = std.Io.File.stdout().writer(init.io, &buffer);
     try writer.interface.writeAll(generated);
-    try writer.interface.writeAll(
-        \\
-        \\export fn call_generated(x: f64, y: f64) f64 {
-        \\    var output: f64 = undefined;
-        \\    generated_expression(.{ .x = x, .y = y }, &output);
-        \\    return output;
-        \\}
-        \\
-    );
-    const expected = expression.eval(.{ .x = 1.25, .y = -0.75 });
-    try writer.interface.print(
-        \\
-        \\test "emitted expression matches direct compiled object" {{
-        \\    var output: f64 = undefined;
-        \\    generated_expression(.{{ .x = 1.25, .y = -0.75 }}, &output);
-        \\    try std.testing.expectApproxEqAbs({e}, output, 1e-15);
-        \\}}
-        \\
-    , .{expected});
     try writer.interface.flush();
 }

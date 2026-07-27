@@ -10,10 +10,19 @@ import tempfile
 from pathlib import Path
 
 
-GENERATORS = (
-    "generate_expression_emission.zig",
-    "generate_quadrature_emission.zig",
-    "generate_newton_emission.zig",
+CASES = (
+    (
+        "generate_expression_emission.zig",
+        "test_expression_emission.zig",
+    ),
+    (
+        "generate_quadrature_emission.zig",
+        "test_quadrature_emission.zig",
+    ),
+    (
+        "generate_newton_emission.zig",
+        "test_newton_emission.zig",
+    ),
 )
 
 FORBIDDEN = (
@@ -51,8 +60,9 @@ def main() -> None:
     total_bytes = 0
     with tempfile.TemporaryDirectory(prefix="bombelli-emission-") as temp:
         temporary = Path(temp)
-        for generator_name in GENERATORS:
+        for generator_name, harness_name in CASES:
             generator = repo / "tests" / "codegen" / generator_name
+            harness = repo / "tests" / "codegen" / harness_name
             generated = run(
                 [
                     zig,
@@ -73,7 +83,20 @@ def main() -> None:
 
             output = temporary / generator_name.replace("generate_", "")
             output.write_text(generated)
-            run([zig, "test", str(output)], repo)
+            run(
+                [
+                    zig,
+                    "test",
+                    "--dep",
+                    "generated",
+                    "--dep",
+                    "bombelli",
+                    f"-Mroot={harness}",
+                    f"-Mgenerated={output}",
+                    f"-Mbombelli={repo / 'src' / 'root.zig'}",
+                ],
+                repo,
+            )
             total_bytes += len(generated.encode())
             print(
                 f"{generator_name}: {len(generated.encode())} bytes, "
@@ -82,7 +105,7 @@ def main() -> None:
             )
 
     print(
-        f"Standalone emission validation passed for {len(GENERATORS)} "
+        f"Standalone emission validation passed for {len(CASES)} "
         f"callable types ({total_bytes} source bytes total)."
     )
 
