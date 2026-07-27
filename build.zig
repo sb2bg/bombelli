@@ -10,6 +10,35 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const cli_build_options = b.addOptions();
+    cli_build_options.addOption(
+        []const u8,
+        "development_bombelli_root",
+        b.pathFromRoot("src/root.zig"),
+    );
+    const clap_dependency = b.dependency("clap", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const cli_module = b.createModule(.{
+        .root_source_file = b.path("src/cli/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    cli_module.addOptions("cli_build_options", cli_build_options);
+    cli_module.addImport("clap", clap_dependency.module("clap"));
+    const cli = b.addExecutable(.{
+        .name = "bombelli",
+        .root_module = cli_module,
+    });
+    b.installArtifact(cli);
+    b.installDirectory(.{
+        .source_dir = b.path("src"),
+        .install_dir = .prefix,
+        .install_subdir = "share/bombelli/src",
+        .include_extensions = &.{".zig"},
+    });
+
     const tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/root.zig"),
@@ -23,6 +52,35 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run the Bombelli test suite");
     test_step.dependOn(&run_tests.step);
+
+    const cli_tests = b.addTest(.{
+        .root_module = cli_module,
+    });
+    const run_cli_tests = b.addRunArtifact(cli_tests);
+    const cli_zig_emission = b.addRunArtifact(cli);
+    cli_zig_emission.addArgs(&.{ "--emit=zig", "x + 5" });
+    cli_zig_emission.expectExitCode(0);
+    cli_zig_emission.expectStdOutMatch("pub fn evaluate(");
+    cli_zig_emission.expectStdOutMatch("inputs.x");
+    const cli_c_emission = b.addRunArtifact(cli);
+    cli_c_emission.addArgs(&.{
+        "emit",
+        "c",
+        "--name",
+        "calculate",
+        "sin(x) + x^2",
+    });
+    cli_c_emission.expectExitCode(0);
+    cli_c_emission.expectStdOutMatch("void calculate(");
+    cli_c_emission.expectStdOutMatch("inputs->x");
+    const cli_test_step = b.step(
+        "test-cli",
+        "Run CLI argument and end-to-end emission tests",
+    );
+    cli_test_step.dependOn(&run_cli_tests.step);
+    cli_test_step.dependOn(&cli_zig_emission.step);
+    cli_test_step.dependOn(&cli_c_emission.step);
+    test_step.dependOn(cli_test_step);
 
     addCompileFailTests(b, test_step);
 

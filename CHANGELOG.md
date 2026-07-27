@@ -15,6 +15,9 @@
   family.
 - Compile-time diagnostics for an unsupported or missing `.target`, and for a
   function or input name that collides with a C keyword.
+- A `bombelli --emit <zig|c> <expression>` command for printing standalone
+  source directly from the terminal, with `--name` to select the generated
+  function name and `zig-clap` handling its arguments.
 
 ### Changed
 

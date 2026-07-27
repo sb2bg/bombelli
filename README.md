@@ -248,6 +248,21 @@ for the host, which breaks cross-compilation.
 
 Run the flagship example from a checkout with `zig build run`.
 
+## Command-line emission
+
+A checkout also builds `zig-out/bin/bombelli`, which turns a command-line
+expression directly into standalone Zig or C source:
+
+```sh
+zig build
+zig-out/bin/bombelli --emit zig "x + 5"
+zig-out/bin/bombelli --emit c --name calculate "sin(x) + x^2"
+```
+
+The default function name is `evaluate`; override it with `--name`. Because
+Bombelli parses expressions at compile time, the command invokes `zig` behind
+the scenes. Keep Zig 0.16.0 on `PATH`, or set `ZIG_EXE` to its executable.
+
 ## More
 
 - [Changelog and v0.1.0 scope](CHANGELOG.md)
