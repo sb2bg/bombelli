@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Tests and emission validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Check formatting
+        run: zig build fmt-check
+      - name: Run test suite
+        run: zig build test --summary all
+      - name: Run standalone emission validation
+        run: zig build test-emission
+
+  differential:
+    name: SymPy differential validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install SymPy oracle
+        run: python3 -m pip install sympy==1.12
+      - name: Run seeded differential validation
+        run: zig build differential
