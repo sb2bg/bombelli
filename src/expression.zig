@@ -181,6 +181,9 @@ pub const Expr = struct {
     }
 
     /// Evaluates a structure-of-arrays input batch into caller-owned storage.
+    /// `output` must not overlap any input slice: lanes are written a whole
+    /// vector at a time, so an offset overlap would read values this call
+    /// has already overwritten.
     pub fn evalBatchInto(
         comptime self: Expr,
         output: []f64,
@@ -194,6 +197,8 @@ pub const Expr = struct {
     }
 
     /// Evaluates a batch in parallel using the supplied batch options.
+    /// `output` must not overlap any input slice, and the overlap is
+    /// additionally unordered here because ranges run concurrently.
     pub fn evalBatchParallelInto(
         comptime self: Expr,
         output: []f64,
