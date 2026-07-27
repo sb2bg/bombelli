@@ -152,6 +152,63 @@ pub fn build(b: *std.Build) void {
     run_example.step.dependOn(b.getInstallStep());
     const run_step = b.step("run", "Run the Bombelli example");
     run_step.dependOn(&run_example.step);
+
+    const jacobian = b.addExecutable(.{
+        .name = "bombelli-jacobian-counterexample",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/jacobian_counterexample.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "bombelli", .module = bombelli },
+            },
+        }),
+    });
+    // Installed so a plain `zig build` compiles it: the README and a blog
+    // post both link this example, so silent rot would be public.
+    b.installArtifact(jacobian);
+    const run_jacobian = b.addRunArtifact(jacobian);
+    run_jacobian.step.dependOn(b.getInstallStep());
+    const jacobian_step = b.step(
+        "run-jacobian",
+        "Check the Jacobian conjecture counterexample at compile time",
+    );
+    jacobian_step.dependOn(&run_jacobian.step);
+
+    addBenchmarks(b, target, bombelli);
+}
+
+fn addBenchmarks(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    bombelli: *std.Build.Module,
+) void {
+    const bench_step = b.step(
+        "bench",
+        "Run runtime benchmarks in ReleaseFast",
+    );
+    const cases = [_]struct { name: []const u8, path: []const u8 }{
+        .{ .name = "bench-batch", .path = "benchmarks/runtime_batch.zig" },
+        .{
+            .name = "bench-quadrature-simd",
+            .path = "benchmarks/runtime_quadrature_simd.zig",
+        },
+    };
+    for (cases) |case| {
+        const executable = b.addExecutable(.{
+            .name = case.name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(case.path),
+                .target = target,
+                // Timings are meaningless in Debug.
+                .optimize = .ReleaseFast,
+                .imports = &.{
+                    .{ .name = "bombelli", .module = bombelli },
+                },
+            }),
+        });
+        bench_step.dependOn(&b.addRunArtifact(executable).step);
+    }
 }
 
 fn addCompileFailTests(b: *std.Build, test_step: *std.Build.Step) void {
