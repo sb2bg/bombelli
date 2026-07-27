@@ -1,23 +1,13 @@
 const std = @import("std");
 const bombelli = @import("bombelli");
 
-const expr = bombelli.expr;
-const exprVector = bombelli.exprVector;
-const exprMatrix = bombelli.exprMatrix;
-const rational = bombelli.rational;
 const equation = bombelli.equation;
 const system = bombelli.system;
 const equationProblem = bombelli.equationProblem;
-const Expr = bombelli.Expr;
-const Rational = bombelli.Rational;
-const Domain = bombelli.Domain;
-const positive = bombelli.positive;
 const nonzero = bombelli.nonzero;
 const SolutionSet = bombelli.SolutionSet;
-const AdaptiveQuadratureStatus = bombelli.AdaptiveQuadratureStatus;
 const NewtonStatus = bombelli.NewtonStatus;
 const NewtonSensitivityStatus = bombelli.NewtonSensitivityStatus;
-const callable = bombelli.callable;
 
 test "equations and systems preserve statements and explicit unknowns" {
     const parsed = comptime equation("x + 1 = y");
