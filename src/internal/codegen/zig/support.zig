@@ -91,6 +91,16 @@ fn nodeSource(
         .ln => |child| unarySource(prefix, child, "@log"),
         .log2 => |child| unarySource(prefix, child, "@log2"),
         .log10 => |child| unarySource(prefix, child, "@log10"),
+        .atan2 => |binary| binaryFunctionSource(
+            binary,
+            prefix,
+            "std.math.atan2",
+        ),
+        .hypot => |binary| binaryFunctionSource(
+            binary,
+            prefix,
+            "std.math.hypot",
+        ),
     };
 }
 
@@ -118,6 +128,23 @@ fn binarySource(
     return std.fmt.comptimePrint(
         "{s}{d} {s} {s}{d}",
         .{ prefix, binary.left, operator, prefix, binary.right },
+    );
+}
+
+fn binaryFunctionSource(
+    comptime binary: ast.Binary,
+    comptime prefix: []const u8,
+    comptime function: []const u8,
+) []const u8 {
+    return std.fmt.comptimePrint(
+        "{s}({s}{d}, {s}{d})",
+        .{
+            function,
+            prefix,
+            binary.left,
+            prefix,
+            binary.right,
+        },
     );
 }
 

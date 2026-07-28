@@ -456,6 +456,14 @@ inline fn evaluateNodesWithResolver(
             .ln => |child| @log(results[@intCast(child)]),
             .log2 => |child| @log2(results[@intCast(child)]),
             .log10 => |child| @log10(results[@intCast(child)]),
+            .atan2 => |binary| arctangent2(
+                results[@intCast(binary.left)],
+                results[@intCast(binary.right)],
+            ),
+            .hypot => |binary| std.math.hypot(
+                results[@intCast(binary.left)],
+                results[@intCast(binary.right)],
+            ),
         };
     }
     return results;
@@ -541,6 +549,14 @@ inline fn evaluateNodesWithVariables(
             .ln => |child| @log(results[@intCast(child)]),
             .log2 => |child| @log2(results[@intCast(child)]),
             .log10 => |child| @log10(results[@intCast(child)]),
+            .atan2 => |binary| arctangent2(
+                results[@intCast(binary.left)],
+                results[@intCast(binary.right)],
+            ),
+            .hypot => |binary| std.math.hypot(
+                results[@intCast(binary.left)],
+                results[@intCast(binary.right)],
+            ),
         };
     }
     return results;
@@ -831,6 +847,56 @@ inline fn hyperbolicTangent(value: anytype) @TypeOf(value) {
     };
 }
 
+inline fn arctangent2(y: anytype, x: @TypeOf(y)) @TypeOf(y) {
+    const Number = @TypeOf(y);
+    return switch (@typeInfo(Number)) {
+        .float => arctangent2Scalar(y, x),
+        .vector => |vector| blk: {
+            var result: Number = undefined;
+            inline for (0..vector.len) |lane| {
+                result[lane] = arctangent2Scalar(y[lane], x[lane]);
+            }
+            break :blk result;
+        },
+        else => comptime unreachable,
+    };
+}
+
+inline fn arctangent2Scalar(y: anytype, x: @TypeOf(y)) @TypeOf(y) {
+    const T = @TypeOf(y);
+    if (comptime T == f32 or T == f64) return std.math.atan2(y, x);
+    if (std.math.isNan(x) or std.math.isNan(y)) return x + y;
+
+    const zero: T = 0.0;
+    const pi: T = numberValue(T, std.math.pi);
+    if (y == zero) {
+        if (std.math.signbit(x)) return std.math.copysign(pi, y);
+        return y;
+    }
+    if (x == zero) return std.math.copysign(pi / 2.0, y);
+
+    const x_infinite = std.math.isInf(x);
+    const y_infinite = std.math.isInf(y);
+    if (x_infinite and y_infinite) {
+        const angle = if (std.math.signbit(x)) 3.0 * pi / 4.0 else pi / 4.0;
+        return std.math.copysign(angle, y);
+    }
+    if (x_infinite) {
+        if (std.math.signbit(x)) return std.math.copysign(pi, y);
+        return std.math.copysign(zero, y);
+    }
+    if (y_infinite) return std.math.copysign(pi / 2.0, y);
+
+    const absolute_x = @abs(x);
+    const absolute_y = @abs(y);
+    const acute = if (absolute_x >= absolute_y)
+        std.math.atan(absolute_y / absolute_x)
+    else
+        pi / 2.0 - std.math.atan(absolute_x / absolute_y);
+    const angle = if (x > zero) acute else pi - acute;
+    return std.math.copysign(angle, y);
+}
+
 inline fn integerPower(
     base: anytype,
     comptime exponent: @import("../core/exact.zig").Rational,
@@ -952,6 +1018,8 @@ pub fn prefersVectorLanes(comptime expression: ast.Expr) bool {
             .ln,
             .log2,
             .log10,
+            .atan2,
+            .hypot,
             => return false,
             .pow => |power| if (power.exponent.denominator != 1) return false,
             else => {},

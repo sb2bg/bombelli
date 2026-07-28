@@ -223,6 +223,14 @@ fn cloneNode(
         .ln => |child| builder.logarithm(cloneNode(builder, nodes, child, cache)),
         .log2 => |child| builder.logarithm2(cloneNode(builder, nodes, child, cache)),
         .log10 => |child| builder.logarithm10(cloneNode(builder, nodes, child, cache)),
+        .atan2 => |pair| builder.arctangent2(
+            cloneNode(builder, nodes, pair.left, cache),
+            cloneNode(builder, nodes, pair.right, cache),
+        ),
+        .hypot => |pair| builder.hypotenuse(
+            cloneNode(builder, nodes, pair.left, cache),
+            cloneNode(builder, nodes, pair.right, cache),
+        ),
     };
     cache[index] = result;
     return result;

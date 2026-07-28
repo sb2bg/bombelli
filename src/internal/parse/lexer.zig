@@ -12,6 +12,7 @@ pub const Kind = enum {
     caret,
     left_paren,
     right_paren,
+    comma,
 };
 
 pub const Token = struct {
@@ -53,6 +54,7 @@ pub const Lexer = struct {
             '^' => self.single(.caret, start),
             '(' => self.single(.left_paren, start),
             ')' => self.single(.right_paren, start),
+            ',' => self.single(.comma, start),
             '0'...'9' => self.number(start),
             'a'...'z', 'A'...'Z', '_' => self.identifier(start),
             else => diagnostic.fail(self.source, start, "unexpected character"),

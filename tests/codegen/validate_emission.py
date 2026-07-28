@@ -39,6 +39,14 @@ CASES = (
         c_driver="drive_expression.c",
     ),
     Case(
+        name="smooth_expression",
+        zig_generator="generate_smooth_expression_zig.zig",
+        zig_harness="test_smooth_expression_emission.zig",
+        c_generator="generate_smooth_expression_c.zig",
+        c_unit="generated_smooth_expression.c",
+        c_driver="drive_smooth_expression.c",
+    ),
+    Case(
         name="gradient",
         zig_generator="generate_gradient_zig.zig",
         zig_harness="test_gradient_emission.zig",

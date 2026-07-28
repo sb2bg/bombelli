@@ -9,6 +9,18 @@ pub const expression = bombelli.expr(
 );
 pub const expression_inputs = .{ .x = 1.25, .y = -0.75 };
 
+/// Exercises smooth elementary functions whose emitted spelling differs
+/// between Zig builtins, Zig's standard library, and C99 libm.
+pub const smooth_expression = bombelli.expr(
+    "asin(u) + acos(v) + sinh(u-v) + cosh(u+v) + tanh(u*v) + log2(a) + log10(b) + atan2(u, v) + hypot(u, v)",
+);
+pub const smooth_expression_inputs = .{
+    .u = 0.35,
+    .v = -0.2,
+    .a = 3.25,
+    .b = 12.5,
+};
+
 /// The expression case is dominated by its `1e300` term, so it pins down
 /// literal fidelity rather than arithmetic. This one is scaled to catch a
 /// wrong operator, and it is the only multi-output case.

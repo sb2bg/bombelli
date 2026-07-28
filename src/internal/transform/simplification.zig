@@ -5,6 +5,7 @@ const diagnostic = @import("../parse/diagnostic.zig");
 const exact = @import("../core/exact.zig");
 
 const BinaryOperation = enum { add, sub, mul, div };
+const BinaryFunction = enum { atan2, hypot };
 const Function = enum {
     sin,
     cos,
@@ -334,6 +335,20 @@ const Context = struct {
                 self.builder,
                 .log10,
                 self.simplifyNode(child),
+                self.source,
+            ),
+            .atan2 => |binary| simplifyBinaryFunction(
+                self.builder,
+                .atan2,
+                self.simplifyNode(binary.left),
+                self.simplifyNode(binary.right),
+                self.source,
+            ),
+            .hypot => |binary| simplifyBinaryFunction(
+                self.builder,
+                .hypot,
+                self.simplifyNode(binary.left),
+                self.simplifyNode(binary.right),
                 self.source,
             ),
         };
@@ -1027,6 +1042,37 @@ fn makeFunction(
     };
 }
 
+fn simplifyBinaryFunction(
+    builder: *build.Builder,
+    comptime function: BinaryFunction,
+    left: ast.NodeId,
+    right: ast.NodeId,
+    comptime source: []const u8,
+) ast.NodeId {
+    const position = functionPosition(source, @tagName(function));
+    if (constantValue(builder, left)) |left_value| {
+        if (constantValue(builder, right)) |right_value| {
+            return normalizedFloat(
+                builder,
+                switch (function) {
+                    .atan2 => std.math.atan2(left_value, right_value),
+                    .hypot => std.math.hypot(left_value, right_value),
+                },
+                source,
+                position,
+            );
+        }
+    }
+    if (function == .hypot) {
+        if (isZero(builder, left)) return builder.absolute(right);
+        if (isZero(builder, right)) return builder.absolute(left);
+    }
+    return switch (function) {
+        .atan2 => builder.arctangent2(left, right),
+        .hypot => builder.hypotenuse(left, right),
+    };
+}
+
 fn foldBinary(
     builder: *build.Builder,
     comptime operation: BinaryOperation,
@@ -1307,6 +1353,8 @@ fn less(builder: *const build.Builder, left: ast.NodeId, right: ast.NodeId) bool
         .ln => |child| less(builder, child, right_node.ln),
         .log2 => |child| less(builder, child, right_node.log2),
         .log10 => |child| less(builder, child, right_node.log10),
+        .atan2 => |binary| lessBinary(builder, binary, right_node.atan2),
+        .hypot => |binary| lessBinary(builder, binary, right_node.hypot),
         .negate => |child| less(builder, child, right_node.negate),
         .add => |binary| lessBinary(builder, binary, right_node.add),
         .add_nary => |operands| lessOperands(
@@ -1365,10 +1413,12 @@ fn rank(node: ast.Node) u8 {
         .ln => 17,
         .log2 => 18,
         .log10 => 19,
-        .negate => 20,
-        .add, .add_nary => 21,
-        .sub => 22,
+        .atan2 => 20,
+        .hypot => 21,
+        .negate => 22,
+        .add, .add_nary => 23,
+        .sub => 24,
         .mul_nary => 5,
-        .div => 23,
+        .div => 25,
     };
 }

@@ -199,6 +199,8 @@ const ConversionContext = struct {
             .ln,
             .log2,
             .log10,
+            .atan2,
+            .hypot,
             => unsupported(
                 "transcendental functions are not rational functions",
             ),

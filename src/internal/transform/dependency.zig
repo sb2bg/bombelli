@@ -36,6 +36,8 @@ pub fn dependsOn(
             .log2,
             .log10,
             => |child| dependent[@intCast(child)],
+            .atan2, .hypot => |binary| dependent[@intCast(binary.left)] or
+                dependent[@intCast(binary.right)],
         };
     }
     return dependent[@intCast(expression.root)];

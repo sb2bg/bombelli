@@ -732,6 +732,8 @@ fn polynomialConvertible(comptime expression: ast.Expr) bool {
             .ln,
             .log2,
             .log10,
+            .atan2,
+            .hypot,
             => false,
             .add, .sub, .mul => |binary| convertible[@intCast(binary.left)] and
                 convertible[@intCast(binary.right)],

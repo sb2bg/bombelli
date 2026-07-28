@@ -200,6 +200,14 @@ fn rebuild(
         .log10 => |child| builder.logarithm10(
             rebuild(builder, nodes, child, cache, replacements),
         ),
+        .atan2 => |binary| builder.arctangent2(
+            rebuild(builder, nodes, binary.left, cache, replacements),
+            rebuild(builder, nodes, binary.right, cache, replacements),
+        ),
+        .hypot => |binary| builder.hypotenuse(
+            rebuild(builder, nodes, binary.left, cache, replacements),
+            rebuild(builder, nodes, binary.right, cache, replacements),
+        ),
     };
     cache[index] = result;
     return result;
@@ -488,6 +496,46 @@ fn rebuildName(
             replacement,
             replacement_cache,
         )),
+        .atan2 => |binary| builder.arctangent2(
+            rebuildName(
+                builder,
+                nodes,
+                binary.left,
+                cache,
+                name,
+                replacement,
+                replacement_cache,
+            ),
+            rebuildName(
+                builder,
+                nodes,
+                binary.right,
+                cache,
+                name,
+                replacement,
+                replacement_cache,
+            ),
+        ),
+        .hypot => |binary| builder.hypotenuse(
+            rebuildName(
+                builder,
+                nodes,
+                binary.left,
+                cache,
+                name,
+                replacement,
+                replacement_cache,
+            ),
+            rebuildName(
+                builder,
+                nodes,
+                binary.right,
+                cache,
+                name,
+                replacement,
+                replacement_cache,
+            ),
+        ),
     };
     cache[index] = result;
     return result;
@@ -594,6 +642,14 @@ fn cloneNode(
         .ln => |child| builder.logarithm(cloneNode(builder, nodes, child, cache)),
         .log2 => |child| builder.logarithm2(cloneNode(builder, nodes, child, cache)),
         .log10 => |child| builder.logarithm10(cloneNode(builder, nodes, child, cache)),
+        .atan2 => |binary| builder.arctangent2(
+            cloneNode(builder, nodes, binary.left, cache),
+            cloneNode(builder, nodes, binary.right, cache),
+        ),
+        .hypot => |binary| builder.hypotenuse(
+            cloneNode(builder, nodes, binary.left, cache),
+            cloneNode(builder, nodes, binary.right, cache),
+        ),
     };
     cache[index] = result;
     return result;

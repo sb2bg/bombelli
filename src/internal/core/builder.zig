@@ -144,6 +144,22 @@ pub const Builder = struct {
         return self.intern(.{ .log10 = child });
     }
 
+    pub fn arctangent2(
+        self: *Builder,
+        y: ast.NodeId,
+        x: ast.NodeId,
+    ) ast.NodeId {
+        return self.intern(.{ .atan2 = .{ .left = y, .right = x } });
+    }
+
+    pub fn hypotenuse(
+        self: *Builder,
+        x: ast.NodeId,
+        y: ast.NodeId,
+    ) ast.NodeId {
+        return self.intern(.{ .hypot = .{ .left = x, .right = y } });
+    }
+
     pub fn intern(self: *Builder, new_node: ast.Node) ast.NodeId {
         // Child nodes are interned before their parents, and structural identity
         // is defined entirely by the tag, payload, and canonical child ids. Thus
@@ -305,6 +321,8 @@ fn remapNode(
         .ln => |child| .{ .ln = remap[@intCast(child)] },
         .log2 => |child| .{ .log2 = remap[@intCast(child)] },
         .log10 => |child| .{ .log10 = remap[@intCast(child)] },
+        .atan2 => |binary| .{ .atan2 = remapBinary(binary, remap) },
+        .hypot => |binary| .{ .hypot = remapBinary(binary, remap) },
     };
 }
 
@@ -372,6 +390,8 @@ fn hashNode(node_value: ast.Node) u64 {
         .ln => |child| mix(hash, child),
         .log2 => |child| mix(hash, child),
         .log10 => |child| mix(hash, child),
+        .atan2 => |binary| hashBinary(hash, binary),
+        .hypot => |binary| hashBinary(hash, binary),
     };
 }
 

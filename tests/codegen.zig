@@ -22,9 +22,9 @@ test "human rendering modes remain separate from source emission" {
     );
 }
 
-test "extended unary functions emit native Zig and C math calls" {
+test "smooth elementary functions emit native Zig and C math calls" {
     const expression = comptime expr(
-        "asin(x) + acos(x) + sinh(x) + cosh(x) + tanh(x) + log2(x) + log10(x)",
+        "asin(x) + acos(x) + sinh(x) + cosh(x) + tanh(x) + log2(x) + log10(x) + atan2(y, x) + hypot(x, y)",
     );
     const zig_source = comptime expression.emit(.{
         .target = .zig,
@@ -39,6 +39,8 @@ test "extended unary functions emit native Zig and C math calls" {
         "std.math.tanh(",
         "@log2(",
         "@log10(",
+        "std.math.atan2(",
+        "std.math.hypot(",
     }) |spelling| {
         try std.testing.expect(
             std.mem.indexOf(u8, zig_source, spelling) != null,
@@ -58,6 +60,8 @@ test "extended unary functions emit native Zig and C math calls" {
         "tanh(",
         "log2(",
         "log10(",
+        "atan2(",
+        "hypot(",
     }) |spelling| {
         try std.testing.expect(
             std.mem.indexOf(u8, c_source, spelling) != null,
@@ -78,6 +82,8 @@ test "extended unary functions emit native Zig and C math calls" {
         "tanhf(",
         "log2f(",
         "log10f(",
+        "atan2f(",
+        "hypotf(",
     }) |spelling| {
         try std.testing.expect(
             std.mem.indexOf(u8, c_f32_source, spelling) != null,

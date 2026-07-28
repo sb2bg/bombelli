@@ -246,36 +246,118 @@ const Parser = struct {
             .log2
         else if (std.mem.eql(u8, name, "log10"))
             .log10
+        else if (std.mem.eql(u8, name, "atan2"))
+            .atan2
+        else if (std.mem.eql(u8, name, "hypot"))
+            .hypot
         else
             diagnostic.fail(self.source, token.start, "unknown function");
 
         self.advance();
-        const argument = self.parseAddition();
+        const arguments = self.parseFunctionArguments(
+            token,
+            name,
+            function_kind.arity(),
+        );
+
+        return switch (function_kind) {
+            .sin => self.builder.sine(arguments.values[0]),
+            .cos => self.builder.cosine(arguments.values[0]),
+            .tan => self.builder.tangent(arguments.values[0]),
+            .asin => self.builder.arcsine(arguments.values[0]),
+            .acos => self.builder.arccosine(arguments.values[0]),
+            .atan => self.builder.arctangent(arguments.values[0]),
+            .sinh => self.builder.hyperbolicSine(arguments.values[0]),
+            .cosh => self.builder.hyperbolicCosine(arguments.values[0]),
+            .tanh => self.builder.hyperbolicTangent(arguments.values[0]),
+            .abs => self.builder.absolute(arguments.values[0]),
+            .sqrt => self.builder.power(arguments.values[0], exact.Rational{
+                .numerator = 1,
+                .denominator = 2,
+            }),
+            .exp => self.builder.exponential(arguments.values[0]),
+            .ln => self.builder.logarithm(arguments.values[0]),
+            .log2 => self.builder.logarithm2(arguments.values[0]),
+            .log10 => self.builder.logarithm10(arguments.values[0]),
+            .atan2 => self.builder.arctangent2(
+                arguments.values[0],
+                arguments.values[1],
+            ),
+            .hypot => self.builder.hypotenuse(
+                arguments.values[0],
+                arguments.values[1],
+            ),
+        };
+    }
+
+    fn parseFunctionArguments(
+        self: *Parser,
+        function_token: lexer.Token,
+        function_name: []const u8,
+        expected: usize,
+    ) ParsedArguments {
+        var arguments = ParsedArguments{
+            .values = undefined,
+            .len = 0,
+        };
+
+        if (self.current.kind != .right_paren) {
+            while (true) {
+                if (self.current.kind == .comma) {
+                    diagnostic.fail(
+                        self.source,
+                        self.current.start,
+                        "expected a function argument before ','",
+                    );
+                }
+                if (arguments.len == arguments.values.len) {
+                    diagnostic.fail(
+                        self.source,
+                        function_token.start,
+                        std.fmt.comptimePrint(
+                            "function '{s}' expects {d} argument{s}",
+                            .{
+                                function_name,
+                                expected,
+                                if (expected == 1) "" else "s",
+                            },
+                        ),
+                    );
+                }
+                arguments.values[arguments.len] = self.parseAddition();
+                arguments.len += 1;
+                if (self.current.kind != .comma) break;
+                self.advance();
+                if (self.current.kind == .right_paren) {
+                    diagnostic.fail(
+                        self.source,
+                        self.current.start,
+                        "expected a function argument after ','",
+                    );
+                }
+            }
+        }
+
         if (self.current.kind != .right_paren) {
             diagnostic.fail(self.source, self.current.start, "missing closing parenthesis");
         }
         self.advance();
-
-        return switch (function_kind) {
-            .sin => self.builder.sine(argument),
-            .cos => self.builder.cosine(argument),
-            .tan => self.builder.tangent(argument),
-            .asin => self.builder.arcsine(argument),
-            .acos => self.builder.arccosine(argument),
-            .atan => self.builder.arctangent(argument),
-            .sinh => self.builder.hyperbolicSine(argument),
-            .cosh => self.builder.hyperbolicCosine(argument),
-            .tanh => self.builder.hyperbolicTangent(argument),
-            .abs => self.builder.absolute(argument),
-            .sqrt => self.builder.power(argument, exact.Rational{
-                .numerator = 1,
-                .denominator = 2,
-            }),
-            .exp => self.builder.exponential(argument),
-            .ln => self.builder.logarithm(argument),
-            .log2 => self.builder.logarithm2(argument),
-            .log10 => self.builder.logarithm10(argument),
-        };
+        if (arguments.len != expected) {
+            diagnostic.fail(
+                self.source,
+                function_token.start,
+                std.fmt.comptimePrint(
+                    "function '{s}' expects {d} argument{s}, received {d}",
+                    .{
+                        function_name,
+                        expected,
+                        if (expected == 1) "" else "s",
+                        arguments.len,
+                    },
+                ),
+            );
+        }
+        return arguments;
     }
 
     fn advance(self: *Parser) void {
@@ -303,4 +385,18 @@ const Function = enum {
     ln,
     log2,
     log10,
+    atan2,
+    hypot,
+
+    fn arity(self: Function) usize {
+        return switch (self) {
+            .atan2, .hypot => 2,
+            else => 1,
+        };
+    }
+};
+
+const ParsedArguments = struct {
+    values: [3]ast.NodeId,
+    len: usize,
 };

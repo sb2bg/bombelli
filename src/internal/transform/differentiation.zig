@@ -236,6 +236,43 @@ const Context = struct {
                     denominator,
                 );
             },
+            .atan2 => |binary| blk: {
+                const y = self.clone(binary.left);
+                const x = self.clone(binary.right);
+                const x_times_dy = self.builder.mul(
+                    x,
+                    self.derivative(binary.left),
+                );
+                const y_times_dx = self.builder.mul(
+                    y,
+                    self.derivative(binary.right),
+                );
+                const numerator = self.builder.sub(
+                    x_times_dy,
+                    y_times_dx,
+                );
+                const denominator = self.builder.add(
+                    self.builder.power(x, 2),
+                    self.builder.power(y, 2),
+                );
+                break :blk self.builder.div(numerator, denominator);
+            },
+            .hypot => |binary| blk: {
+                const x = self.clone(binary.left);
+                const y = self.clone(binary.right);
+                const numerator = self.builder.add(
+                    self.builder.mul(
+                        x,
+                        self.derivative(binary.left),
+                    ),
+                    self.builder.mul(
+                        y,
+                        self.derivative(binary.right),
+                    ),
+                );
+                const denominator = self.builder.hypotenuse(x, y);
+                break :blk self.builder.div(numerator, denominator);
+            },
         };
 
         self.derivative_cache[index] = result;
@@ -303,6 +340,14 @@ const Context = struct {
             .ln => |child| self.builder.logarithm(self.clone(child)),
             .log2 => |child| self.builder.logarithm2(self.clone(child)),
             .log10 => |child| self.builder.logarithm10(self.clone(child)),
+            .atan2 => |binary| self.builder.arctangent2(
+                self.clone(binary.left),
+                self.clone(binary.right),
+            ),
+            .hypot => |binary| self.builder.hypotenuse(
+                self.clone(binary.left),
+                self.clone(binary.right),
+            ),
         };
 
         self.clone_cache[index] = result;

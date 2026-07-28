@@ -757,6 +757,75 @@ test "extended unary functions simplify substitute and round trip" {
     );
 }
 
+test "binary elementary functions parse render evaluate and round trip" {
+    const functions = comptime exprVector(.{
+        "atan2(y, x)",
+        "hypot(x, y)",
+    });
+    const rendered = comptime functions.render();
+    try std.testing.expectEqualStrings("atan2(y, x)", rendered[0]);
+    try std.testing.expectEqualStrings("hypot(x, y)", rendered[1]);
+
+    const point = struct { x: f64, y: f64 }{ .x = -3.0, .y = 4.0 };
+    const values = functions.eval(point);
+    try std.testing.expectApproxEqAbs(
+        std.math.atan2(point.y, point.x),
+        values[0],
+        1e-15,
+    );
+    try std.testing.expectApproxEqAbs(5.0, values[1], 1e-15);
+
+    const portable = comptime expr("atan2(y, x) + hypot(x, y)");
+    inline for (.{ f16, f32, f64, f80, f128 }) |T| {
+        const value = portable.evalAs(T, .{
+            .x = @as(T, @floatCast(point.x)),
+            .y = @as(T, @floatCast(point.y)),
+        });
+        comptime std.debug.assert(@TypeOf(value) == T);
+        try std.testing.expectApproxEqAbs(
+            @as(T, @floatCast(std.math.atan2(point.y, point.x) + 5.0)),
+            value,
+            @as(T, 0.004),
+        );
+    }
+
+    const substituted = comptime portable.substitute(.{
+        .x = "u + 1",
+        .y = "v - 1",
+    });
+    const reparsed = comptime expr(substituted.render());
+    try std.testing.expectEqualStrings(
+        comptime substituted.render(),
+        comptime reparsed.render(),
+    );
+    try std.testing.expectApproxEqAbs(
+        portable.eval(.{ .x = 2.0, .y = -3.0 }),
+        reparsed.eval(.{ .u = 1.0, .v = -2.0 }),
+        1e-15,
+    );
+}
+
+test "binary elementary function derivatives and simplifications are symbolic" {
+    const angle = comptime expr("atan2(y, x)");
+    const angle_gradient = comptime angle.gradient(.{ .x, .y }).simplify();
+    const radius = comptime expr("hypot(x, y)");
+    const radius_gradient = comptime radius.gradient(.{ .x, .y }).simplify();
+
+    const point = struct { x: f64, y: f64 }{ .x = 3.0, .y = 4.0 };
+    const angle_values = angle_gradient.eval(point);
+    try std.testing.expectApproxEqAbs(-4.0 / 25.0, angle_values[0], 1e-15);
+    try std.testing.expectApproxEqAbs(3.0 / 25.0, angle_values[1], 1e-15);
+    const radius_values = radius_gradient.eval(point);
+    try std.testing.expectApproxEqAbs(3.0 / 5.0, radius_values[0], 1e-15);
+    try std.testing.expectApproxEqAbs(4.0 / 5.0, radius_values[1], 1e-15);
+
+    const folded = comptime expr("hypot(3, 4) + atan2(0, 1)").simplify();
+    try std.testing.expectEqualStrings("5.0", comptime folded.render());
+    const absolute = comptime expr("hypot(0, x)").simplify();
+    try std.testing.expectEqualStrings("abs(x)", comptime absolute.render());
+    try std.testing.expectApproxEqAbs(2.5, absolute.eval(.{ .x = -2.5 }), 0.0);
+}
+
 test "canonical n-ary algebra flattens sorts and collects exact coefficients" {
     const Case = struct {
         input: []const u8,

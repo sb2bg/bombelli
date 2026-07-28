@@ -13,6 +13,9 @@ pub fn main(init: std.process.Init) !void {
     try out.print("expression {d:.17}\n", .{
         cases.expression.eval(cases.expression_inputs),
     });
+    try out.print("smooth_expression {d:.17}\n", .{
+        cases.smooth_expression.eval(cases.smooth_expression_inputs),
+    });
     const gradient = cases.gradient.eval(cases.gradient_inputs);
     try out.print("gradient_x {d:.17}\n", .{gradient[0]});
     try out.print("gradient_y {d:.17}\n", .{gradient[1]});

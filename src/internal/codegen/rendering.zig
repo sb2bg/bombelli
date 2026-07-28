@@ -190,7 +190,32 @@ fn renderBare(
         .ln => |child| renderFunction(expression, "ln", child, rendered),
         .log2 => |child| renderFunction(expression, "log2", child, rendered),
         .log10 => |child| renderFunction(expression, "log10", child, rendered),
+        .atan2 => |binary| renderBinaryFunction(
+            "atan2",
+            binary,
+            rendered,
+        ),
+        .hypot => |binary| renderBinaryFunction(
+            "hypot",
+            binary,
+            rendered,
+        ),
     };
+}
+
+fn renderBinaryFunction(
+    comptime name: []const u8,
+    comptime binary: ast.Binary,
+    comptime rendered: []const []const u8,
+) []const u8 {
+    return std.fmt.comptimePrint(
+        "{s}({s}, {s})",
+        .{
+            name,
+            rendered[@intCast(binary.left)],
+            rendered[@intCast(binary.right)],
+        },
+    );
 }
 
 fn renderNaryAdd(
@@ -412,6 +437,8 @@ fn nodePrecedence(node: ast.Node) u8 {
         .ln,
         .log2,
         .log10,
+        .atan2,
+        .hypot,
         => 50,
     };
 }

@@ -64,6 +64,8 @@ pub const Node = union(enum) {
     ln: NodeId,
     log2: NodeId,
     log10: NodeId,
+    atan2: Binary,
+    hypot: Binary,
 };
 
 pub const Expr = struct {
@@ -582,6 +584,8 @@ pub fn nodeEqual(left: Node, right: Node) bool {
         .ln => |child| child == right.ln,
         .log2 => |child| child == right.log2,
         .log10 => |child| child == right.log10,
+        .atan2 => |binary| binaryEqual(binary, right.atan2),
+        .hypot => |binary| binaryEqual(binary, right.hypot),
     };
 }
 
