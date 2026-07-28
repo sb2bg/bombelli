@@ -59,6 +59,31 @@ test "models fuse value and Jacobian evaluation" {
 
     const direct = model.valueAndJacobian(.{ .x = 0.5, .y = 2.0 });
     try std.testing.expectEqualDeep(actual, direct);
+
+    const tangent = [2]f64{ 1.0, -1.0 };
+    const jvp = linearization.jvp(
+        .{ .x = 0.5, .y = 2.0 },
+        tangent,
+    );
+    var expected_jvp: [2]f64 = undefined;
+    for (0..2) |row| {
+        expected_jvp[row] = actual.jacobian[row][0] -
+            actual.jacobian[row][1];
+    }
+    try std.testing.expectEqualDeep(expected_jvp, jvp);
+
+    const cotangent = [2]f64{ 2.0, -1.0 };
+    const vjp = linearization.vjp(
+        .{ .x = 0.5, .y = 2.0 },
+        cotangent,
+    );
+    try std.testing.expectEqualDeep(
+        [2]f64{
+            2.0 * actual.jacobian[0][0] - actual.jacobian[1][0],
+            2.0 * actual.jacobian[0][1] - actual.jacobian[1][1],
+        },
+        vjp,
+    );
 }
 
 test "scalar model outputs compose with gradient transforms" {
@@ -95,6 +120,30 @@ test "models preserve an explicit ordered data-input contract" {
     try std.testing.expectEqualDeep(
         [1]f64{7},
         affine.eval(.{ .slope = 2, .intercept = 1, .x = 3 }),
+    );
+}
+
+test "model transforms preserve variables and data ABI" {
+    const polynomial = comptime bombelli.model(.{
+        "a*x^2+b",
+    }, .{
+        .variables = .{.x},
+        .inputs = .{ .a, .b },
+    });
+    const derivative = comptime polynomial.diff(.x).simplify();
+    try std.testing.expectEqualDeep(
+        [1]f64{12},
+        derivative.eval(.{ .x = 3, .a = 2, .b = 7 }),
+    );
+    try std.testing.expectEqualStrings("x", derivative.variables[0]);
+    try std.testing.expectEqualStrings("a", derivative.inputs[0]);
+
+    const specialized = comptime polynomial
+        .substitute(.{ .a = 2 })
+        .simplify();
+    try std.testing.expectEqualDeep(
+        [1]f64{25},
+        specialized.eval(.{ .x = 3, .a = 999, .b = 7 }),
     );
 }
 

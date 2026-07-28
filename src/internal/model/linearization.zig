@@ -70,6 +70,60 @@ pub fn Program(comptime M: usize, comptime N: usize) type {
             output.* = self.evalAs(T, inputs);
         }
 
+        /// Applies the Jacobian to a tangent without exposing matrix layout.
+        pub inline fn jvp(
+            comptime self: Self,
+            inputs: anytype,
+            tangent: [N]f64,
+        ) [M]f64 {
+            return self.jvpAs(f64, inputs, tangent);
+        }
+
+        /// Typed Jacobian-vector product.
+        pub inline fn jvpAs(
+            comptime self: Self,
+            comptime T: type,
+            inputs: anytype,
+            tangent: [N]T,
+        ) [M]T {
+            const linearized = self.evalAs(T, inputs);
+            var result: [M]T = [_]T{0} ** M;
+            for (0..M) |row| {
+                for (0..N) |column| {
+                    result[row] +=
+                        linearized.jacobian[row][column] * tangent[column];
+                }
+            }
+            return result;
+        }
+
+        /// Applies the transposed Jacobian to an output cotangent.
+        pub inline fn vjp(
+            comptime self: Self,
+            inputs: anytype,
+            cotangent: [M]f64,
+        ) [N]f64 {
+            return self.vjpAs(f64, inputs, cotangent);
+        }
+
+        /// Typed vector-Jacobian product.
+        pub inline fn vjpAs(
+            comptime self: Self,
+            comptime T: type,
+            inputs: anytype,
+            cotangent: [M]T,
+        ) [N]T {
+            const linearized = self.evalAs(T, inputs);
+            var result: [N]T = [_]T{0} ** N;
+            for (0..M) |row| {
+                for (0..N) |column| {
+                    result[column] +=
+                        cotangent[row] * linearized.jacobian[row][column];
+                }
+            }
+            return result;
+        }
+
         pub inline fn evalWithVariables(
             comptime self: Self,
             inputs: anytype,
