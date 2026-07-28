@@ -175,9 +175,33 @@ pub const Expr = struct {
         return @import("internal/runtime/evaluation.zig").evaluate(self, values);
     }
 
+    /// Evaluates the expression using the requested floating-point scalar type.
+    pub fn evalAs(comptime self: Expr, comptime T: type, values: anytype) T {
+        return @import("internal/runtime/evaluation.zig").evaluateAs(
+            T,
+            self,
+            values,
+        );
+    }
+
     /// Evaluates the expression into caller-owned storage.
     pub fn evalInto(comptime self: Expr, output: *f64, values: anytype) void {
         return @import("internal/runtime/evaluation.zig").evaluateInto(self, output, values);
+    }
+
+    /// Evaluates with `T` into caller-owned scalar storage.
+    pub fn evalIntoAs(
+        comptime self: Expr,
+        comptime T: type,
+        output: *T,
+        values: anytype,
+    ) void {
+        return @import("internal/runtime/evaluation.zig").evaluateIntoAs(
+            T,
+            self,
+            output,
+            values,
+        );
     }
 
     /// Evaluates a structure-of-arrays input batch into caller-owned storage.
@@ -301,9 +325,39 @@ pub fn ExprVector(comptime N: usize) type {
             return @import("internal/runtime/evaluation.zig").evaluateVector(N, self, values);
         }
 
+        /// Evaluates all components using the requested floating-point type.
+        pub fn evalAs(
+            comptime self: Self,
+            comptime T: type,
+            values: anytype,
+        ) [N]T {
+            return @import("internal/runtime/evaluation.zig").evaluateVectorAs(
+                T,
+                N,
+                self,
+                values,
+            );
+        }
+
         /// Evaluates all components into caller-owned storage.
         pub fn evalInto(comptime self: Self, output: anytype, values: anytype) void {
             return @import("internal/runtime/evaluation.zig").evaluateVectorInto(N, self, output, values);
+        }
+
+        /// Evaluates all components with `T` into caller-owned storage.
+        pub fn evalIntoAs(
+            comptime self: Self,
+            comptime T: type,
+            output: anytype,
+            values: anytype,
+        ) void {
+            return @import("internal/runtime/evaluation.zig").evaluateVectorIntoAs(
+                T,
+                N,
+                self,
+                output,
+                values,
+            );
         }
 
         /// Renders all components in Bombelli's default notation.
@@ -399,9 +453,41 @@ pub fn ExprMatrix(comptime R: usize, comptime C: usize) type {
             return @import("internal/runtime/evaluation.zig").evaluateMatrix(R, C, self, values);
         }
 
+        /// Evaluates all entries using the requested floating-point type.
+        pub fn evalAs(
+            comptime self: Self,
+            comptime T: type,
+            values: anytype,
+        ) [R][C]T {
+            return @import("internal/runtime/evaluation.zig").evaluateMatrixAs(
+                T,
+                R,
+                C,
+                self,
+                values,
+            );
+        }
+
         /// Evaluates all entries into caller-owned storage.
         pub fn evalInto(comptime self: Self, output: anytype, values: anytype) void {
             return @import("internal/runtime/evaluation.zig").evaluateMatrixInto(R, C, self, output, values);
+        }
+
+        /// Evaluates all entries with `T` into caller-owned storage.
+        pub fn evalIntoAs(
+            comptime self: Self,
+            comptime T: type,
+            output: anytype,
+            values: anytype,
+        ) void {
+            return @import("internal/runtime/evaluation.zig").evaluateMatrixIntoAs(
+                T,
+                R,
+                C,
+                self,
+                output,
+                values,
+            );
         }
 
         /// Renders all entries in Bombelli's default notation.

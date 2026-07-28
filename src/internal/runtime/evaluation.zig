@@ -23,7 +23,16 @@ pub const BatchOptions = struct {
 pub const batch_vector_length = std.simd.suggestVectorLength(f64) orelse 1;
 
 pub inline fn evaluate(comptime expression: ast.Expr, values: anytype) f64 {
-    const results = evaluateNodes(expression.nodes, values);
+    return evaluateAs(f64, expression, values);
+}
+
+pub inline fn evaluateAs(
+    comptime T: type,
+    comptime expression: ast.Expr,
+    values: anytype,
+) T {
+    validateEvaluationScalar(T);
+    const results = evaluateNodesAs(T, expression.nodes, values);
     return results[@intCast(expression.root)];
 }
 
@@ -81,7 +90,16 @@ pub inline fn evaluateInto(
     output: *f64,
     values: anytype,
 ) void {
-    output.* = evaluate(expression, values);
+    evaluateIntoAs(f64, expression, output, values);
+}
+
+pub inline fn evaluateIntoAs(
+    comptime T: type,
+    comptime expression: ast.Expr,
+    output: *T,
+    values: anytype,
+) void {
+    output.* = evaluateAs(T, expression, values);
 }
 
 pub inline fn evaluateBatchInto(
@@ -221,8 +239,18 @@ pub inline fn evaluateVector(
     comptime expression: ast.ExprVector(N),
     values: anytype,
 ) [N]f64 {
-    var output: [N]f64 = undefined;
-    evaluateVectorInto(N, expression, &output, values);
+    return evaluateVectorAs(f64, N, expression, values);
+}
+
+pub inline fn evaluateVectorAs(
+    comptime T: type,
+    comptime N: usize,
+    comptime expression: ast.ExprVector(N),
+    values: anytype,
+) [N]T {
+    validateEvaluationScalar(T);
+    var output: [N]T = undefined;
+    evaluateVectorIntoAs(T, N, expression, &output, values);
     return output;
 }
 
@@ -239,14 +267,40 @@ pub inline fn evaluateVectorInto(
     }
 }
 
+pub inline fn evaluateVectorIntoAs(
+    comptime T: type,
+    comptime N: usize,
+    comptime expression: ast.ExprVector(N),
+    output: anytype,
+    values: anytype,
+) void {
+    validateEvaluationScalar(T);
+    validateOutputAs(T, N, output);
+    const results = evaluateNodesAs(T, expression.nodes, values);
+    inline for (expression.roots, 0..) |root, index| {
+        output[index] = results[@intCast(root)];
+    }
+}
+
 pub inline fn evaluateMatrix(
     comptime R: usize,
     comptime C: usize,
     comptime expression: ast.ExprMatrix(R, C),
     values: anytype,
 ) [R][C]f64 {
-    var output: [R][C]f64 = undefined;
-    evaluateMatrixInto(R, C, expression, &output, values);
+    return evaluateMatrixAs(f64, R, C, expression, values);
+}
+
+pub inline fn evaluateMatrixAs(
+    comptime T: type,
+    comptime R: usize,
+    comptime C: usize,
+    comptime expression: ast.ExprMatrix(R, C),
+    values: anytype,
+) [R][C]T {
+    validateEvaluationScalar(T);
+    var output: [R][C]T = undefined;
+    evaluateMatrixIntoAs(T, R, C, expression, &output, values);
     return output;
 }
 
@@ -259,6 +313,24 @@ pub inline fn evaluateMatrixInto(
 ) void {
     validateMatrixOutput(R, C, output);
     const results = evaluateNodes(expression.nodes, values);
+    inline for (expression.roots, 0..) |row, row_index| {
+        inline for (row, 0..) |root, column_index| {
+            output[row_index][column_index] = results[@intCast(root)];
+        }
+    }
+}
+
+pub inline fn evaluateMatrixIntoAs(
+    comptime T: type,
+    comptime R: usize,
+    comptime C: usize,
+    comptime expression: ast.ExprMatrix(R, C),
+    output: anytype,
+    values: anytype,
+) void {
+    validateEvaluationScalar(T);
+    validateMatrixOutputAs(T, R, C, output);
+    const results = evaluateNodesAs(T, expression.nodes, values);
     inline for (expression.roots, 0..) |row, row_index| {
         inline for (row, 0..) |root, column_index| {
             output[row_index][column_index] = results[@intCast(root)];
@@ -314,8 +386,16 @@ pub inline fn evaluateMatrixWithVariables(
 }
 
 inline fn evaluateNodes(comptime nodes: []const ast.Node, values: anytype) [nodes.len]f64 {
+    return evaluateNodesAs(f64, nodes, values);
+}
+
+inline fn evaluateNodesAs(
+    comptime T: type,
+    comptime nodes: []const ast.Node,
+    values: anytype,
+) [nodes.len]T {
     return evaluateNodesWithResolver(
-        f64,
+        T,
         nodes,
         values,
         scalarSymbolValue,
@@ -333,13 +413,11 @@ inline fn evaluateNodesWithResolver(
     var results: [nodes.len]Number = undefined;
     inline for (nodes, 0..) |node, index| {
         results[index] = switch (node) {
-            .integer => |value| numberValue(
-                Number,
-                @as(f64, @floatFromInt(value)),
-            ),
-            .rational => |value| numberValue(Number, value.toF64()),
+            .integer => |value| numberValue(Number, value),
+            .rational => |value| numberValue(Number, value.numerator) /
+                numberValue(Number, value.denominator),
             .float => |value| numberValue(Number, value),
-            .constant => |value| numberValue(Number, value.value()),
+            .constant => |value| constantValue(Number, value),
             .symbol => |name| resolveSymbol(Number, name, context),
             .add => |binary| results[@intCast(binary.left)] +
                 results[@intCast(binary.right)],
@@ -477,6 +555,33 @@ inline fn validateOutput(comptime N: usize, output: anytype) void {
     }
 }
 
+inline fn validateOutputAs(
+    comptime T: type,
+    comptime N: usize,
+    output: anytype,
+) void {
+    const Output = @TypeOf(output);
+    switch (@typeInfo(Output)) {
+        .pointer => |pointer| {
+            if (pointer.is_const) {
+                @compileError("Bombelli evalIntoAs expects mutable caller-provided output storage");
+            }
+            switch (@typeInfo(pointer.child)) {
+                .array => |array| {
+                    if (array.len != N) {
+                        @compileError("Bombelli evalIntoAs output has the wrong length");
+                    }
+                    if (array.child != T) {
+                        @compileError("Bombelli evalIntoAs output elements must match the requested scalar type");
+                    }
+                },
+                else => @compileError("Bombelli evalIntoAs expects a pointer to a fixed-size output array"),
+            }
+        },
+        else => @compileError("Bombelli evalIntoAs expects a pointer to mutable caller-provided output storage"),
+    }
+}
+
 inline fn validateMatrixOutput(comptime R: usize, comptime C: usize, output: anytype) void {
     const Output = @TypeOf(output);
     switch (@typeInfo(Output)) {
@@ -508,7 +613,51 @@ inline fn validateMatrixOutput(comptime R: usize, comptime C: usize, output: any
     }
 }
 
+inline fn validateMatrixOutputAs(
+    comptime T: type,
+    comptime R: usize,
+    comptime C: usize,
+    output: anytype,
+) void {
+    const Output = @TypeOf(output);
+    switch (@typeInfo(Output)) {
+        .pointer => |pointer| {
+            if (pointer.is_const) {
+                @compileError("Bombelli evalIntoAs expects mutable caller-provided output storage");
+            }
+            switch (@typeInfo(pointer.child)) {
+                .array => |outer| {
+                    if (outer.len != R) {
+                        @compileError("Bombelli evalIntoAs output has the wrong row count");
+                    }
+                    switch (@typeInfo(outer.child)) {
+                        .array => |inner| {
+                            if (inner.len != C) {
+                                @compileError("Bombelli evalIntoAs output has the wrong column count");
+                            }
+                            if (inner.child != T) {
+                                @compileError("Bombelli evalIntoAs output elements must match the requested scalar type");
+                            }
+                        },
+                        else => @compileError("Bombelli matrix evalIntoAs expects two-dimensional output storage"),
+                    }
+                },
+                else => @compileError("Bombelli evalIntoAs expects a pointer to a fixed-size output matrix"),
+            }
+        },
+        else => @compileError("Bombelli evalIntoAs expects a pointer to mutable caller-provided output storage"),
+    }
+}
+
 inline fn symbolValue(comptime name: []const u8, values: anytype) f64 {
+    return scalarSymbolValue(f64, name, values);
+}
+
+inline fn scalarSymbolValue(
+    comptime Number: type,
+    comptime name: []const u8,
+    values: anytype,
+) Number {
     const Values = @TypeOf(values);
     if (@typeInfo(Values) != .@"struct") {
         @compileError("Bombelli eval expects a struct value containing symbol fields");
@@ -522,21 +671,15 @@ inline fn symbolValue(comptime name: []const u8, values: anytype) f64 {
 
     const value = @field(values, name);
     return switch (@typeInfo(@TypeOf(value))) {
-        .int, .comptime_int => @floatFromInt(value),
-        .float, .comptime_float => @floatCast(value),
+        .int, .comptime_int, .float, .comptime_float => numberValue(
+            Number,
+            value,
+        ),
         else => @compileError(std.fmt.comptimePrint(
             "Bombelli eval field '.{s}' must be an integer or floating-point value",
             .{name},
         )),
     };
-}
-
-inline fn scalarSymbolValue(
-    comptime Number: type,
-    comptime name: []const u8,
-    values: anytype,
-) Number {
-    return numberValue(Number, symbolValue(name, values));
 }
 
 fn BoundContext(
@@ -581,11 +724,42 @@ inline fn variableValue(
     return symbolValue(name, values);
 }
 
-inline fn numberValue(comptime Number: type, value: f64) Number {
-    return switch (@typeInfo(Number)) {
-        .float => @as(Number, @floatCast(value)),
-        .vector => @as(Number, @splat(value)),
+inline fn validateEvaluationScalar(comptime T: type) void {
+    if (@typeInfo(T) != .float) {
+        @compileError("Bombelli evalAs expects a floating-point scalar type");
+    }
+}
+
+inline fn numberValue(comptime Number: type, value: anytype) Number {
+    const Scalar = switch (@typeInfo(Number)) {
+        .float => Number,
+        .vector => |vector| switch (@typeInfo(vector.child)) {
+            .float => vector.child,
+            else => @compileError("Bombelli internal evaluator expects a floating-point scalar or vector"),
+        },
         else => @compileError("Bombelli internal evaluator expects a floating-point scalar or vector"),
+    };
+    const scalar: Scalar = switch (@typeInfo(@TypeOf(value))) {
+        .int, .comptime_int => @floatFromInt(value),
+        .float, .comptime_float => @floatCast(value),
+        else => @compileError("Bombelli internal evaluator cannot convert this numerical value"),
+    };
+    return switch (@typeInfo(Number)) {
+        .float => scalar,
+        .vector => @as(Number, @splat(scalar)),
+        else => comptime unreachable,
+    };
+}
+
+inline fn constantValue(
+    comptime Number: type,
+    value: ast.Constant,
+) Number {
+    return switch (value) {
+        // Keep the literal at comptime precision until it is converted to the
+        // requested scalar. Constant.value() intentionally remains the f64
+        // convenience API.
+        .pi => numberValue(Number, std.math.pi),
     };
 }
 
@@ -623,17 +797,18 @@ inline fn integerPower(
 }
 
 inline fn rationalPowerScalar(
-    base: f64,
+    base: anytype,
     comptime exponent: @import("../core/exact.zig").Rational,
-) f64 {
-    const magnitude = std.math.pow(
-        f64,
-        @abs(base),
-        @as(f64, @floatFromInt(exponent.numerator)) /
-            @as(f64, @floatFromInt(exponent.denominator)),
-    );
+) @TypeOf(base) {
+    const Scalar = @TypeOf(base);
+    const exponent_value = numberValue(Scalar, exponent.numerator) /
+        numberValue(Scalar, exponent.denominator);
+    const magnitude = if (Scalar == f32 or Scalar == f64)
+        std.math.pow(Scalar, @abs(base), exponent_value)
+    else
+        @exp(@log(@abs(base)) * exponent_value);
     if (base >= 0.0) return magnitude;
-    if (exponent.denominator % 2 == 0) return std.math.nan(f64);
+    if (exponent.denominator % 2 == 0) return std.math.nan(Scalar);
     return if (@mod(exponent.numerator, 2) == 0) magnitude else -magnitude;
 }
 

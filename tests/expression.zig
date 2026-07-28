@@ -2,6 +2,7 @@ const std = @import("std");
 const bombelli = @import("bombelli");
 
 const expr = bombelli.expr;
+const exprMatrix = bombelli.exprMatrix;
 const exprVector = bombelli.exprVector;
 const rational = bombelli.rational;
 const Expr = bombelli.Expr;
@@ -307,6 +308,90 @@ test "multi-root programs share nodes and evaluate into caller storage" {
     var scalar_output: f64 = undefined;
     scalar.evalInto(&scalar_output, .{ .x = 2.0 });
     try std.testing.expectEqual(@as(f64, 3.0), scalar_output);
+}
+
+test "evalAs evaluates scalar vector and matrix programs in f32" {
+    const scalar = comptime expr(
+        "atan(x) + sqrt(y) + sin(x*y) + exp(x)/7 + ln(y) + pi",
+    );
+    const scalar_inputs = .{
+        .x = @as(f32, 0.25),
+        .y = @as(f32, 4.0),
+    };
+    const scalar_value = scalar.evalAs(f32, scalar_inputs);
+    comptime std.debug.assert(@TypeOf(scalar_value) == f32);
+
+    const expected_scalar: f32 = std.math.atan(@as(f32, 0.25)) +
+        @sqrt(@as(f32, 4.0)) +
+        @sin(@as(f32, 1.0)) +
+        @exp(@as(f32, 0.25)) / 7.0 +
+        @log(@as(f32, 4.0)) +
+        std.math.pi;
+    try std.testing.expectApproxEqAbs(expected_scalar, scalar_value, 2e-6);
+
+    var scalar_output: f32 = undefined;
+    scalar.evalIntoAs(f32, &scalar_output, scalar_inputs);
+    try std.testing.expectEqual(scalar_value, scalar_output);
+
+    const vector = comptime exprVector(.{
+        "x + 1/3",
+        "x^(1/3)",
+    });
+    const vector_value = vector.evalAs(f32, .{ .x = @as(f32, -8.0) });
+    comptime std.debug.assert(@TypeOf(vector_value) == [2]f32);
+    try std.testing.expectApproxEqAbs(@as(f32, -8.0 + 1.0 / 3.0), vector_value[0], 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, -2.0), vector_value[1], 1e-6);
+
+    var vector_output: [2]f32 = undefined;
+    vector.evalIntoAs(f32, &vector_output, .{ .x = @as(f32, -8.0) });
+    try std.testing.expectEqualDeep(vector_value, vector_output);
+
+    const matrix = comptime exprMatrix(.{
+        .{ "x", "x^2" },
+        .{ "2*x", "pi" },
+    });
+    const matrix_value = matrix.evalAs(f32, .{ .x = @as(f32, 1.5) });
+    comptime std.debug.assert(@TypeOf(matrix_value) == [2][2]f32);
+    try std.testing.expectEqualDeep([2][2]f32{
+        .{ 1.5, 2.25 },
+        .{ 3.0, std.math.pi },
+    }, matrix_value);
+
+    var matrix_output: [2][2]f32 = undefined;
+    matrix.evalIntoAs(f32, &matrix_output, .{ .x = @as(f32, 1.5) });
+    try std.testing.expectEqualDeep(matrix_value, matrix_output);
+}
+
+test "evalAs performs intermediate arithmetic in the requested type" {
+    const precision_boundary = comptime expr("x + 1 - x");
+    const x: f32 = 16_777_216.0;
+
+    try std.testing.expectEqual(
+        @as(f32, 0.0),
+        precision_boundary.evalAs(f32, .{ .x = x }),
+    );
+    try std.testing.expectEqual(
+        @as(f64, 1.0),
+        precision_boundary.eval(.{ .x = x }),
+    );
+    try std.testing.expectEqual(
+        precision_boundary.eval(.{ .x = x }),
+        precision_boundary.evalAs(f64, .{ .x = x }),
+    );
+}
+
+test "evalAs supports Zig floating-point scalar widths" {
+    const program = comptime expr("x^(1/3) + 1/7");
+
+    inline for (.{ f16, f32, f64, f80, f128 }) |T| {
+        const value = program.evalAs(T, .{ .x = @as(T, -8.0) });
+        comptime std.debug.assert(@TypeOf(value) == T);
+        try std.testing.expectApproxEqAbs(
+            @as(T, -2.0 + 1.0 / 7.0),
+            value,
+            @as(T, 0.002),
+        );
+    }
 }
 
 test "batch evaluation vectorizes SoA inputs and broadcasts scalar parameters" {
