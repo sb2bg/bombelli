@@ -52,6 +52,7 @@ pub const LeastSquaresStatus = enum {
     converged_cost,
     converged_step,
     max_iterations,
+    max_function_evaluations,
     infeasible_initial,
     non_finite_initial,
     non_finite_jacobian,

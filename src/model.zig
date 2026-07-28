@@ -9,12 +9,14 @@ const std = @import("std");
 const ast = @import("expression.zig");
 const domain = @import("internal/core/domain.zig");
 const evaluation = @import("internal/runtime/evaluation.zig");
+const linearization = @import("internal/model/linearization.zig");
 const limits = @import("internal/core/limits.zig");
 const multi = @import("internal/transform/multi.zig");
 const parser = @import("internal/parse/parser.zig");
 
 /// Resolves the model type produced by a source tuple and option struct.
 pub fn ModelType(comptime Sources: type, comptime Options: type) type {
+    validateModelOptions(Options);
     if (!@hasField(Options, "variables")) {
         @compileError("Bombelli model options require '.variables'");
     }
@@ -27,6 +29,24 @@ pub fn ModelType(comptime Sources: type, comptime Options: type) type {
             0,
         @FieldType(Options, "variables"),
     );
+}
+
+fn validateModelOptions(comptime Options: type) void {
+    const info = @typeInfo(Options);
+    if (info != .@"struct") {
+        @compileError("Bombelli model options must be a struct");
+    }
+    for (info.@"struct".fields) |field| {
+        if (!std.mem.eql(u8, field.name, "variables") and
+            !std.mem.eql(u8, field.name, "inputs") and
+            !std.mem.eql(u8, field.name, "domain"))
+        {
+            @compileError(std.fmt.comptimePrint(
+                "Bombelli model option '.{s}' is not recognized",
+                .{field.name},
+            ));
+        }
+    }
 }
 
 /// Returns a fixed-output, fixed-variable model type.
@@ -96,6 +116,34 @@ pub fn Model(
         /// order.
         pub fn jacobian(comptime self: Self) ast.ExprMatrix(M, N) {
             return self.outputs.jacobian(self.variable_tags);
+        }
+
+        /// Compiles values and first derivatives into one shared DAG.
+        pub fn linearize(
+            comptime self: Self,
+        ) linearization.Program(M, N) {
+            return linearization.make(
+                M,
+                N,
+                self.outputs,
+                self.jacobian(),
+            );
+        }
+
+        /// Evaluates values and their Jacobian in one shared DAG pass.
+        pub inline fn valueAndJacobian(
+            comptime self: Self,
+            inputs: anytype,
+        ) linearization.Result(M, N, f64) {
+            const program = comptime self.linearize();
+            comptime evaluation.validateInputFields(
+                @TypeOf(inputs),
+                &.{program.combined.nodes},
+                self.variables[0..] ++ self.inputs[0..],
+                &.{},
+                "model valueAndJacobian",
+            );
+            return program.eval(inputs);
         }
 
         /// Differentiates every output with respect to one named symbol.

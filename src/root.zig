@@ -14,6 +14,7 @@ const integration = @import("internal/integrate/symbolic.zig");
 pub const linalg = @import("linalg.zig");
 const multi = @import("internal/transform/multi.zig");
 const model_module = @import("model.zig");
+const model_linearization = @import("internal/model/linearization.zig");
 const newton = @import("internal/solve/newton.zig");
 const least_squares = @import("internal/optimize/least_squares.zig");
 const optimize_types = @import("internal/optimize/types.zig");
@@ -34,6 +35,10 @@ pub const ExprVector = expression.ExprVector;
 pub const ExprMatrix = expression.ExprMatrix;
 /// Returns the type of a fixed-output differentiable model.
 pub const Model = model_module.Model;
+/// Returns the type of a fused value-and-Jacobian program.
+pub const Linearization = model_linearization.Program;
+/// Returns the result type from fused value-and-Jacobian evaluation.
+pub const LinearizationResult = model_linearization.Result;
 /// Structural and construction measurements for a compiled expression.
 pub const Metrics = @import("internal/core/metrics.zig").Metrics;
 /// Runtime validation errors produced by batch evaluation.

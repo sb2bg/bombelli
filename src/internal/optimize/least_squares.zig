@@ -16,6 +16,7 @@ const domain = @import("../core/domain.zig");
 const evaluation = @import("../runtime/evaluation.zig");
 const linalg = @import("../../linalg.zig");
 const loss_functions = @import("loss.zig");
+const model_linearization = @import("../model/linearization.zig");
 const options_validation = @import("../core/options.zig");
 const types = @import("types.zig");
 
@@ -31,6 +32,7 @@ pub fn LeastSquaresProblem(
     return struct {
         residuals: ast.ExprVector(M),
         jacobian_program: ast.ExprMatrix(M, N),
+        linearization_program: model_linearization.Program(M, N),
         variables: [N][]const u8,
         inputs: [P][]const u8,
         domain: domain.Domain,
@@ -41,7 +43,7 @@ pub fn LeastSquaresProblem(
         pub fn compile(
             comptime self: Self,
             comptime options: anytype,
-        ) LeastSquaresSolver(M, N, P, options.max_iterations) {
+        ) LeastSquaresSolver(M, N, P, maxIterations(options)) {
             return compileProblem(M, N, P, self, options);
         }
     };
@@ -53,9 +55,17 @@ pub fn makeProblem(
     comptime P: usize,
     comptime model: anytype,
 ) LeastSquaresProblem(M, N, P) {
+    const residuals = comptime model.outputs.simplify();
+    const jacobian = comptime model.jacobian().simplify();
     return .{
-        .residuals = model.outputs.simplify(),
-        .jacobian_program = model.jacobian().simplify(),
+        .residuals = residuals,
+        .jacobian_program = jacobian,
+        .linearization_program = model_linearization.make(
+            M,
+            N,
+            residuals,
+            jacobian,
+        ),
         .variables = model.variables,
         .inputs = model.inputs,
         .domain = model.domain,
@@ -117,6 +127,7 @@ pub fn LeastSquaresSolver(
     return struct {
         residuals: ast.ExprVector(M),
         jacobian_program: ast.ExprMatrix(M, N),
+        linearization_program: model_linearization.Program(M, N),
         variables: [N][]const u8,
         inputs: [P][]const u8,
         loss: types.Loss,
@@ -135,6 +146,7 @@ pub fn LeastSquaresSolver(
         armijo_constant: f64,
         backtrack_factor: f64,
         rank_tolerance: f64,
+        max_function_evaluations: usize,
         max_damping_trials: usize,
         max_line_search_steps: usize,
 
@@ -149,7 +161,10 @@ pub fn LeastSquaresSolver(
         ) LeastSquaresResult(M, N) {
             comptime evaluation.validateInputFields(
                 @TypeOf(inputs),
-                &.{ self.residuals.nodes, self.jacobian_program.nodes },
+                &.{
+                    self.residuals.nodes,
+                    self.linearization_program.combined.nodes,
+                },
                 &(([_][]const u8{"initial"}) ++ self.inputs),
                 &self.variables,
                 "least-squares eval",
@@ -162,6 +177,7 @@ pub fn LeastSquaresSolver(
                     N,
                     values,
                     nanVector(M),
+                    0,
                     .non_finite_initial,
                 );
             }
@@ -172,6 +188,7 @@ pub fn LeastSquaresSolver(
                         N,
                         values,
                         nanVector(M),
+                        0,
                         .infeasible_initial,
                     );
                 }
@@ -193,6 +210,7 @@ pub fn LeastSquaresSolver(
                     N,
                     values,
                     residuals,
+                    function_evaluations,
                     .non_finite_initial,
                 );
             }
@@ -203,6 +221,7 @@ pub fn LeastSquaresSolver(
                     N,
                     values,
                     residuals,
+                    function_evaluations,
                     .non_finite_initial,
                 );
             }
@@ -241,16 +260,23 @@ pub fn LeastSquaresSolver(
                 );
             }
 
-            for (0..max_iterations) |iteration| {
-                const jacobian = evaluation.evaluateMatrixWithVariables(
-                    M,
-                    N,
-                    N,
-                    self.jacobian_program,
-                    inputs,
-                    self.variables,
-                    values,
-                );
+            var terminal_status: types.LeastSquaresStatus = .max_iterations;
+            outer: for (0..max_iterations) |iteration| {
+                if (function_evaluations >=
+                    self.max_function_evaluations)
+                {
+                    terminal_status = .max_function_evaluations;
+                    break;
+                }
+                const linearized =
+                    self.linearization_program.evalWithVariables(
+                        inputs,
+                        self.variables,
+                        values,
+                    );
+                residuals = linearized.values;
+                function_evaluations += 1;
+                const jacobian = linearized.jacobian;
                 jacobian_evaluations += 1;
                 if (!allFiniteMatrix(jacobian)) {
                     return makeResult(
@@ -414,6 +440,12 @@ pub fn LeastSquaresSolver(
                 var accepted_trial: Trial(M, N) = undefined;
                 var accepted_rho: f64 = 0.0;
                 for (0..self.max_damping_trials) |_| {
+                    if (function_evaluations >=
+                        self.max_function_evaluations)
+                    {
+                        terminal_status = .max_function_evaluations;
+                        break :outer;
+                    }
                     const direction = lmDirection(
                         M,
                         N,
@@ -439,6 +471,8 @@ pub fn LeastSquaresSolver(
                         cost,
                         gradient,
                         direction,
+                        self.max_function_evaluations -
+                            function_evaluations,
                     );
                     function_evaluations += trial.evaluations;
                     if (!trial.accepted) {
@@ -481,6 +515,12 @@ pub fn LeastSquaresSolver(
 
                 var used_projected_gradient = false;
                 if (!accepted) {
+                    if (function_evaluations >=
+                        self.max_function_evaluations)
+                    {
+                        terminal_status = .max_function_evaluations;
+                        break :outer;
+                    }
                     const direction = projectedGradientDirection(
                         N,
                         values,
@@ -497,6 +537,8 @@ pub fn LeastSquaresSolver(
                         cost,
                         gradient,
                         direction,
+                        self.max_function_evaluations -
+                            function_evaluations,
                     );
                     function_evaluations += trial.evaluations;
                     if (!trial.accepted) {
@@ -523,7 +565,6 @@ pub fn LeastSquaresSolver(
                     accepted = true;
                     accepted_trial = trial;
                     used_projected_gradient = true;
-                    rejected_steps += 1;
                     increaseDamping(
                         &damping,
                         &nu,
@@ -644,7 +685,7 @@ pub fn LeastSquaresSolver(
                 scales,
                 step_norm,
                 damping,
-                .max_iterations,
+                terminal_status,
             );
         }
     };
@@ -791,13 +832,69 @@ fn finalResultAt(
     );
 }
 
+fn maxIterations(comptime options: anytype) usize {
+    const value = integerOption(options, "max_iterations", 50);
+    if (value == 0) {
+        @compileError("Bombelli least-squares max_iterations must be positive");
+    }
+    return value;
+}
+
+fn validateOptions(comptime options: anytype) void {
+    const Options = @TypeOf(options);
+    const info = @typeInfo(Options);
+    if (info != .@"struct") {
+        @compileError("Bombelli least-squares compile options must be a struct");
+    }
+    const allowed = [_][]const u8{
+        "algorithm",
+        "jacobian",
+        "linear_solver",
+        "max_iterations",
+        "tolerance",
+        "function_tolerance",
+        "gradient_tolerance",
+        "step_tolerance",
+        "cost_tolerance",
+        "loss",
+        "loss_scale",
+        "scaling",
+        "scales",
+        "bounds",
+        "initial_bounds",
+        "damping_tau",
+        "minimum_damping",
+        "maximum_damping",
+        "acceptance_threshold",
+        "armijo_constant",
+        "backtrack_factor",
+        "rank_tolerance",
+        "max_damping_trials",
+        "max_line_search_steps",
+        "max_function_evaluations",
+    };
+    for (info.@"struct".fields) |field| {
+        var known = false;
+        for (allowed) |name| {
+            if (std.mem.eql(u8, field.name, name)) known = true;
+        }
+        if (!known) {
+            @compileError(std.fmt.comptimePrint(
+                "Bombelli least-squares option '.{s}' is not recognized",
+                .{field.name},
+            ));
+        }
+    }
+}
+
 fn compileProblem(
     comptime M: usize,
     comptime N: usize,
     comptime P: usize,
     comptime problem: LeastSquaresProblem(M, N, P),
     comptime options: anytype,
-) LeastSquaresSolver(M, N, P, options.max_iterations) {
+) LeastSquaresSolver(M, N, P, maxIterations(options)) {
+    validateOptions(options);
     options_validation.requireTag(
         options,
         "algorithm",
@@ -857,7 +954,7 @@ fn compileProblem(
         else
             .reject;
 
-    const damping_tau = option(options, "initial_damping", 1e-3);
+    const damping_tau = option(options, "damping_tau", 1e-3);
     const minimum_damping = option(
         options,
         "minimum_damping",
@@ -868,7 +965,7 @@ fn compileProblem(
         "maximum_damping",
         1.0 / std.math.floatEps(f64) / std.math.floatEps(f64),
     );
-    validatePositiveFinite(damping_tau, "initial_damping");
+    validatePositiveFinite(damping_tau, "damping_tau");
     validatePositiveFinite(minimum_damping, "minimum_damping");
     validatePositiveFinite(maximum_damping, "maximum_damping");
     if (minimum_damping > maximum_damping) {
@@ -914,13 +1011,22 @@ fn compileProblem(
         "max_line_search_steps",
         20,
     );
-    if (max_damping_trials == 0 or max_line_search_steps == 0) {
+    const max_function_evaluations = integerOption(
+        options,
+        "max_function_evaluations",
+        10_000,
+    );
+    if (max_damping_trials == 0 or
+        max_line_search_steps == 0 or
+        max_function_evaluations == 0)
+    {
         @compileError("Bombelli least-squares inner iteration limits must be positive");
     }
 
     return .{
         .residuals = problem.residuals,
         .jacobian_program = problem.jacobian_program,
+        .linearization_program = problem.linearization_program,
         .variables = problem.variables,
         .inputs = problem.inputs,
         .loss = configured_loss,
@@ -939,6 +1045,7 @@ fn compileProblem(
         .armijo_constant = armijo_constant,
         .backtrack_factor = backtrack_factor,
         .rank_tolerance = rank_tolerance,
+        .max_function_evaluations = max_function_evaluations,
         .max_damping_trials = max_damping_trials,
         .max_line_search_steps = max_line_search_steps,
     };
@@ -964,6 +1071,7 @@ fn lineSearch(
     cost: f64,
     gradient: [N]f64,
     direction: [N]f64,
+    max_evaluations: usize,
 ) Trial(M, N) {
     var result = Trial(M, N){
         .accepted = false,
@@ -974,7 +1082,7 @@ fn lineSearch(
         .evaluations = 0,
     };
     var alpha: f64 = 1.0;
-    for (0..solver.max_line_search_steps) |_| {
+    for (0..@min(solver.max_line_search_steps, max_evaluations)) |_| {
         var candidate: [N]f64 = undefined;
         for (0..N) |index| {
             candidate[index] = std.math.clamp(
@@ -1182,16 +1290,19 @@ fn projectedOptimality(
             );
             continue;
         }
-        const scaled_gradient = gradient[index] / scales[index];
-        const displacement = scaled_gradient / scales[index];
-        const projected = std.math.clamp(
-            values[index] - displacement,
-            bounds.lower[index],
-            bounds.upper[index],
-        );
+        const scaled_gradient = @abs(gradient[index] / scales[index]);
+        const feasible_distance = if (gradient[index] > 0.0)
+            values[index] - bounds.lower[index]
+        else if (gradient[index] < 0.0)
+            bounds.upper[index] - values[index]
+        else
+            0.0;
         maximum = @max(
             maximum,
-            @abs((values[index] - projected) * scales[index]),
+            @min(
+                scaled_gradient,
+                feasible_distance * scales[index],
+            ),
         );
     }
     return maximum;
@@ -1283,11 +1394,26 @@ fn increaseDamping(
 }
 
 fn parseLoss(comptime options: anytype) types.Loss {
-    if (!@hasField(@TypeOf(options), "loss")) return types.loss.linear();
-    if (@TypeOf(options.loss) == types.Loss) return options.loss;
+    if (!@hasField(@TypeOf(options), "loss")) {
+        if (@hasField(@TypeOf(options), "loss_scale")) {
+            @compileError("Bombelli least-squares loss_scale requires an enum loss selection");
+        }
+        return types.loss.linear();
+    }
+    if (@TypeOf(options.loss) == types.Loss) {
+        if (@hasField(@TypeOf(options), "loss_scale")) {
+            @compileError("Bombelli typed least-squares losses already contain their scale");
+        }
+        return options.loss;
+    }
 
     const name = @tagName(options.loss);
-    if (std.mem.eql(u8, name, "linear")) return types.loss.linear();
+    if (std.mem.eql(u8, name, "linear")) {
+        if (@hasField(@TypeOf(options), "loss_scale")) {
+            @compileError("Bombelli linear least-squares loss does not use loss_scale");
+        }
+        return types.loss.linear();
+    }
     const scale = option(options, "loss_scale", 1.0);
     if (std.mem.eql(u8, name, "huber")) return types.loss.huber(scale);
     if (std.mem.eql(u8, name, "soft_l1")) return types.loss.softL1(scale);
@@ -1329,15 +1455,23 @@ fn parseScales(
     );
     inline for (variables, 0..) |variable, index| {
         if (@hasField(@TypeOf(options.scales), variable)) {
-            result.values[index] = numeric(
+            const characteristic_scale = numeric(
                 @field(options.scales, variable),
                 "scale",
             );
+            if (!std.math.isFinite(characteristic_scale) or
+                characteristic_scale <= 0.0)
+            {
+                @compileError("Bombelli least-squares parameter scales must be positive and finite");
+            }
+            // Internally the solver stores D = 1/S and measures ||D*x||.
+            // The public value is the conventional characteristic step S.
+            result.values[index] = 1.0 / characteristic_scale;
         }
         if (!std.math.isFinite(result.values[index]) or
             result.values[index] <= 0.0)
         {
-            @compileError("Bombelli least-squares parameter scales must be positive and finite");
+            @compileError("Bombelli least-squares parameter scales are outside the representable solver range");
         }
     }
     return result;
@@ -1366,6 +1500,16 @@ fn parseBounds(
         if (@typeInfo(Bound) != .@"struct") {
             @compileError("Bombelli least-squares bounds must be structs with optional lower and upper fields");
         }
+        for (@typeInfo(Bound).@"struct".fields) |field| {
+            if (!std.mem.eql(u8, field.name, "lower") and
+                !std.mem.eql(u8, field.name, "upper"))
+            {
+                @compileError(std.fmt.comptimePrint(
+                    "Bombelli least-squares bound field '.{s}' must be 'lower' or 'upper'",
+                    .{field.name},
+                ));
+            }
+        }
         if (@hasField(Bound, "lower")) {
             result.lower[index] = numeric(bound.lower, "lower bound");
         }
@@ -1374,9 +1518,11 @@ fn parseBounds(
         }
         if (std.math.isNan(result.lower[index]) or
             std.math.isNan(result.upper[index]) or
+            result.lower[index] == std.math.inf(f64) or
+            result.upper[index] == -std.math.inf(f64) or
             result.lower[index] > result.upper[index])
         {
-            @compileError("Bombelli least-squares bounds must satisfy lower <= upper and may not be NaN");
+            @compileError("Bombelli least-squares bounds must define a nonempty set containing finite points");
         }
     }
     return result;
@@ -1554,6 +1700,7 @@ fn failureResult(
     comptime N: usize,
     values: [N]f64,
     residuals: [M]f64,
+    function_evaluations: usize,
     status: types.LeastSquaresStatus,
 ) LeastSquaresResult(M, N) {
     return makeResult(
@@ -1564,7 +1711,7 @@ fn failureResult(
         std.math.nan(f64),
         std.math.nan(f64),
         0,
-        0,
+        function_evaluations,
         0,
         0,
         0,
