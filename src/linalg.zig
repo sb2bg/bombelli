@@ -194,6 +194,28 @@ pub fn solve(
     return lu(matrix, options).solve(rhs);
 }
 
+/// Computes a square matrix inverse using one pivoted LU factorization.
+pub fn inverse(
+    matrix: anytype,
+    options: FactorizationOptions,
+) ?@TypeOf(matrix) {
+    const Matrix = @TypeOf(matrix);
+    const T = matrixScalar(Matrix);
+    const N = comptime matrixRows(Matrix);
+    comptime requireSquareMatrix(Matrix);
+
+    const factorization = lu(matrix, options);
+    if (factorization.status != .success) return null;
+    var result: Matrix = undefined;
+    for (0..N) |column| {
+        var basis = [_]T{0} ** N;
+        basis[column] = 1;
+        const solution = factorization.solve(basis) orelse return null;
+        for (0..N) |row| result[row][column] = solution[row];
+    }
+    return result;
+}
+
 /// Returns a lower-triangular Cholesky factorization `A = L*Lᵀ`.
 pub fn Cholesky(comptime T: type, comptime N: usize) type {
     requireFloat(T);
@@ -280,6 +302,27 @@ pub fn cholesky(
         }
     }
     return result;
+}
+
+/// Solves a symmetric positive-definite system using Cholesky.
+pub fn solvePositiveDefinite(
+    matrix: anytype,
+    rhs: anytype,
+    options: FactorizationOptions,
+) ?@TypeOf(rhs) {
+    const Matrix = @TypeOf(matrix);
+    const Vector = @TypeOf(rhs);
+    comptime {
+        requireSquareMatrix(Matrix);
+        requireVector(Vector);
+        if (matrixRows(Matrix) != vectorLength(Vector)) {
+            @compileError("Bombelli positive-definite solve dimensions do not agree");
+        }
+        if (matrixScalar(Matrix) != vectorScalar(Vector)) {
+            @compileError("Bombelli positive-definite solve scalar types must agree");
+        }
+    }
+    return cholesky(matrix, options).solve(rhs);
 }
 
 /// Returns a compact Householder QR factorization.
@@ -524,6 +567,48 @@ pub fn normInf(vector: anytype) vectorScalar(@TypeOf(vector)) {
     return maximum;
 }
 
+/// Computes the Frobenius norm of a fixed-size matrix.
+pub fn normFrobenius(
+    matrix: anytype,
+) matrixScalar(@TypeOf(matrix)) {
+    const Matrix = @TypeOf(matrix);
+    const T = matrixScalar(Matrix);
+    const R = comptime matrixRows(Matrix);
+    const C = comptime matrixColumns(Matrix);
+    var flattened: [R * C]T = undefined;
+    for (0..R) |row| {
+        for (0..C) |column| {
+            flattened[row * C + column] = matrix[row][column];
+        }
+    }
+    return norm2(flattened);
+}
+
+/// Computes the outer product of two fixed-size vectors.
+pub fn outer(
+    left: anytype,
+    right: anytype,
+) [vectorLength(@TypeOf(left))][vectorLength(@TypeOf(right))]vectorScalar(@TypeOf(left)) {
+    const Left = @TypeOf(left);
+    const Right = @TypeOf(right);
+    const T = vectorScalar(Left);
+    const R = comptime vectorLength(Left);
+    const C = comptime vectorLength(Right);
+    comptime {
+        requireVector(Right);
+        if (T != vectorScalar(Right)) {
+            @compileError("Bombelli outer-product scalar types must agree");
+        }
+    }
+    var result: [R][C]T = undefined;
+    for (0..R) |row| {
+        for (0..C) |column| {
+            result[row][column] = left[row] * right[column];
+        }
+    }
+    return result;
+}
+
 /// Transposes a fixed-size matrix.
 pub fn transpose(
     matrix: anytype,
@@ -605,6 +690,19 @@ pub fn determinant(
 ) matrixScalar(@TypeOf(matrix)) {
     comptime requireSquareMatrix(@TypeOf(matrix));
     return lu(matrix, options).determinant();
+}
+
+/// Computes the trace of a square matrix.
+pub fn trace(
+    matrix: anytype,
+) matrixScalar(@TypeOf(matrix)) {
+    const Matrix = @TypeOf(matrix);
+    const T = matrixScalar(Matrix);
+    const N = comptime matrixRows(Matrix);
+    comptime requireSquareMatrix(Matrix);
+    var result: T = 0;
+    for (0..N) |index| result += matrix[index][index];
+    return result;
 }
 
 /// Returns an identity matrix.
@@ -713,13 +811,15 @@ fn vectorScalar(comptime Vector: type) type {
 }
 
 fn requireMatrix(comptime Matrix: type) void {
-    const outer = @typeInfo(Matrix);
-    if (outer != .array or @typeInfo(outer.array.child) != .array) {
+    const outer_info = @typeInfo(Matrix);
+    if (outer_info != .array or
+        @typeInfo(outer_info.array.child) != .array)
+    {
         @compileError("Bombelli linear algebra matrices must be fixed-size two-dimensional arrays");
     }
-    const inner = @typeInfo(outer.array.child).array;
+    const inner = @typeInfo(outer_info.array.child).array;
     requireFloat(inner.child);
-    if (outer.array.len == 0 or inner.len == 0) {
+    if (outer_info.array.len == 0 or inner.len == 0) {
         @compileError("Bombelli linear algebra matrices must be non-empty");
     }
 }
