@@ -34,3 +34,48 @@ test "callable helpers preserve compile-time-specialized structural interfaces" 
     try std.testing.expect(callable.supports(@TypeOf(expression), "diff"));
     try std.testing.expect(callable.supports(@TypeOf(rule), "emit"));
 }
+
+test "top-level evaluation composes temporary symbolic programs" {
+    const Runtime = struct {
+        fn scalar(x: f64) f64 {
+            return bombelli.eval(
+                bombelli.expr("x^2 + 1"),
+                .{ .x = x },
+            );
+        }
+
+        fn gradient(x: f64, y: f64) [2]f64 {
+            return bombelli.eval(
+                bombelli.expr("x^2 + x*y").gradient(.{ .x, .y }),
+                .{ .x = x, .y = y },
+            );
+        }
+    };
+
+    try std.testing.expectEqual(@as(f64, 10), Runtime.scalar(3));
+    try std.testing.expectEqualDeep(
+        [2]f64{ 8, 3 },
+        Runtime.gradient(3, 2),
+    );
+
+    const typed = bombelli.evalAs(
+        f32,
+        bombelli.exprVector(.{ "x/3", "x^2" }),
+        .{ .x = @as(f32, 3) },
+    );
+    try std.testing.expectEqualDeep([2]f32{ 1, 9 }, typed);
+
+    var hessian: [2][2]f64 = undefined;
+    bombelli.evalInto(
+        bombelli.expr("x^2 + 3*x*y + y^2").hessian(.{ .x, .y }),
+        &hessian,
+        .{ .x = 2, .y = 1 },
+    );
+    try std.testing.expectEqualDeep(
+        [2][2]f64{
+            .{ 2, 3 },
+            .{ 3, 2 },
+        },
+        hessian,
+    );
+}

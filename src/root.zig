@@ -10,9 +10,13 @@ const exact = @import("internal/core/exact.zig");
 const gauss_legendre = @import("internal/integrate/gauss_legendre.zig");
 const hybrid = @import("internal/integrate/hybrid.zig");
 const integration = @import("internal/integrate/symbolic.zig");
+/// Allocation-free numerical linear algebra over native fixed-size arrays.
 pub const linalg = @import("linalg.zig");
 const multi = @import("internal/transform/multi.zig");
+const model_module = @import("model.zig");
 const newton = @import("internal/solve/newton.zig");
+const least_squares = @import("internal/optimize/least_squares.zig");
+const optimize_types = @import("internal/optimize/types.zig");
 const parser = @import("internal/parse/parser.zig");
 const polynomial = @import("internal/algebra/polynomial.zig");
 const problem = @import("internal/solve/problem.zig");
@@ -28,6 +32,8 @@ pub const Expr = expression.Expr;
 pub const ExprVector = expression.ExprVector;
 /// Returns the type of a fixed-size compile-time expression matrix.
 pub const ExprMatrix = expression.ExprMatrix;
+/// Returns the type of a fixed-output differentiable model.
+pub const Model = model_module.Model;
 /// Structural and construction measurements for a compiled expression.
 pub const Metrics = @import("internal/core/metrics.zig").Metrics;
 /// Runtime validation errors produced by batch evaluation.
@@ -103,6 +109,24 @@ pub const NewtonSensitivityStatus = newton.SensitivityStatus;
 pub const NewtonSensitivityResult = newton.SensitivityResult;
 /// Returns a compiled implicit-sensitivity solver type.
 pub const NewtonSensitivitySolver = newton.NewtonSensitivitySolver;
+/// Robust scalar-residual loss configuration.
+pub const Loss = optimize_types.Loss;
+/// Robust scalar-residual loss families.
+pub const LossKind = optimize_types.LossKind;
+/// Type-safe robust-loss constructors.
+pub const loss = optimize_types.loss;
+/// Parameter scaling strategies for nonlinear least squares.
+pub const LeastSquaresScaling = optimize_types.LeastSquaresScaling;
+/// Initial-bound handling for nonlinear least squares.
+pub const InitialBoundsPolicy = optimize_types.InitialBoundsPolicy;
+/// Completion reason from a nonlinear least-squares solve.
+pub const LeastSquaresStatus = optimize_types.LeastSquaresStatus;
+/// Returns the reusable nonlinear least-squares problem type.
+pub const LeastSquaresProblem = least_squares.LeastSquaresProblem;
+/// Returns a compiled fixed-size nonlinear least-squares solver type.
+pub const LeastSquaresSolver = least_squares.LeastSquaresSolver;
+/// Returns a nonlinear least-squares result type.
+pub const LeastSquaresResult = least_squares.LeastSquaresResult;
 /// Human-readable expression rendering modes.
 pub const RenderMode = rendering.RenderMode;
 /// Source languages supported by Bombelli emission.
@@ -111,6 +135,17 @@ pub const EmitTarget = emit_codegen.EmitTarget;
 pub const EmitMode = emit_codegen.EmitMode;
 /// Structural helpers for evaluating and emitting compiled Bombelli values.
 pub const callable = @import("callable.zig");
+/// Evaluates a possibly temporary compiled value.
+///
+/// This free-function form also works around a Zig 0.16 compiler bug affecting
+/// chained method calls on temporary comptime programs.
+pub const eval = callable.eval;
+/// Evaluates a possibly temporary expression program using scalar type `T`.
+pub const evalAs = callable.evalAs;
+/// Evaluates a possibly temporary compiled value into caller-owned storage.
+pub const evalInto = callable.evalInto;
+/// Typed caller-owned evaluation for a possibly temporary expression program.
+pub const evalIntoAs = callable.evalIntoAs;
 /// Unstable utilities for Bombelli's tests and downstream package tests.
 pub const testing = @import("testing.zig");
 
@@ -176,6 +211,14 @@ pub fn exprMatrix(comptime sources: anytype) ExprMatrix(
         }
     }
     return multi.matrix(R, C, expressions);
+}
+
+/// Builds a typed differentiable model from output expressions and variables.
+pub fn model(
+    comptime sources: anytype,
+    comptime options: anytype,
+) model_module.ModelType(@TypeOf(sources), @TypeOf(options)) {
+    return model_module.make(sources, options);
 }
 
 fn matrixColumnCount(comptime T: type) usize {
