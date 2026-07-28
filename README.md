@@ -347,12 +347,6 @@ const bombelli = b.dependency("bombelli", .{
 exe.root_module.addImport("bombelli", bombelli.module("bombelli"));
 ```
 
-Forwarding `target` and `optimize` matters: without them the module resolves
-for the host, which breaks cross-compilation.
-
-Run the flagship example from a checkout with `zig build run`, or the curve
-fitter with `zig build run-curve-fit`.
-
 ## More
 
 - [Changelog and v0.1.0 scope](CHANGELOG.md)
