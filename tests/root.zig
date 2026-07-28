@@ -6,5 +6,6 @@ test {
     _ = @import("codegen.zig");
     _ = @import("callable.zig");
     _ = @import("linalg.zig");
+    _ = @import("testing.zig");
     _ = @import("model.zig");
 }
