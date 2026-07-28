@@ -8,4 +8,6 @@ test {
     _ = @import("linalg.zig");
     _ = @import("testing.zig");
     _ = @import("model.zig");
+    _ = @import("residual_model.zig");
+    _ = @import("model_nist.zig");
 }

@@ -17,6 +17,8 @@ const model_module = @import("model.zig");
 const model_linearization = @import("internal/model/linearization.zig");
 const newton = @import("internal/solve/newton.zig");
 const least_squares = @import("internal/optimize/least_squares.zig");
+const residual_model_module = @import("residual_model.zig");
+const row_least_squares = @import("internal/optimize/row_least_squares.zig");
 const optimize_types = @import("internal/optimize/types.zig");
 const parser = @import("internal/parse/parser.zig");
 const polynomial = @import("internal/algebra/polynomial.zig");
@@ -35,6 +37,8 @@ pub const ExprVector = expression.ExprVector;
 pub const ExprMatrix = expression.ExprMatrix;
 /// Returns the type of a fixed-output differentiable model.
 pub const Model = model_module.Model;
+/// Returns the type of a residual kernel evaluated over runtime observations.
+pub const ResidualModel = residual_model_module.ResidualModel;
 /// Returns the type of a fused value-and-Jacobian program.
 pub const Linearization = model_linearization.Program;
 /// Returns the result type from fused value-and-Jacobian evaluation.
@@ -132,6 +136,16 @@ pub const LeastSquaresProblem = least_squares.LeastSquaresProblem;
 pub const LeastSquaresSolver = least_squares.LeastSquaresSolver;
 /// Returns a nonlinear least-squares result type.
 pub const LeastSquaresResult = least_squares.LeastSquaresResult;
+/// Completion reason from runtime-observation nonlinear least squares.
+pub const RowLeastSquaresStatus = row_least_squares.Status;
+/// Whether a runtime-observation fit parameter is active at a bound.
+pub const RowLeastSquaresBoundActivity = row_least_squares.BoundActivity;
+/// Returns a runtime-observation nonlinear least-squares problem type.
+pub const RowLeastSquaresProblem = row_least_squares.Problem;
+/// Returns an allocation-free runtime-observation solver type.
+pub const RowLeastSquaresSolver = row_least_squares.Solver;
+/// Returns a runtime-observation nonlinear least-squares result type.
+pub const RowLeastSquaresResult = row_least_squares.Result;
 /// Human-readable expression rendering modes.
 pub const RenderMode = rendering.RenderMode;
 /// Source languages supported by Bombelli emission.
@@ -224,6 +238,17 @@ pub fn model(
     comptime options: anytype,
 ) model_module.ModelType(@TypeOf(sources), @TypeOf(options)) {
     return model_module.make(sources, options);
+}
+
+/// Builds a symbolic residual kernel for fitting runtime observation slices.
+pub fn residualModel(
+    comptime sources: anytype,
+    comptime options: anytype,
+) residual_model_module.ResidualModelType(
+    @TypeOf(sources),
+    @TypeOf(options),
+) {
+    return residual_model_module.make(sources, options);
 }
 
 fn matrixColumnCount(comptime T: type) usize {
