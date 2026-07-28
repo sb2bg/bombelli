@@ -20,7 +20,22 @@ pub fn dependsOn(
                 break :blk any;
             },
             .pow => |power| dependent[@intCast(power.base)],
-            .negate, .sin, .cos, .tan, .atan, .abs, .exp, .ln => |child| dependent[@intCast(child)],
+            .negate,
+            .sin,
+            .cos,
+            .tan,
+            .asin,
+            .acos,
+            .atan,
+            .sinh,
+            .cosh,
+            .tanh,
+            .abs,
+            .exp,
+            .ln,
+            .log2,
+            .log10,
+            => |child| dependent[@intCast(child)],
         };
     }
     return dependent[@intCast(expression.root)];

@@ -8,9 +8,18 @@ pub const Unary = enum {
     negate,
     sine,
     cosine,
+    tangent,
+    arcsine,
+    arccosine,
+    arctangent,
+    hyperbolic_sine,
+    hyperbolic_cosine,
+    hyperbolic_tangent,
     absolute,
     exponential,
     logarithm,
+    logarithm2,
+    logarithm10,
 };
 
 pub fn integer(value: i64) ast.Expr {
@@ -92,9 +101,18 @@ pub fn unary(comptime operation: Unary, comptime expression: ast.Expr) ast.Expr 
         .negate => builder.negate(child),
         .sine => builder.sine(child),
         .cosine => builder.cosine(child),
+        .tangent => builder.tangent(child),
+        .arcsine => builder.arcsine(child),
+        .arccosine => builder.arccosine(child),
+        .arctangent => builder.arctangent(child),
+        .hyperbolic_sine => builder.hyperbolicSine(child),
+        .hyperbolic_cosine => builder.hyperbolicCosine(child),
+        .hyperbolic_tangent => builder.hyperbolicTangent(child),
         .absolute => builder.absolute(child),
         .exponential => builder.exponential(child),
         .logarithm => builder.logarithm(child),
+        .logarithm2 => builder.logarithm2(child),
+        .logarithm10 => builder.logarithm10(child),
     };
     return finish(&builder, root, &.{expression});
 }
@@ -194,10 +212,17 @@ fn cloneNode(
         .sin => |child| builder.sine(cloneNode(builder, nodes, child, cache)),
         .cos => |child| builder.cosine(cloneNode(builder, nodes, child, cache)),
         .tan => |child| builder.tangent(cloneNode(builder, nodes, child, cache)),
+        .asin => |child| builder.arcsine(cloneNode(builder, nodes, child, cache)),
+        .acos => |child| builder.arccosine(cloneNode(builder, nodes, child, cache)),
         .atan => |child| builder.arctangent(cloneNode(builder, nodes, child, cache)),
+        .sinh => |child| builder.hyperbolicSine(cloneNode(builder, nodes, child, cache)),
+        .cosh => |child| builder.hyperbolicCosine(cloneNode(builder, nodes, child, cache)),
+        .tanh => |child| builder.hyperbolicTangent(cloneNode(builder, nodes, child, cache)),
         .abs => |child| builder.absolute(cloneNode(builder, nodes, child, cache)),
         .exp => |child| builder.exponential(cloneNode(builder, nodes, child, cache)),
         .ln => |child| builder.logarithm(cloneNode(builder, nodes, child, cache)),
+        .log2 => |child| builder.logarithm2(cloneNode(builder, nodes, child, cache)),
+        .log10 => |child| builder.logarithm10(cloneNode(builder, nodes, child, cache)),
     };
     cache[index] = result;
     return result;

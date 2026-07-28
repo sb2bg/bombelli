@@ -126,11 +126,74 @@ const Context = struct {
                 const denominator = self.builder.power(cosine, 2);
                 break :blk self.builder.div(self.derivative(child), denominator);
             },
+            .asin => |child| blk: {
+                const child_copy = self.clone(child);
+                const square = self.builder.power(child_copy, 2);
+                const radicand = self.builder.sub(
+                    self.builder.integer(1),
+                    square,
+                );
+                const denominator = self.builder.power(
+                    radicand,
+                    exact.Rational{ .numerator = 1, .denominator = 2 },
+                );
+                break :blk self.builder.div(
+                    self.derivative(child),
+                    denominator,
+                );
+            },
+            .acos => |child| blk: {
+                const child_copy = self.clone(child);
+                const square = self.builder.power(child_copy, 2);
+                const radicand = self.builder.sub(
+                    self.builder.integer(1),
+                    square,
+                );
+                const denominator = self.builder.power(
+                    radicand,
+                    exact.Rational{ .numerator = 1, .denominator = 2 },
+                );
+                break :blk self.builder.div(
+                    self.builder.negate(self.derivative(child)),
+                    denominator,
+                );
+            },
             .atan => |child| blk: {
                 const child_copy = self.clone(child);
                 const square = self.builder.power(child_copy, 2);
                 const denominator = self.builder.add(self.builder.integer(1), square);
                 break :blk self.builder.div(self.derivative(child), denominator);
+            },
+            .sinh => |child| blk: {
+                const hyperbolic_cosine = self.builder.hyperbolicCosine(
+                    self.clone(child),
+                );
+                break :blk self.builder.mul(
+                    hyperbolic_cosine,
+                    self.derivative(child),
+                );
+            },
+            .cosh => |child| blk: {
+                const hyperbolic_sine = self.builder.hyperbolicSine(
+                    self.clone(child),
+                );
+                break :blk self.builder.mul(
+                    hyperbolic_sine,
+                    self.derivative(child),
+                );
+            },
+            .tanh => |child| blk: {
+                const hyperbolic_cosine = self.builder.hyperbolicCosine(
+                    self.clone(child),
+                );
+                const denominator = self.builder.power(
+                    hyperbolic_cosine,
+                    2,
+                );
+                break :blk self.builder.div(
+                    self.derivative(child),
+                    denominator,
+                );
             },
             .abs => |child| blk: {
                 const child_copy = self.clone(child);
@@ -147,6 +210,32 @@ const Context = struct {
                 self.derivative(child),
                 self.clone(child),
             ),
+            .log2 => |child| blk: {
+                const logarithm_of_base = self.builder.logarithm(
+                    self.builder.integer(2),
+                );
+                const denominator = self.builder.mul(
+                    self.clone(child),
+                    logarithm_of_base,
+                );
+                break :blk self.builder.div(
+                    self.derivative(child),
+                    denominator,
+                );
+            },
+            .log10 => |child| blk: {
+                const logarithm_of_base = self.builder.logarithm(
+                    self.builder.integer(10),
+                );
+                const denominator = self.builder.mul(
+                    self.clone(child),
+                    logarithm_of_base,
+                );
+                break :blk self.builder.div(
+                    self.derivative(child),
+                    denominator,
+                );
+            },
         };
 
         self.derivative_cache[index] = result;
@@ -203,10 +292,17 @@ const Context = struct {
             .sin => |child| self.builder.sine(self.clone(child)),
             .cos => |child| self.builder.cosine(self.clone(child)),
             .tan => |child| self.builder.tangent(self.clone(child)),
+            .asin => |child| self.builder.arcsine(self.clone(child)),
+            .acos => |child| self.builder.arccosine(self.clone(child)),
             .atan => |child| self.builder.arctangent(self.clone(child)),
+            .sinh => |child| self.builder.hyperbolicSine(self.clone(child)),
+            .cosh => |child| self.builder.hyperbolicCosine(self.clone(child)),
+            .tanh => |child| self.builder.hyperbolicTangent(self.clone(child)),
             .abs => |child| self.builder.absolute(self.clone(child)),
             .exp => |child| self.builder.exponential(self.clone(child)),
             .ln => |child| self.builder.logarithm(self.clone(child)),
+            .log2 => |child| self.builder.logarithm2(self.clone(child)),
+            .log10 => |child| self.builder.logarithm10(self.clone(child)),
         };
 
         self.clone_cache[index] = result;

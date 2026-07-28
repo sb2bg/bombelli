@@ -22,6 +22,69 @@ test "human rendering modes remain separate from source emission" {
     );
 }
 
+test "extended unary functions emit native Zig and C math calls" {
+    const expression = comptime expr(
+        "asin(x) + acos(x) + sinh(x) + cosh(x) + tanh(x) + log2(x) + log10(x)",
+    );
+    const zig_source = comptime expression.emit(.{
+        .target = .zig,
+        .mode = .out_of_place,
+        .name = "evaluate_unary",
+    });
+    inline for (.{
+        "std.math.asin(",
+        "std.math.acos(",
+        "std.math.sinh(",
+        "std.math.cosh(",
+        "std.math.tanh(",
+        "@log2(",
+        "@log10(",
+    }) |spelling| {
+        try std.testing.expect(
+            std.mem.indexOf(u8, zig_source, spelling) != null,
+        );
+    }
+
+    const c_source = comptime expression.emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "evaluate_unary",
+    });
+    inline for (.{
+        "asin(",
+        "acos(",
+        "sinh(",
+        "cosh(",
+        "tanh(",
+        "log2(",
+        "log10(",
+    }) |spelling| {
+        try std.testing.expect(
+            std.mem.indexOf(u8, c_source, spelling) != null,
+        );
+    }
+
+    const c_f32_source = comptime expression.emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "evaluate_unary_f32",
+        .scalar = .f32,
+    });
+    inline for (.{
+        "asinf(",
+        "acosf(",
+        "sinhf(",
+        "coshf(",
+        "tanhf(",
+        "log2f(",
+        "log10f(",
+    }) |spelling| {
+        try std.testing.expect(
+            std.mem.indexOf(u8, c_f32_source, spelling) != null,
+        );
+    }
+}
+
 test "Zig emission computes shared DAG nodes once" {
     const expression = comptime expr("sin(x*y) + sin(x*y) + x^3").simplify();
     const source = comptime expression.emit(.{

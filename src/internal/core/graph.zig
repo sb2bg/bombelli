@@ -21,7 +21,22 @@ pub fn markReachable(
             for (operands) |child| markReachable(nodes, child, reachable);
         },
         .pow => |power| markReachable(nodes, power.base, reachable),
-        .negate, .sin, .cos, .tan, .atan, .abs, .exp, .ln => |child| {
+        .negate,
+        .sin,
+        .cos,
+        .tan,
+        .asin,
+        .acos,
+        .atan,
+        .sinh,
+        .cosh,
+        .tanh,
+        .abs,
+        .exp,
+        .ln,
+        .log2,
+        .log10,
+        => |child| {
             markReachable(nodes, child, reachable);
         },
     }

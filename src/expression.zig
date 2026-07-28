@@ -53,10 +53,17 @@ pub const Node = union(enum) {
     sin: NodeId,
     cos: NodeId,
     tan: NodeId,
+    asin: NodeId,
+    acos: NodeId,
     atan: NodeId,
+    sinh: NodeId,
+    cosh: NodeId,
+    tanh: NodeId,
     abs: NodeId,
     exp: NodeId,
     ln: NodeId,
+    log2: NodeId,
+    log10: NodeId,
 };
 
 pub const Expr = struct {
@@ -564,10 +571,17 @@ pub fn nodeEqual(left: Node, right: Node) bool {
         .sin => |child| child == right.sin,
         .cos => |child| child == right.cos,
         .tan => |child| child == right.tan,
+        .asin => |child| child == right.asin,
+        .acos => |child| child == right.acos,
         .atan => |child| child == right.atan,
+        .sinh => |child| child == right.sinh,
+        .cosh => |child| child == right.cosh,
+        .tanh => |child| child == right.tanh,
         .abs => |child| child == right.abs,
         .exp => |child| child == right.exp,
         .ln => |child| child == right.ln,
+        .log2 => |child| child == right.log2,
+        .log10 => |child| child == right.log10,
     };
 }
 

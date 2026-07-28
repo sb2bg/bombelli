@@ -445,10 +445,17 @@ inline fn evaluateNodesWithResolver(
             .sin => |child| @sin(results[@intCast(child)]),
             .cos => |child| @cos(results[@intCast(child)]),
             .tan => |child| @tan(results[@intCast(child)]),
+            .asin => |child| std.math.asin(results[@intCast(child)]),
+            .acos => |child| std.math.acos(results[@intCast(child)]),
             .atan => |child| std.math.atan(results[@intCast(child)]),
+            .sinh => |child| hyperbolicSine(results[@intCast(child)]),
+            .cosh => |child| hyperbolicCosine(results[@intCast(child)]),
+            .tanh => |child| hyperbolicTangent(results[@intCast(child)]),
             .abs => |child| @abs(results[@intCast(child)]),
             .exp => |child| @exp(results[@intCast(child)]),
             .ln => |child| @log(results[@intCast(child)]),
+            .log2 => |child| @log2(results[@intCast(child)]),
+            .log10 => |child| @log10(results[@intCast(child)]),
         };
     }
     return results;
@@ -523,10 +530,17 @@ inline fn evaluateNodesWithVariables(
             .sin => |child| @sin(results[@intCast(child)]),
             .cos => |child| @cos(results[@intCast(child)]),
             .tan => |child| @tan(results[@intCast(child)]),
+            .asin => |child| std.math.asin(results[@intCast(child)]),
+            .acos => |child| std.math.acos(results[@intCast(child)]),
             .atan => |child| std.math.atan(results[@intCast(child)]),
+            .sinh => |child| hyperbolicSine(results[@intCast(child)]),
+            .cosh => |child| hyperbolicCosine(results[@intCast(child)]),
+            .tanh => |child| hyperbolicTangent(results[@intCast(child)]),
             .abs => |child| @abs(results[@intCast(child)]),
             .exp => |child| @exp(results[@intCast(child)]),
             .ln => |child| @log(results[@intCast(child)]),
+            .log2 => |child| @log2(results[@intCast(child)]),
+            .log10 => |child| @log10(results[@intCast(child)]),
         };
     }
     return results;
@@ -763,6 +777,60 @@ inline fn constantValue(
     };
 }
 
+inline fn hyperbolicSine(value: anytype) @TypeOf(value) {
+    const Number = @TypeOf(value);
+    return switch (@typeInfo(Number)) {
+        .float => if (comptime Number == f32 or Number == f64)
+            std.math.sinh(value)
+        else
+            (@exp(value) - @exp(-value)) / numberValue(Number, 2.0),
+        .vector => |vector| blk: {
+            var result: Number = undefined;
+            inline for (0..vector.len) |lane| {
+                result[lane] = hyperbolicSine(value[lane]);
+            }
+            break :blk result;
+        },
+        else => comptime unreachable,
+    };
+}
+
+inline fn hyperbolicCosine(value: anytype) @TypeOf(value) {
+    const Number = @TypeOf(value);
+    return switch (@typeInfo(Number)) {
+        .float => if (comptime Number == f32 or Number == f64)
+            std.math.cosh(value)
+        else
+            (@exp(value) + @exp(-value)) / numberValue(Number, 2.0),
+        .vector => |vector| blk: {
+            var result: Number = undefined;
+            inline for (0..vector.len) |lane| {
+                result[lane] = hyperbolicCosine(value[lane]);
+            }
+            break :blk result;
+        },
+        else => comptime unreachable,
+    };
+}
+
+inline fn hyperbolicTangent(value: anytype) @TypeOf(value) {
+    const Number = @TypeOf(value);
+    return switch (@typeInfo(Number)) {
+        .float => if (comptime Number == f32 or Number == f64)
+            std.math.tanh(value)
+        else
+            hyperbolicSine(value) / hyperbolicCosine(value),
+        .vector => |vector| blk: {
+            var result: Number = undefined;
+            inline for (0..vector.len) |lane| {
+                result[lane] = hyperbolicTangent(value[lane]);
+            }
+            break :blk result;
+        },
+        else => comptime unreachable,
+    };
+}
+
 inline fn integerPower(
     base: anytype,
     comptime exponent: @import("../core/exact.zig").Rational,
@@ -871,7 +939,20 @@ pub fn prefersVectorLanes(comptime expression: ast.Expr) bool {
     if (batch_vector_length == 1) return false;
     inline for (expression.nodes) |node| {
         switch (node) {
-            .sin, .cos, .tan, .atan, .exp, .ln => return false,
+            .sin,
+            .cos,
+            .tan,
+            .asin,
+            .acos,
+            .atan,
+            .sinh,
+            .cosh,
+            .tanh,
+            .exp,
+            .ln,
+            .log2,
+            .log10,
+            => return false,
             .pow => |power| if (power.exponent.denominator != 1) return false,
             else => {},
         }

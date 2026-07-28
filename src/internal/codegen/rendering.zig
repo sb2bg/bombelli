@@ -179,10 +179,17 @@ fn renderBare(
         .sin => |child| renderFunction(expression, "sin", child, rendered),
         .cos => |child| renderFunction(expression, "cos", child, rendered),
         .tan => |child| renderFunction(expression, "tan", child, rendered),
+        .asin => |child| renderFunction(expression, "asin", child, rendered),
+        .acos => |child| renderFunction(expression, "acos", child, rendered),
         .atan => |child| renderFunction(expression, "atan", child, rendered),
+        .sinh => |child| renderFunction(expression, "sinh", child, rendered),
+        .cosh => |child| renderFunction(expression, "cosh", child, rendered),
+        .tanh => |child| renderFunction(expression, "tanh", child, rendered),
         .abs => |child| renderFunction(expression, "abs", child, rendered),
         .exp => |child| renderFunction(expression, "exp", child, rendered),
         .ln => |child| renderFunction(expression, "ln", child, rendered),
+        .log2 => |child| renderFunction(expression, "log2", child, rendered),
+        .log10 => |child| renderFunction(expression, "log10", child, rendered),
     };
 }
 
@@ -389,6 +396,22 @@ fn nodePrecedence(node: ast.Node) u8 {
         // precedence even when their numerator is non-negative.
         .rational => 20,
         .float => |value| if (value < 0.0) 30 else 50,
-        .constant, .symbol, .sin, .cos, .tan, .atan, .abs, .exp, .ln => 50,
+        .constant,
+        .symbol,
+        .sin,
+        .cos,
+        .tan,
+        .asin,
+        .acos,
+        .atan,
+        .sinh,
+        .cosh,
+        .tanh,
+        .abs,
+        .exp,
+        .ln,
+        .log2,
+        .log10,
+        => 50,
     };
 }

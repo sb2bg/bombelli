@@ -167,7 +167,22 @@ fn rebuild(
         .tan => |child| builder.tangent(
             rebuild(builder, nodes, child, cache, replacements),
         ),
+        .asin => |child| builder.arcsine(
+            rebuild(builder, nodes, child, cache, replacements),
+        ),
+        .acos => |child| builder.arccosine(
+            rebuild(builder, nodes, child, cache, replacements),
+        ),
         .atan => |child| builder.arctangent(
+            rebuild(builder, nodes, child, cache, replacements),
+        ),
+        .sinh => |child| builder.hyperbolicSine(
+            rebuild(builder, nodes, child, cache, replacements),
+        ),
+        .cosh => |child| builder.hyperbolicCosine(
+            rebuild(builder, nodes, child, cache, replacements),
+        ),
+        .tanh => |child| builder.hyperbolicTangent(
             rebuild(builder, nodes, child, cache, replacements),
         ),
         .abs => |child| builder.absolute(
@@ -177,6 +192,12 @@ fn rebuild(
             rebuild(builder, nodes, child, cache, replacements),
         ),
         .ln => |child| builder.logarithm(
+            rebuild(builder, nodes, child, cache, replacements),
+        ),
+        .log2 => |child| builder.logarithm2(
+            rebuild(builder, nodes, child, cache, replacements),
+        ),
+        .log10 => |child| builder.logarithm10(
             rebuild(builder, nodes, child, cache, replacements),
         ),
     };
@@ -368,7 +389,52 @@ fn rebuildName(
             replacement,
             replacement_cache,
         )),
+        .asin => |child| builder.arcsine(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
+        .acos => |child| builder.arccosine(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
         .atan => |child| builder.arctangent(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
+        .sinh => |child| builder.hyperbolicSine(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
+        .cosh => |child| builder.hyperbolicCosine(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
+        .tanh => |child| builder.hyperbolicTangent(rebuildName(
             builder,
             nodes,
             child,
@@ -396,6 +462,24 @@ fn rebuildName(
             replacement_cache,
         )),
         .ln => |child| builder.logarithm(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
+        .log2 => |child| builder.logarithm2(rebuildName(
+            builder,
+            nodes,
+            child,
+            cache,
+            name,
+            replacement,
+            replacement_cache,
+        )),
+        .log10 => |child| builder.logarithm10(rebuildName(
             builder,
             nodes,
             child,
@@ -499,10 +583,17 @@ fn cloneNode(
         .sin => |child| builder.sine(cloneNode(builder, nodes, child, cache)),
         .cos => |child| builder.cosine(cloneNode(builder, nodes, child, cache)),
         .tan => |child| builder.tangent(cloneNode(builder, nodes, child, cache)),
+        .asin => |child| builder.arcsine(cloneNode(builder, nodes, child, cache)),
+        .acos => |child| builder.arccosine(cloneNode(builder, nodes, child, cache)),
         .atan => |child| builder.arctangent(cloneNode(builder, nodes, child, cache)),
+        .sinh => |child| builder.hyperbolicSine(cloneNode(builder, nodes, child, cache)),
+        .cosh => |child| builder.hyperbolicCosine(cloneNode(builder, nodes, child, cache)),
+        .tanh => |child| builder.hyperbolicTangent(cloneNode(builder, nodes, child, cache)),
         .abs => |child| builder.absolute(cloneNode(builder, nodes, child, cache)),
         .exp => |child| builder.exponential(cloneNode(builder, nodes, child, cache)),
         .ln => |child| builder.logarithm(cloneNode(builder, nodes, child, cache)),
+        .log2 => |child| builder.logarithm2(cloneNode(builder, nodes, child, cache)),
+        .log10 => |child| builder.logarithm10(cloneNode(builder, nodes, child, cache)),
     };
     cache[index] = result;
     return result;

@@ -134,10 +134,17 @@ fn nodeSource(
         .sin => |child| unarySource(prefix, child, "sin@suffix@"),
         .cos => |child| unarySource(prefix, child, "cos@suffix@"),
         .tan => |child| unarySource(prefix, child, "tan@suffix@"),
+        .asin => |child| unarySource(prefix, child, "asin@suffix@"),
+        .acos => |child| unarySource(prefix, child, "acos@suffix@"),
         .atan => |child| unarySource(prefix, child, "atan@suffix@"),
+        .sinh => |child| unarySource(prefix, child, "sinh@suffix@"),
+        .cosh => |child| unarySource(prefix, child, "cosh@suffix@"),
+        .tanh => |child| unarySource(prefix, child, "tanh@suffix@"),
         .abs => |child| unarySource(prefix, child, "fabs@suffix@"),
         .exp => |child| unarySource(prefix, child, "exp@suffix@"),
         .ln => |child| unarySource(prefix, child, "log@suffix@"),
+        .log2 => |child| unarySource(prefix, child, "log2@suffix@"),
+        .log10 => |child| unarySource(prefix, child, "log10@suffix@"),
     };
 }
 

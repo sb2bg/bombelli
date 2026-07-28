@@ -100,8 +100,28 @@ pub const Builder = struct {
         return self.intern(.{ .tan = child });
     }
 
+    pub fn arcsine(self: *Builder, child: ast.NodeId) ast.NodeId {
+        return self.intern(.{ .asin = child });
+    }
+
+    pub fn arccosine(self: *Builder, child: ast.NodeId) ast.NodeId {
+        return self.intern(.{ .acos = child });
+    }
+
     pub fn arctangent(self: *Builder, child: ast.NodeId) ast.NodeId {
         return self.intern(.{ .atan = child });
+    }
+
+    pub fn hyperbolicSine(self: *Builder, child: ast.NodeId) ast.NodeId {
+        return self.intern(.{ .sinh = child });
+    }
+
+    pub fn hyperbolicCosine(self: *Builder, child: ast.NodeId) ast.NodeId {
+        return self.intern(.{ .cosh = child });
+    }
+
+    pub fn hyperbolicTangent(self: *Builder, child: ast.NodeId) ast.NodeId {
+        return self.intern(.{ .tanh = child });
     }
 
     pub fn absolute(self: *Builder, child: ast.NodeId) ast.NodeId {
@@ -114,6 +134,14 @@ pub const Builder = struct {
 
     pub fn logarithm(self: *Builder, child: ast.NodeId) ast.NodeId {
         return self.intern(.{ .ln = child });
+    }
+
+    pub fn logarithm2(self: *Builder, child: ast.NodeId) ast.NodeId {
+        return self.intern(.{ .log2 = child });
+    }
+
+    pub fn logarithm10(self: *Builder, child: ast.NodeId) ast.NodeId {
+        return self.intern(.{ .log10 = child });
     }
 
     pub fn intern(self: *Builder, new_node: ast.Node) ast.NodeId {
@@ -266,10 +294,17 @@ fn remapNode(
         .sin => |child| .{ .sin = remap[@intCast(child)] },
         .cos => |child| .{ .cos = remap[@intCast(child)] },
         .tan => |child| .{ .tan = remap[@intCast(child)] },
+        .asin => |child| .{ .asin = remap[@intCast(child)] },
+        .acos => |child| .{ .acos = remap[@intCast(child)] },
         .atan => |child| .{ .atan = remap[@intCast(child)] },
+        .sinh => |child| .{ .sinh = remap[@intCast(child)] },
+        .cosh => |child| .{ .cosh = remap[@intCast(child)] },
+        .tanh => |child| .{ .tanh = remap[@intCast(child)] },
         .abs => |child| .{ .abs = remap[@intCast(child)] },
         .exp => |child| .{ .exp = remap[@intCast(child)] },
         .ln => |child| .{ .ln = remap[@intCast(child)] },
+        .log2 => |child| .{ .log2 = remap[@intCast(child)] },
+        .log10 => |child| .{ .log10 = remap[@intCast(child)] },
     };
 }
 
@@ -326,10 +361,17 @@ fn hashNode(node_value: ast.Node) u64 {
         .sin => |child| mix(hash, child),
         .cos => |child| mix(hash, child),
         .tan => |child| mix(hash, child),
+        .asin => |child| mix(hash, child),
+        .acos => |child| mix(hash, child),
         .atan => |child| mix(hash, child),
+        .sinh => |child| mix(hash, child),
+        .cosh => |child| mix(hash, child),
+        .tanh => |child| mix(hash, child),
         .abs => |child| mix(hash, child),
         .exp => |child| mix(hash, child),
         .ln => |child| mix(hash, child),
+        .log2 => |child| mix(hash, child),
+        .log10 => |child| mix(hash, child),
     };
 }
 

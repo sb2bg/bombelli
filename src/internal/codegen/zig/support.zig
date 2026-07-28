@@ -80,10 +80,17 @@ fn nodeSource(
         .sin => |child| unarySource(prefix, child, "@sin"),
         .cos => |child| unarySource(prefix, child, "@cos"),
         .tan => |child| unarySource(prefix, child, "@tan"),
+        .asin => |child| unarySource(prefix, child, "std.math.asin"),
+        .acos => |child| unarySource(prefix, child, "std.math.acos"),
         .atan => |child| unarySource(prefix, child, "std.math.atan"),
+        .sinh => |child| unarySource(prefix, child, "std.math.sinh"),
+        .cosh => |child| unarySource(prefix, child, "std.math.cosh"),
+        .tanh => |child| unarySource(prefix, child, "std.math.tanh"),
         .abs => |child| unarySource(prefix, child, "@abs"),
         .exp => |child| unarySource(prefix, child, "@exp"),
         .ln => |child| unarySource(prefix, child, "@log"),
+        .log2 => |child| unarySource(prefix, child, "@log2"),
+        .log10 => |child| unarySource(prefix, child, "@log10"),
     };
 }
 

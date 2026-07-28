@@ -222,8 +222,18 @@ const Parser = struct {
             .cos
         else if (std.mem.eql(u8, name, "tan"))
             .tan
+        else if (std.mem.eql(u8, name, "asin"))
+            .asin
+        else if (std.mem.eql(u8, name, "acos"))
+            .acos
         else if (std.mem.eql(u8, name, "atan"))
             .atan
+        else if (std.mem.eql(u8, name, "sinh"))
+            .sinh
+        else if (std.mem.eql(u8, name, "cosh"))
+            .cosh
+        else if (std.mem.eql(u8, name, "tanh"))
+            .tanh
         else if (std.mem.eql(u8, name, "abs"))
             .abs
         else if (std.mem.eql(u8, name, "sqrt"))
@@ -232,6 +242,10 @@ const Parser = struct {
             .exp
         else if (std.mem.eql(u8, name, "ln"))
             .ln
+        else if (std.mem.eql(u8, name, "log2"))
+            .log2
+        else if (std.mem.eql(u8, name, "log10"))
+            .log10
         else
             diagnostic.fail(self.source, token.start, "unknown function");
 
@@ -246,7 +260,12 @@ const Parser = struct {
             .sin => self.builder.sine(argument),
             .cos => self.builder.cosine(argument),
             .tan => self.builder.tangent(argument),
+            .asin => self.builder.arcsine(argument),
+            .acos => self.builder.arccosine(argument),
             .atan => self.builder.arctangent(argument),
+            .sinh => self.builder.hyperbolicSine(argument),
+            .cosh => self.builder.hyperbolicCosine(argument),
+            .tanh => self.builder.hyperbolicTangent(argument),
             .abs => self.builder.absolute(argument),
             .sqrt => self.builder.power(argument, exact.Rational{
                 .numerator = 1,
@@ -254,6 +273,8 @@ const Parser = struct {
             }),
             .exp => self.builder.exponential(argument),
             .ln => self.builder.logarithm(argument),
+            .log2 => self.builder.logarithm2(argument),
+            .log10 => self.builder.logarithm10(argument),
         };
     }
 
@@ -270,9 +291,16 @@ const Function = enum {
     sin,
     cos,
     tan,
+    asin,
+    acos,
     atan,
+    sinh,
+    cosh,
+    tanh,
     abs,
     sqrt,
     exp,
     ln,
+    log2,
+    log10,
 };

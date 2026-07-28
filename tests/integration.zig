@@ -75,6 +75,18 @@ test "affine elementary integration uses operation-local assumptions" {
         with_assumption.eval(.{ .x = 3.0, .a = 2.0, .b = 1.0 }),
         1e-12,
     );
+
+    const hyperbolic = comptime expr(
+        "sinh(2*x + 3) + cosh(2*x + 3)",
+    ).integrate(.{
+        .variable = .x,
+        .domain = .real,
+    }).unwrap().simplify();
+    try std.testing.expectApproxEqAbs(
+        (std.math.cosh(@as(f64, 5.0)) + std.math.sinh(@as(f64, 5.0))) / 2.0,
+        hyperbolic.eval(.{ .x = 1.0 }),
+        1e-12,
+    );
 }
 
 test "integration by parts terminates as polynomial degree decreases" {
@@ -82,6 +94,8 @@ test "integration by parts terminates as polynomial degree decreases" {
         "x^3 * exp(2*x)",
         "x^3 * sin(2*x + 1)",
         "x^3 * cos(2*x + 1)",
+        "x^3 * sinh(2*x + 1)",
+        "x^3 * cosh(2*x + 1)",
     };
     inline for (cases) |source| {
         const original = comptime expr(source).simplify();
@@ -173,6 +187,32 @@ test "fixed Gauss-Legendre quadrature specializes symbolic arithmetic" {
         value,
         2e-15,
     );
+}
+
+test "fixed quadrature evaluates extended unary functions in lanes" {
+    const rule = comptime expr(
+        "asin(x) + acos(x) + sinh(x) + cosh(x) + tanh(x) + log2(x + 2) + log10(x + 2)",
+    ).quadrature(.{
+        .variable = .x,
+        .rule = .gauss_legendre,
+        .order = 32,
+    });
+    const value = rule.eval(.{
+        .from = 0.0,
+        .to = 0.5,
+    });
+    const upper = 2.5;
+    const lower = 2.0;
+    const logarithm_antiderivative_difference =
+        upper * @log(upper) - upper -
+        (lower * @log(lower) - lower);
+    const expected = std.math.pi / 4.0 +
+        std.math.cosh(@as(f64, 0.5)) - 1.0 +
+        std.math.sinh(@as(f64, 0.5)) +
+        @log(std.math.cosh(@as(f64, 0.5))) +
+        logarithm_antiderivative_difference / @log(2.0) +
+        logarithm_antiderivative_difference / @log(10.0);
+    try std.testing.expectApproxEqAbs(expected, value, 2e-14);
 }
 
 test "vectorized fixed quadrature matches scalar node evaluation" {

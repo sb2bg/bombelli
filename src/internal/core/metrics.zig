@@ -127,7 +127,22 @@ fn validateChildren(
             for (operands) |child| validateChild(child, parent_index);
         },
         .pow => |power| validateChild(power.base, parent_index),
-        .negate, .sin, .cos, .tan, .atan, .abs, .exp, .ln => |child| {
+        .negate,
+        .sin,
+        .cos,
+        .tan,
+        .asin,
+        .acos,
+        .atan,
+        .sinh,
+        .cosh,
+        .tanh,
+        .abs,
+        .exp,
+        .ln,
+        .log2,
+        .log10,
+        => |child| {
             validateChild(child, parent_index);
         },
     }

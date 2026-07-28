@@ -587,6 +587,176 @@ test "closure functions evaluate and differentiate" {
     try std.testing.expectEqualStrings("x / abs(x)", comptime absolute_derivative.render());
 }
 
+test "extended unary functions parse render and evaluate across scalar widths" {
+    const functions = comptime exprVector(.{
+        "asin(x)",
+        "acos(x)",
+        "sinh(x)",
+        "cosh(x)",
+        "tanh(x)",
+        "log2(y)",
+        "log10(y)",
+    });
+    const rendered = comptime functions.render();
+    inline for (rendered, 0..) |source, index| {
+        const expected = comptime [_][]const u8{
+            "asin(x)",
+            "acos(x)",
+            "sinh(x)",
+            "cosh(x)",
+            "tanh(x)",
+            "log2(y)",
+            "log10(y)",
+        };
+        try std.testing.expectEqualStrings(expected[index], source);
+    }
+    try std.testing.expectEqual(
+        @as(usize, 9),
+        comptime functions.metrics().node_count,
+    );
+
+    const x: f64 = 0.25;
+    const y: f64 = 4.0;
+    const expected = [7]f64{
+        std.math.asin(x),
+        std.math.acos(x),
+        std.math.sinh(x),
+        std.math.cosh(x),
+        std.math.tanh(x),
+        @log2(y),
+        @log10(y),
+    };
+    const actual = functions.eval(.{ .x = x, .y = y });
+    for (expected, actual) |expected_value, actual_value| {
+        try std.testing.expectApproxEqAbs(expected_value, actual_value, 1e-15);
+    }
+
+    const portable = comptime expr(
+        "asin(x) + acos(x) + sinh(x) + cosh(x) + tanh(x) + log2(y) + log10(y)",
+    );
+    const expected_sum = expected[0] + expected[1] + expected[2] +
+        expected[3] + expected[4] + expected[5] + expected[6];
+    inline for (.{ f16, f32, f64, f80, f128 }) |T| {
+        const value = portable.evalAs(T, .{
+            .x = @as(T, x),
+            .y = @as(T, y),
+        });
+        comptime std.debug.assert(@TypeOf(value) == T);
+        try std.testing.expectApproxEqAbs(
+            @as(T, @floatCast(expected_sum)),
+            value,
+            @as(T, 0.004),
+        );
+    }
+
+    const xs = [_]f64{ 0.1, 0.25, 0.5 };
+    var batch: [xs.len]f64 = undefined;
+    try portable.evalBatchInto(&batch, .{ .x = &xs, .y = y });
+    for (xs, batch) |batch_x, value| {
+        try std.testing.expectApproxEqAbs(
+            portable.eval(.{ .x = batch_x, .y = y }),
+            value,
+            1e-15,
+        );
+    }
+}
+
+test "extended unary function derivatives are symbolic and composable" {
+    const x: f64 = 0.25;
+    const root = @sqrt(1.0 - x * x);
+    const hyperbolic_cosine = std.math.cosh(x);
+    const Case = struct {
+        source: []const u8,
+        rendered: []const u8,
+    };
+    const cases = comptime [_]Case{
+        .{
+            .source = "asin(x)",
+            .rendered = "1 / (-x^2 + 1)^(1/2)",
+        },
+        .{
+            .source = "acos(x)",
+            .rendered = "-1 / (-x^2 + 1)^(1/2)",
+        },
+        .{
+            .source = "sinh(x)",
+            .rendered = "cosh(x)",
+        },
+        .{
+            .source = "cosh(x)",
+            .rendered = "sinh(x)",
+        },
+        .{
+            .source = "tanh(x)",
+            .rendered = "1 / cosh(x)^2",
+        },
+        .{
+            .source = "log2(x)",
+            .rendered = "1 / (x * ln(2))",
+        },
+        .{
+            .source = "log10(x)",
+            .rendered = "1 / (x * ln(10))",
+        },
+    };
+    const expected = [7]f64{
+        1.0 / root,
+        -1.0 / root,
+        hyperbolic_cosine,
+        std.math.sinh(x),
+        1.0 / (hyperbolic_cosine * hyperbolic_cosine),
+        1.0 / (x * @log(2.0)),
+        1.0 / (x * @log(10.0)),
+    };
+    inline for (cases, 0..) |case, index| {
+        const derivative = comptime expr(case.source).diff(.x).simplify();
+        try std.testing.expectEqualStrings(
+            case.rendered,
+            comptime derivative.render(),
+        );
+        try std.testing.expectApproxEqAbs(
+            expected[index],
+            derivative.eval(.{ .x = x }),
+            1e-14,
+        );
+    }
+}
+
+test "extended unary functions simplify substitute and round trip" {
+    const identities = comptime expr(
+        "asin(0) + acos(1) + sinh(0) + cosh(0) + tanh(0) + log2(2) + log10(10)",
+    ).simplify();
+    try std.testing.expectEqualStrings("3", comptime identities.render());
+
+    const folded = comptime expr(
+        "asin(0.5) + acos(0.5) + sinh(0.5) + cosh(0.5) + tanh(0.5) + log2(8.0) + log10(100.0)",
+    ).simplify();
+    const expected = std.math.asin(@as(f64, 0.5)) +
+        std.math.acos(@as(f64, 0.5)) +
+        std.math.sinh(@as(f64, 0.5)) +
+        std.math.cosh(@as(f64, 0.5)) +
+        std.math.tanh(@as(f64, 0.5)) +
+        @log2(8.0) +
+        @log10(100.0);
+    try std.testing.expectApproxEqAbs(expected, folded.eval(.{}), 1e-14);
+
+    const source = comptime expr(
+        "asin(x) + acos(x) + sinh(x) + cosh(x) + tanh(x) + log2(x) + log10(x)",
+    );
+    const substituted = comptime source.substitute(.{ .x = "y/2" });
+    const y = 0.5;
+    try std.testing.expectApproxEqAbs(
+        source.eval(.{ .x = y / 2.0 }),
+        substituted.eval(.{ .y = y }),
+        1e-15,
+    );
+    const round_trip = comptime expr(substituted.render());
+    try std.testing.expectEqualStrings(
+        comptime substituted.render(),
+        comptime round_trip.render(),
+    );
+}
+
 test "canonical n-ary algebra flattens sorts and collects exact coefficients" {
     const Case = struct {
         input: []const u8,

@@ -263,6 +263,18 @@ fn integrateClosed(
             .cos,
             problem,
         ),
+        .sinh => |child| integrateAffineFunction(
+            simplified,
+            child,
+            .sinh,
+            problem,
+        ),
+        .cosh => |child| integrateAffineFunction(
+            simplified,
+            child,
+            .cosh,
+            problem,
+        ),
         .exp => |child| integrateAffineFunction(
             simplified,
             child,
@@ -372,6 +384,8 @@ fn integrateDivision(
 const FunctionKind = enum {
     sin,
     cos,
+    sinh,
+    cosh,
     exp,
 };
 
@@ -413,6 +427,8 @@ fn integrateAffineFunction(
             composition.unary(.cosine, affine.argument),
         ),
         .cos => composition.unary(.sine, affine.argument),
+        .sinh => composition.unary(.hyperbolic_cosine, affine.argument),
+        .cosh => composition.unary(.hyperbolic_sine, affine.argument),
         .exp => composition.unary(.exponential, affine.argument),
     };
     return divideExpressions(numerator, affine.slope).simplify();
@@ -439,6 +455,18 @@ fn integrateProduct(
                 if (function_index != null) return null;
                 function_index = index;
                 function_kind = .cos;
+                function_child = child;
+            },
+            .sinh => |child| {
+                if (function_index != null) return null;
+                function_index = index;
+                function_kind = .sinh;
+                function_child = child;
+            },
+            .cosh => |child| {
+                if (function_index != null) return null;
+                function_index = index;
+                function_kind = .cosh;
                 function_child = child;
             },
             .exp => |child| {
@@ -528,6 +556,8 @@ fn integratePolynomialFunction(
             composition.unary(.cosine, argument),
         ),
         .cos => composition.unary(.sine, argument),
+        .sinh => composition.unary(.hyperbolic_cosine, argument),
+        .cosh => composition.unary(.hyperbolic_sine, argument),
         .exp => composition.unary(.exponential, argument),
     };
     const boundary = divideExpressions(
@@ -540,6 +570,8 @@ fn integratePolynomialFunction(
     const next_function: FunctionKind = switch (function) {
         .sin => .cos,
         .cos => .sin,
+        .sinh => .cosh,
+        .cosh => .sinh,
         .exp => .exp,
     };
     const remainder = divideExpressions(
@@ -554,7 +586,10 @@ fn integratePolynomialFunction(
     );
     return switch (function) {
         .sin => addExpressions(&.{ boundary, remainder }).simplify(),
-        .cos, .exp => subtractExpressions(boundary, remainder).simplify(),
+        .cos, .sinh, .cosh, .exp => subtractExpressions(
+            boundary,
+            remainder,
+        ).simplify(),
     };
 }
 
@@ -680,7 +715,24 @@ fn polynomialConvertible(comptime expression: ast.Expr) bool {
     inline for (expression.nodes, 0..) |node, index| {
         convertible[index] = switch (node) {
             .integer, .rational, .symbol => true,
-            .float, .constant, .div, .sin, .cos, .tan, .atan, .abs, .exp, .ln => false,
+            .float,
+            .constant,
+            .div,
+            .sin,
+            .cos,
+            .tan,
+            .asin,
+            .acos,
+            .atan,
+            .sinh,
+            .cosh,
+            .tanh,
+            .abs,
+            .exp,
+            .ln,
+            .log2,
+            .log10,
+            => false,
             .add, .sub, .mul => |binary| convertible[@intCast(binary.left)] and
                 convertible[@intCast(binary.right)],
             .add_nary, .mul_nary => |operands| blk: {
@@ -724,7 +776,7 @@ fn provablyNonzero(
             .pow => |power| power.exponent.isZero() or
                 nonzero_nodes[@intCast(power.base)],
             .negate, .abs => |child| nonzero_nodes[@intCast(child)],
-            .exp => true,
+            .exp, .cosh => true,
             else => false,
         };
     }

@@ -5,7 +5,22 @@ const diagnostic = @import("../parse/diagnostic.zig");
 const exact = @import("../core/exact.zig");
 
 const BinaryOperation = enum { add, sub, mul, div };
-const Function = enum { sin, cos, tan, atan, abs, exp, ln };
+const Function = enum {
+    sin,
+    cos,
+    tan,
+    asin,
+    acos,
+    atan,
+    sinh,
+    cosh,
+    tanh,
+    abs,
+    exp,
+    ln,
+    log2,
+    log10,
+};
 
 pub fn simplify(comptime expression: ast.Expr) ast.Expr {
     var current = expression;
@@ -255,9 +270,39 @@ const Context = struct {
                 self.simplifyNode(child),
                 self.source,
             ),
+            .asin => |child| simplifyFunction(
+                self.builder,
+                .asin,
+                self.simplifyNode(child),
+                self.source,
+            ),
+            .acos => |child| simplifyFunction(
+                self.builder,
+                .acos,
+                self.simplifyNode(child),
+                self.source,
+            ),
             .atan => |child| simplifyFunction(
                 self.builder,
                 .atan,
+                self.simplifyNode(child),
+                self.source,
+            ),
+            .sinh => |child| simplifyFunction(
+                self.builder,
+                .sinh,
+                self.simplifyNode(child),
+                self.source,
+            ),
+            .cosh => |child| simplifyFunction(
+                self.builder,
+                .cosh,
+                self.simplifyNode(child),
+                self.source,
+            ),
+            .tanh => |child| simplifyFunction(
+                self.builder,
+                .tanh,
                 self.simplifyNode(child),
                 self.source,
             ),
@@ -276,6 +321,18 @@ const Context = struct {
             .ln => |child| simplifyFunction(
                 self.builder,
                 .ln,
+                self.simplifyNode(child),
+                self.source,
+            ),
+            .log2 => |child| simplifyFunction(
+                self.builder,
+                .log2,
+                self.simplifyNode(child),
+                self.source,
+            ),
+            .log10 => |child| simplifyFunction(
+                self.builder,
+                .log10,
                 self.simplifyNode(child),
                 self.source,
             ),
@@ -815,8 +872,32 @@ fn simplifyFunction(
 ) ast.NodeId {
     if (exactValue(builder, child)) |value| {
         const position = functionPosition(source, @tagName(function));
-        if (function == .ln and value.numerator <= 0) {
-            foldFailure(source, position, "ln is undefined for non-positive constants");
+        if ((function == .ln or function == .log2 or function == .log10) and
+            value.numerator <= 0)
+        {
+            foldFailure(
+                source,
+                position,
+                std.fmt.comptimePrint(
+                    "{s} is undefined for non-positive constants",
+                    .{@tagName(function)},
+                ),
+            );
+        }
+        const outside_inverse_trig_domain =
+            @as(i128, value.numerator) < -@as(i128, @intCast(value.denominator)) or
+            @as(i128, value.numerator) > @as(i128, @intCast(value.denominator));
+        if ((function == .asin or function == .acos) and
+            outside_inverse_trig_domain)
+        {
+            foldFailure(
+                source,
+                position,
+                std.fmt.comptimePrint(
+                    "{s} is undefined outside [-1, 1] for real constants",
+                    .{@tagName(function)},
+                ),
+            );
         }
 
         if (function == .abs) {
@@ -826,30 +907,97 @@ fn simplifyFunction(
         }
         if (value.isZero()) {
             return switch (function) {
-                .sin, .tan, .atan => builder.integer(0),
-                .cos, .exp => builder.integer(1),
-                .ln => unreachable,
+                .sin, .tan, .asin, .atan, .sinh, .tanh => builder.integer(0),
+                .cos, .cosh, .exp => builder.integer(1),
+                .acos => builder.div(
+                    builder.constant(.pi),
+                    builder.integer(2),
+                ),
+                .ln, .log2, .log10 => unreachable,
                 .abs => builder.integer(0),
             };
         }
         if (function == .ln and value.isOne()) return builder.integer(0);
+        if ((function == .log2 or function == .log10) and value.isOne()) {
+            return builder.integer(0);
+        }
+        if (function == .log2 and
+            value.eql(exact.Rational.fromInteger(2)))
+        {
+            return builder.integer(1);
+        }
+        if (function == .log10 and
+            value.eql(exact.Rational.fromInteger(10)))
+        {
+            return builder.integer(1);
+        }
+        if (function == .asin and
+            value.eql(exact.Rational.fromInteger(1)))
+        {
+            return builder.div(builder.constant(.pi), builder.integer(2));
+        }
+        if (function == .asin and
+            value.eql(exact.Rational.fromInteger(-1)))
+        {
+            return builder.negate(
+                builder.div(builder.constant(.pi), builder.integer(2)),
+            );
+        }
+        if (function == .acos and
+            value.eql(exact.Rational.fromInteger(1)))
+        {
+            return builder.integer(0);
+        }
+        if (function == .acos and
+            value.eql(exact.Rational.fromInteger(-1)))
+        {
+            return builder.constant(.pi);
+        }
         return makeFunction(builder, function, child);
     }
 
     if (builder.node(child) == .float) {
         const value = builder.node(child).float;
         const position = functionPosition(source, @tagName(function));
-        if (function == .ln and value <= 0.0) {
-            foldFailure(source, position, "ln is undefined for non-positive constants");
+        if ((function == .ln or function == .log2 or function == .log10) and
+            value <= 0.0)
+        {
+            foldFailure(
+                source,
+                position,
+                std.fmt.comptimePrint(
+                    "{s} is undefined for non-positive constants",
+                    .{@tagName(function)},
+                ),
+            );
+        }
+        if ((function == .asin or function == .acos) and
+            (value < -1.0 or value > 1.0))
+        {
+            foldFailure(
+                source,
+                position,
+                std.fmt.comptimePrint(
+                    "{s} is undefined outside [-1, 1] for real constants",
+                    .{@tagName(function)},
+                ),
+            );
         }
         return normalizedFloat(builder, switch (function) {
             .sin => @sin(value),
             .cos => @cos(value),
             .tan => @tan(value),
+            .asin => std.math.asin(value),
+            .acos => std.math.acos(value),
             .atan => std.math.atan(value),
+            .sinh => std.math.sinh(value),
+            .cosh => std.math.cosh(value),
+            .tanh => std.math.tanh(value),
             .abs => @abs(value),
             .exp => @exp(value),
             .ln => @log(value),
+            .log2 => @log2(value),
+            .log10 => @log10(value),
         }, source, position);
     }
 
@@ -865,10 +1013,17 @@ fn makeFunction(
         .sin => builder.sine(child),
         .cos => builder.cosine(child),
         .tan => builder.tangent(child),
+        .asin => builder.arcsine(child),
+        .acos => builder.arccosine(child),
         .atan => builder.arctangent(child),
+        .sinh => builder.hyperbolicSine(child),
+        .cosh => builder.hyperbolicCosine(child),
+        .tanh => builder.hyperbolicTangent(child),
         .abs => builder.absolute(child),
         .exp => builder.exponential(child),
         .ln => builder.logarithm(child),
+        .log2 => builder.logarithm2(child),
+        .log10 => builder.logarithm10(child),
     };
 }
 
@@ -1141,10 +1296,17 @@ fn less(builder: *const build.Builder, left: ast.NodeId, right: ast.NodeId) bool
         .sin => |child| less(builder, child, right_node.sin),
         .cos => |child| less(builder, child, right_node.cos),
         .tan => |child| less(builder, child, right_node.tan),
+        .asin => |child| less(builder, child, right_node.asin),
+        .acos => |child| less(builder, child, right_node.acos),
         .atan => |child| less(builder, child, right_node.atan),
+        .sinh => |child| less(builder, child, right_node.sinh),
+        .cosh => |child| less(builder, child, right_node.cosh),
+        .tanh => |child| less(builder, child, right_node.tanh),
         .abs => |child| less(builder, child, right_node.abs),
         .exp => |child| less(builder, child, right_node.exp),
         .ln => |child| less(builder, child, right_node.ln),
+        .log2 => |child| less(builder, child, right_node.log2),
+        .log10 => |child| less(builder, child, right_node.log10),
         .negate => |child| less(builder, child, right_node.negate),
         .add => |binary| lessBinary(builder, binary, right_node.add),
         .add_nary => |operands| lessOperands(
@@ -1192,14 +1354,21 @@ fn rank(node: ast.Node) u8 {
         .sin => 6,
         .cos => 7,
         .tan => 8,
-        .atan => 9,
-        .abs => 10,
-        .exp => 11,
-        .ln => 12,
-        .negate => 13,
-        .add, .add_nary => 14,
-        .sub => 15,
+        .asin => 9,
+        .acos => 10,
+        .atan => 11,
+        .sinh => 12,
+        .cosh => 13,
+        .tanh => 14,
+        .abs => 15,
+        .exp => 16,
+        .ln => 17,
+        .log2 => 18,
+        .log10 => 19,
+        .negate => 20,
+        .add, .add_nary => 21,
+        .sub => 22,
         .mul_nary => 5,
-        .div => 16,
+        .div => 23,
     };
 }

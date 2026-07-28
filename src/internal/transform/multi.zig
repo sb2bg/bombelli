@@ -240,10 +240,17 @@ fn cloneNodes(
         .sin => |child| builder.sine(cloneNodes(builder, nodes, child, cache)),
         .cos => |child| builder.cosine(cloneNodes(builder, nodes, child, cache)),
         .tan => |child| builder.tangent(cloneNodes(builder, nodes, child, cache)),
+        .asin => |child| builder.arcsine(cloneNodes(builder, nodes, child, cache)),
+        .acos => |child| builder.arccosine(cloneNodes(builder, nodes, child, cache)),
         .atan => |child| builder.arctangent(cloneNodes(builder, nodes, child, cache)),
+        .sinh => |child| builder.hyperbolicSine(cloneNodes(builder, nodes, child, cache)),
+        .cosh => |child| builder.hyperbolicCosine(cloneNodes(builder, nodes, child, cache)),
+        .tanh => |child| builder.hyperbolicTangent(cloneNodes(builder, nodes, child, cache)),
         .abs => |child| builder.absolute(cloneNodes(builder, nodes, child, cache)),
         .exp => |child| builder.exponential(cloneNodes(builder, nodes, child, cache)),
         .ln => |child| builder.logarithm(cloneNodes(builder, nodes, child, cache)),
+        .log2 => |child| builder.logarithm2(cloneNodes(builder, nodes, child, cache)),
+        .log10 => |child| builder.logarithm10(cloneNodes(builder, nodes, child, cache)),
     };
     cache[index] = result;
     return result;

@@ -390,7 +390,21 @@ const ConversionContext = struct {
             ),
             .float => unsupported("floating-point constants are not exact polynomials"),
             .constant => unsupported("transcendental constants are not exact polynomials"),
-            .sin, .cos, .tan, .atan, .abs, .exp, .ln => unsupported(
+            .sin,
+            .cos,
+            .tan,
+            .asin,
+            .acos,
+            .atan,
+            .sinh,
+            .cosh,
+            .tanh,
+            .abs,
+            .exp,
+            .ln,
+            .log2,
+            .log10,
+            => unsupported(
                 "transcendental functions are not polynomials",
             ),
         };
