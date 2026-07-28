@@ -2,10 +2,9 @@
 
 [![CI](https://github.com/sb2bg/bombelli/actions/workflows/ci.yml/badge.svg)](https://github.com/sb2bg/bombelli/actions/workflows/ci.yml)
 
-> A compile-time symbolic mathematics compiler for Zig. Write formulas as
-> strings, differentiate, simplify, solve, and integrate them during
-> compilation, and ship straight-line numerical code with zero runtime
-> symbolic machinery.
+> A statically shaped differentiable model compiler for Zig. Declare the
+> mathematics once at compile time; evaluate, differentiate, fit runtime data,
+> solve, batch, and emit standalone allocation-free Zig or C.
 
 ```zig
 const bombelli = @import("bombelli");
@@ -22,9 +21,54 @@ pub fn evaluate(x: f64, y: f64) f64 {
 
 Bombelli parses the string, applies the chain and product rules, and
 simplifies the result to `3 * x^2 + y * cos(x * y)` all before your program
-exists. At runtime there is no parser, allocator, symbolic graph walk,
-node-kind switch, virtual machine, function pointer, or dynamic dispatch.
-Zig specializes the compact DAG into ordinary numerical operations.
+exists. The same declared program can become a scalar evaluator, shared
+Jacobian, nonlinear fitter, solver, batch kernel, or source file. At runtime
+there is no parser, allocator, symbolic graph walk, virtual machine, function
+pointer, or dynamic dispatch. Zig specializes the compact DAG into ordinary
+numerical operations.
+
+## Fit runtime data with a compile-time model
+
+The model shape is static; the number of observations is not. This is the
+usual curve-fitting shape: a handful of parameters and a runtime slice that
+may contain ten rows or ten million.
+
+```zig
+const Observation = struct { time: f64, response: f64 };
+
+const fit = comptime bombelli.residualModel(.{
+    "offset + amplitude*exp(-rate*time) - response",
+}, .{
+    .variables = .{ .amplitude, .rate, .offset },
+    .data = .{ .time, .response },
+}).leastSquares().compile(.{
+    .bounds = .{
+        .amplitude = .{ .lower = 0.0 },
+        .rate = .{ .lower = 0.0 },
+    },
+    .tolerance = 1e-11,
+});
+
+pub fn fitRate(observations: []const Observation) f64 {
+    const result = fit.eval(.{
+        .initial = .{
+            .amplitude = 2.0,
+            .rate = 0.5,
+            .offset = 0.0,
+        },
+        .observations = observations,
+    });
+    return fit.parameter(result, .rate);
+}
+```
+
+Bombelli differentiates the one-row residual symbolically and fuses its value
+and Jacobian. During fitting, each runtime row is folded immediately into a
+Givens QR factor. Storage is `O(parameters²)`, independent of observation
+count, with no allocator and no materialized observation-by-parameter
+Jacobian. The compiled Levenberg–Marquardt solver supports automatic or user
+scaling, box bounds, linear/Huber/soft-L1/Cauchy losses, rank diagnostics,
+hard evaluation budgets, and explicit terminal statuses.
 
 You don't have to take that on faith. Ask the same object to `emit()` and
 read the code yourself:
@@ -92,7 +136,23 @@ On a five-million-evaluation benchmark, a Bombelli-compiled expression ran at
 because by runtime it _is_ handwritten-shaped code
 ([measurements](docs/validation/release-baseline.md)).
 
-Bombelli v0.1.0 targets Zig 0.16.0 and uses only Zig's standard library.
+Bombelli targets Zig 0.16.0 and uses only Zig's standard library.
+
+## One declaration, several useful kernels
+
+| Declare | Compile-time products | Runtime products |
+| --- | --- | --- |
+| `expr` / `exprVector` | simplify, substitute, differentiate, integrate, emit | scalar, vector, matrix, and batch evaluation |
+| `model` | Jacobian, Hessian, fused linearization | values, JVP, VJP, fixed-size least squares |
+| `residualModel` | one symbolic residual-row kernel | robust bounded fitting over runtime observation slices |
+| `system` | exact elimination or symbolic Jacobian | Newton solve and implicit sensitivities |
+| native `[N]T` / `[R][C]T` arrays | fixed shape and type checking | LU, Cholesky, pivoted QR, solve, inverse, and matrix utilities |
+
+Evaluation can keep intermediates in `f16`, `f32`, `f64`, `f80`, or `f128`
+with `evalAs`. Structure-of-arrays batches have sequential and parallel
+caller-owned APIs. Supported elementary functions include trigonometric,
+inverse trigonometric, hyperbolic, exponential, logarithmic, `abs`, `sqrt`,
+`atan2`, and overflow-safe `hypot`.
 
 ## From equations to a compiled solver
 
@@ -144,6 +204,33 @@ point.
 
 ## More workflows
 
+**Typed differentiable models.** Variables are declared explicitly, so every
+downstream Jacobian column, tangent, fit parameter, and diagnostic has one
+stable order. Other symbols are ordinary inputs:
+
+```zig
+const response = comptime bombelli.model(.{
+    "scale*sin(x*y)",
+    "scale*(x^2 + y^2)",
+}, .{
+    .variables = .{ .x, .y },
+    .inputs = .{.scale},
+});
+
+const linearized = response.valueAndJacobian(.{
+    .x = 0.5,
+    .y = 2.0,
+    .scale = 3.0,
+});
+
+const checked = bombelli.testing.checkJacobian(response, .{
+    .x = 0.5,
+    .y = 2.0,
+    .scale = 3.0,
+}, .{});
+// checked.entries identifies any mismatched row, column, and variable
+```
+
 **Shared multi-output programs.** One node store serves a gradient, Jacobian,
 Hessian, or any typed multi-output program. Shared subexpressions such as
 `sin(x*y)` are stored and evaluated once across outputs, and `evalInto`
@@ -160,6 +247,19 @@ const jacobian = comptime functions
 
 var output: [2][2]f64 = undefined;
 jacobian.evalInto(&output, .{ .x = 0.5, .y = 2.0 });
+```
+
+**Fixed-size linear algebra without a container type.** Numerical routines
+accept and return ordinary native Zig arrays:
+
+```zig
+const matrix = [3][3]f64{
+    .{ 0, 2, 1 },
+    .{ 1, -2, -3 },
+    .{ 4, -7, 1 },
+};
+const factor = bombelli.linalg.lu(matrix, .{});
+const solution = factor.solve(.{ 3, 0, 2 }).?;
 ```
 
 **Exact symbolic linear systems.** Solutions retain parameter conditions
@@ -199,8 +299,9 @@ const compiled = comptime symbolic.compile(.{
 const value = compiled.eval(.{ .from = 0.0, .to = 1.0 });
 ```
 
-See [examples/flagship.zig](examples/flagship.zig) for the release workflows
-in one executable, and
+See [examples/curve_fit.zig](examples/curve_fit.zig) for the runtime-data
+fitting workflow, [examples/flagship.zig](examples/flagship.zig) for the
+symbolic release workflows in one executable, and
 [examples/jacobian_counterexample.zig](examples/jacobian_counterexample.zig)
 for Bombelli checking the 2026 Jacobian conjecture counterexample at compile
 time.
@@ -215,17 +316,20 @@ compilation, and what remains is a small, transparent numerical kernel.
 That trade is a good fit when:
 
 - the mathematical model is fixed at build time;
+- parameter and output dimensions are small and fixed, even when the runtime
+  dataset is large;
 - runtime allocation or symbolic overhead is unacceptable;
 - generated numerical code must be inspectable and auditable;
 - exact rational coefficients matter during construction;
-- dimensions are small and fixed;
 - a compile-time failure beats a runtime surprise.
 
-Think embedded control laws, fixed physical models, calibration routines,
-generated Jacobians for simulation and estimation, specialized quadrature,
-and tiny high-confidence numerical kernels. If you need arbitrary-precision
-arithmetic, complex analysis, or open-ended equation solving at runtime, use
-a CAS, possibly to derive the model you then hand to Bombelli.
+Think curve fitting and calibration, regressions with custom symbolic
+residuals, embedded control laws, fixed physical models, generated Jacobians
+for simulation and estimation, specialized quadrature, and small
+high-confidence numerical kernels. If the model structure itself must change
+at runtime, or you need arbitrary-precision arithmetic, complex analysis, or
+open-ended equation solving, use a runtime numerical framework or CAS,
+possibly to derive the model you then hand to Bombelli.
 
 ## Getting started
 
@@ -246,11 +350,13 @@ exe.root_module.addImport("bombelli", bombelli.module("bombelli"));
 Forwarding `target` and `optimize` matters: without them the module resolves
 for the host, which breaks cross-compilation.
 
-Run the flagship example from a checkout with `zig build run`.
+Run the flagship example from a checkout with `zig build run`, or the curve
+fitter with `zig build run-curve-fit`.
 
 ## More
 
 - [Changelog and v0.1.0 scope](CHANGELOG.md)
+- [Fitting runtime data](docs/guides/fitting-runtime-data.md)
 - [Expression-growth and construction baseline](docs/architecture/stress-baseline.md)
 - [Building a Symbolic Differentiator That Compiles Away Completely in Zig](docs/blog/building-a-symbolic-differentiator-that-compiles-away.md)
 - [Checking the Jacobian Conjecture Counterexample with Bombelli](docs/blog/checking-the-jacobian-conjecture-counterexample-with-bombelli.md)

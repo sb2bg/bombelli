@@ -166,6 +166,30 @@ pub fn Solver(
         pub const parameter_count = N;
         const Self = @This();
 
+        /// Returns a fitted parameter by its declared name.
+        pub inline fn parameter(
+            comptime self: Self,
+            result: Result(N),
+            comptime variable: anytype,
+        ) f64 {
+            return result.values[self.parameterIndex(variable)];
+        }
+
+        /// Returns the array index assigned to a declared parameter.
+        pub fn parameterIndex(
+            comptime self: Self,
+            comptime variable: anytype,
+        ) usize {
+            const name = @tagName(variable);
+            inline for (self.variables, 0..) |candidate, index| {
+                if (comptime std.mem.eql(u8, name, candidate)) return index;
+            }
+            @compileError(std.fmt.comptimePrint(
+                "Bombelli row least-squares variable '.{s}' is not declared",
+                .{name},
+            ));
+        }
+
         /// Fits `inputs.initial` to `inputs.observations`.
         ///
         /// Observations may be a fixed array, pointer to a fixed array, or

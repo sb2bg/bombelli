@@ -153,6 +153,30 @@ pub fn LeastSquaresSolver(
         pub const maximum_iterations = max_iterations;
         const Self = @This();
 
+        /// Returns a fitted parameter by its declared name.
+        pub inline fn parameter(
+            comptime self: Self,
+            result: LeastSquaresResult(M, N),
+            comptime variable: anytype,
+        ) f64 {
+            return result.values[self.parameterIndex(variable)];
+        }
+
+        /// Returns the array index assigned to a declared parameter.
+        pub fn parameterIndex(
+            comptime self: Self,
+            comptime variable: anytype,
+        ) usize {
+            const name = @tagName(variable);
+            inline for (self.variables, 0..) |candidate, index| {
+                if (comptime std.mem.eql(u8, name, candidate)) return index;
+            }
+            @compileError(std.fmt.comptimePrint(
+                "Bombelli least-squares variable '.{s}' is not declared",
+                .{name},
+            ));
+        }
+
         /// Solves from `inputs.initial`; every other free symbol is read as a
         /// fixed runtime parameter.
         pub inline fn eval(

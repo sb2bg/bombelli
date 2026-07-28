@@ -4,6 +4,35 @@
 
 ### Added
 
+- `model` declares an ordered variable contract over one shared expression
+  program. Models evaluate, build symbolic Jacobians, compile fused
+  value-and-Jacobian programs, apply JVPs and VJPs, preserve metadata through
+  transforms, and emit standalone evaluators.
+- Fixed-size nonlinear least squares for `model` residuals: allocation-free
+  Levenberg–Marquardt with augmented pivoted QR, automatic or user parameter
+  scaling, box bounds, linear/Huber/soft-L1/Cauchy losses, projected-gradient
+  fallback, rank and bound diagnostics, and hard evaluation budgets.
+- `residualModel` compiles a symbolic residual block once and fits
+  runtime-length observation arrays or slices. Incremental Givens QR consumes
+  each weighted Jacobian row immediately, keeping solver storage
+  `O(parameter_count²)` with no observation-sized allocation. The NIST
+  Misra1a reference dataset converges to its certified parameters and
+  half-RSS from both official starting points.
+- `bombelli.linalg` numerical routines over native fixed-size Zig arrays:
+  scaled-pivot LU, Cholesky, column-pivoted Householder QR, solve,
+  positive-definite solve, least squares, inverse, determinant, transpose,
+  matrix/vector and matrix/matrix products, dot products, norms, outer
+  products, trace, and identity matrices.
+- `evalAs`, `evalIntoAs`, and matching top-level callable helpers evaluate
+  scalar, vector, and matrix programs with `f16`, `f32`, `f64`, `f80`, or
+  `f128` intermediates.
+- `testing.checkJacobian` compares symbolic Jacobians with scaled central
+  differences and reports per-entry row, column, variable, step, error, and
+  tolerance diagnostics.
+- Elementary functions `asin`, `acos`, `sinh`, `cosh`, `tanh`, `log2`,
+  `log10`, `atan2`, and overflow-safe `hypot` across parsing, rendering,
+  evaluation, differentiation, transformation, and source emission.
+- Exact Bareiss determinants for symbolic expression matrices.
 - `.target = .c` emission for every callable that already emitted Zig:
   expressions, vectors, matrices, fixed quadrature, and Newton solvers. The
   emitted unit is C99 that includes only `<math.h>` and `<stddef.h>`.
@@ -15,9 +44,19 @@
   family.
 - Compile-time diagnostics for an unsupported or missing `.target`, and for a
   function or input name that collides with a C keyword.
+- Standalone Zig and C execution coverage for the extended smooth elementary
+  function set.
 
 ### Changed
 
+- Bombelli's primary abstraction is now a statically shaped differentiable
+  model compiler: one declaration can feed evaluation, differentiation,
+  fitting, solving, batching, and source emission.
+- Function parsing is arity-aware and reports missing, extra, empty, and
+  trailing-comma arguments at compile time.
+- Nonlinear least-squares diagnostics are refreshed at the returned point;
+  numerical rank uses its independent configured tolerance, and invalid
+  residual trials are bounded explicitly.
 - Emission dispatches through `internal/codegen/emit.zig`, which owns
   `EmitTarget`, validates the target-independent options, and selects a
   backend. `EmitTarget` gained a `c` member.
@@ -25,6 +64,16 @@
   definition, compiles the C with `-std=c99 -Wall -Wextra -Werror`, executes
   it, and compares it against Bombelli's own evaluator. A multi-output
   gradient case was added, so vector emission is now covered end to end.
+
+### Fixed
+
+- Runtime-observation fitting now reserves the final fused linearization pass,
+  so `max_function_evaluations` is a strict upper bound even when the last
+  trial is accepted.
+- Extreme residual and parameter scales no longer overflow robust objectives,
+  damping initialization, or scaled norms when a representable result exists.
+- Top-level evaluation helpers safely accept temporary comptime programs,
+  avoiding a Zig 0.16 temporary-receiver compiler failure in chained calls.
 
 ## 0.1.0 — 2026-07-25
 

@@ -153,6 +153,26 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the Bombelli example");
     run_step.dependOn(&run_example.step);
 
+    const curve_fit = b.addExecutable(.{
+        .name = "bombelli-curve-fit",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/curve_fit.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "bombelli", .module = bombelli },
+            },
+        }),
+    });
+    b.installArtifact(curve_fit);
+    const run_curve_fit = b.addRunArtifact(curve_fit);
+    run_curve_fit.step.dependOn(b.getInstallStep());
+    const curve_fit_step = b.step(
+        "run-curve-fit",
+        "Fit an exponential curve to runtime observations",
+    );
+    curve_fit_step.dependOn(&run_curve_fit.step);
+
     const jacobian = b.addExecutable(.{
         .name = "bombelli-jacobian-counterexample",
         .root_module = b.createModule(.{

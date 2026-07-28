@@ -183,8 +183,16 @@ test "model least squares solves Rosenbrock residuals with augmented QR" {
         .initial = .{ .x = -1.2, .y = 1.0 },
     });
     try std.testing.expect(result.converged());
-    try std.testing.expectApproxEqAbs(1.0, result.values[0], 1e-8);
-    try std.testing.expectApproxEqAbs(1.0, result.values[1], 1e-8);
+    try std.testing.expectApproxEqAbs(
+        1.0,
+        solver.parameter(result, .x),
+        1e-8,
+    );
+    try std.testing.expectApproxEqAbs(
+        1.0,
+        solver.parameter(result, .y),
+        1e-8,
+    );
     try std.testing.expect(result.cost < 1e-16);
     try std.testing.expect(result.function_evaluations >= result.accepted_steps + 1);
 }

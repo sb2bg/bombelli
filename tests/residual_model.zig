@@ -88,8 +88,16 @@ test "runtime observation model fits nonlinear exponential data" {
     });
 
     try std.testing.expect(result.converged());
-    try std.testing.expectApproxEqAbs(2.5, result.values[0], 1e-9);
-    try std.testing.expectApproxEqAbs(-0.7, result.values[1], 1e-9);
+    try std.testing.expectApproxEqAbs(
+        2.5,
+        solver.parameter(result, .a),
+        1e-9,
+    );
+    try std.testing.expectApproxEqAbs(
+        -0.7,
+        solver.parameter(result, .b),
+        1e-9,
+    );
     try std.testing.expect(result.cost < 1e-20);
 }
 

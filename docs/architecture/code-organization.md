@@ -9,6 +9,8 @@ test root that imports behavior suites by category.
 `src/root.zig` is the package façade. It owns public names and documentation,
 but not implementations or behavior tests. `src/expression.zig` defines the
 three immutable expression program types and their fluent methods.
+`src/model.zig` and `src/residual_model.zig` attach ordered variable and data
+contracts to those programs.
 
 The `bombelli.testing` namespace is explicitly unstable. It exposes only the
 small set of internals needed by package, downstream, and benchmark tests
@@ -25,6 +27,9 @@ without making those details part of the stable top-level API.
 - `internal/solve`: equations, systems, symbolic elimination, polynomial
   solving, Newton compilation, and solution types.
 - `internal/integrate`: symbolic, fixed, adaptive, and hybrid integration.
+- `internal/model`: fused value-and-Jacobian programs.
+- `internal/optimize`: robust fixed-size and runtime-row least squares plus
+  their QR kernels.
 - `internal/runtime`: specialized runtime evaluation.
 - `internal/codegen`: human-readable rendering and standalone source emission.
 
