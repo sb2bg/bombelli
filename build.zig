@@ -10,35 +10,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const cli_build_options = b.addOptions();
-    cli_build_options.addOption(
-        []const u8,
-        "development_bombelli_root",
-        b.pathFromRoot("src/root.zig"),
-    );
-    const clap_dependency = b.dependency("clap", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const cli_module = b.createModule(.{
-        .root_source_file = b.path("src/cli/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    cli_module.addOptions("cli_build_options", cli_build_options);
-    cli_module.addImport("clap", clap_dependency.module("clap"));
-    const cli = b.addExecutable(.{
-        .name = "bombelli",
-        .root_module = cli_module,
-    });
-    b.installArtifact(cli);
-    b.installDirectory(.{
-        .source_dir = b.path("src"),
-        .install_dir = .prefix,
-        .install_subdir = "share/bombelli/src",
-        .include_extensions = &.{".zig"},
-    });
-
     const tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/root.zig"),
