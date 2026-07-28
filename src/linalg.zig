@@ -102,16 +102,38 @@ pub fn lu(
     }
 
     const scale = maxAbsMatrix(matrix);
-    const relative = tolerance(T, options.relative_tolerance);
-    result.threshold = relative * @max(@as(T, 1), scale);
+    const relative = tolerance(T, N, options.relative_tolerance);
+    result.threshold = relative * scale;
+    if (scale == 0) {
+        result.status = .singular;
+        return result;
+    }
+
+    var row_scales: [N]T = undefined;
+    for (0..N) |row| {
+        var row_scale: T = 0;
+        for (0..N) |column| {
+            row_scale = @max(row_scale, @abs(result.factors[row][column]));
+        }
+        row_scales[row] = row_scale;
+    }
 
     for (0..N) |column| {
         var pivot_row = column;
         var pivot_magnitude = @abs(result.factors[column][column]);
+        var pivot_ratio = if (row_scales[column] == 0)
+            @as(T, 0)
+        else
+            pivot_magnitude / row_scales[column];
         for (column + 1..N) |row| {
             const magnitude = @abs(result.factors[row][column]);
-            if (magnitude > pivot_magnitude) {
+            const ratio = if (row_scales[row] == 0)
+                @as(T, 0)
+            else
+                magnitude / row_scales[row];
+            if (ratio > pivot_ratio) {
                 pivot_magnitude = magnitude;
+                pivot_ratio = ratio;
                 pivot_row = row;
             }
         }
@@ -129,6 +151,10 @@ pub fn lu(
             const permutation = result.permutation[column];
             result.permutation[column] = result.permutation[pivot_row];
             result.permutation[pivot_row] = permutation;
+
+            const row_scale = row_scales[column];
+            row_scales[column] = row_scales[pivot_row];
+            row_scales[pivot_row] = row_scale;
             result.swap_count += 1;
         }
 
@@ -189,7 +215,7 @@ pub fn Cholesky(comptime T: type, comptime N: usize) type {
                     value -= self.lower[row][column] * solution[column];
                 }
                 const diagonal = self.lower[row][row];
-                if (@abs(diagonal) <= self.threshold) return null;
+                if (@abs(diagonal) <= @sqrt(self.threshold)) return null;
                 solution[row] = value / diagonal;
             }
             var reverse = N;
@@ -200,7 +226,7 @@ pub fn Cholesky(comptime T: type, comptime N: usize) type {
                     value -= self.lower[row][reverse] * solution[row];
                 }
                 const diagonal = self.lower[reverse][reverse];
-                if (@abs(diagonal) <= self.threshold) return null;
+                if (@abs(diagonal) <= @sqrt(self.threshold)) return null;
                 solution[reverse] = value / diagonal;
             }
             return if (allFiniteVector(solution)) solution else null;
@@ -218,11 +244,11 @@ pub fn cholesky(
     const N = comptime matrixRows(Matrix);
     comptime requireSquareMatrix(Matrix);
 
-    const relative = tolerance(T, options.relative_tolerance);
+    const relative = tolerance(T, N, options.relative_tolerance);
     const scale = maxAbsMatrix(matrix);
     var result = Cholesky(T, N){
         .lower = zeroMatrix(T, N, N),
-        .threshold = relative * @max(@as(T, 1), scale),
+        .threshold = relative * scale,
         .status = .success,
     };
     if (!allFiniteMatrix(matrix)) {
@@ -268,6 +294,7 @@ pub fn Qr(comptime T: type, comptime M: usize, comptime N: usize) type {
     return struct {
         factors: [M][N]T,
         reflectors: [N]T,
+        permutation: [N]usize,
         rank: usize,
         threshold: T,
         status: FactorizationStatus,
@@ -299,14 +326,14 @@ pub fn Qr(comptime T: type, comptime M: usize, comptime N: usize) type {
         pub fn solveLeastSquares(self: Self, rhs: [M]T) ?[N]T {
             if (self.status != .success) return null;
             const transformed = self.applyTranspose(rhs) orelse return null;
-            var solution: [N]T = undefined;
+            var pivoted_solution: [N]T = undefined;
             var reverse = N;
             while (reverse != 0) {
                 reverse -= 1;
                 var value = transformed[reverse];
                 for (reverse + 1..N) |column| {
                     value -= self.factors[reverse][column] *
-                        solution[column];
+                        pivoted_solution[column];
                 }
                 const diagonal = self.factors[reverse][reverse];
                 if (!std.math.isFinite(diagonal) or
@@ -314,7 +341,11 @@ pub fn Qr(comptime T: type, comptime M: usize, comptime N: usize) type {
                 {
                     return null;
                 }
-                solution[reverse] = value / diagonal;
+                pivoted_solution[reverse] = value / diagonal;
+            }
+            var solution: [N]T = undefined;
+            for (0..N) |column| {
+                solution[self.permutation[column]] = pivoted_solution[column];
             }
             return if (allFiniteVector(solution)) solution else null;
         }
@@ -339,6 +370,7 @@ pub fn qr(
     var result = Qr(T, M, N){
         .factors = matrix,
         .reflectors = [_]T{0} ** N,
+        .permutation = undefined,
         .rank = 0,
         .threshold = 0,
         .status = .success,
@@ -347,11 +379,44 @@ pub fn qr(
         result.status = .non_finite;
         return result;
     }
+    for (0..N) |column| result.permutation[column] = column;
     const scale = maxAbsMatrix(matrix);
-    result.threshold = tolerance(T, options.relative_tolerance) *
-        @max(@as(T, 1), scale);
+    result.threshold = tolerance(T, @max(M, N), options.relative_tolerance) *
+        scale;
 
     for (0..N) |column| {
+        var pivot_column = column;
+        var pivot_norm = scaledNormColumn(
+            T,
+            M,
+            N,
+            result.factors,
+            column,
+        );
+        for (column + 1..N) |candidate| {
+            const candidate_norm = scaledNormColumn(
+                T,
+                M,
+                N,
+                result.factors,
+                candidate,
+            );
+            if (candidate_norm > pivot_norm) {
+                pivot_norm = candidate_norm;
+                pivot_column = candidate;
+            }
+        }
+        if (pivot_column != column) {
+            for (0..M) |row| {
+                const value = result.factors[row][column];
+                result.factors[row][column] =
+                    result.factors[row][pivot_column];
+                result.factors[row][pivot_column] = value;
+            }
+            const original = result.permutation[column];
+            result.permutation[column] = result.permutation[pivot_column];
+            result.permutation[pivot_column] = original;
+        }
         const column_norm = scaledNormColumn(T, M, N, result.factors, column);
         if (!std.math.isFinite(column_norm)) {
             result.status = .non_finite;
@@ -562,14 +627,15 @@ fn zeroMatrix(
     return [_][C]T{[_]T{0} ** C} ** R;
 }
 
-fn tolerance(comptime T: type, requested: ?f64) T {
+fn tolerance(comptime T: type, comptime dimension: usize, requested: ?f64) T {
     if (requested) |value| {
         if (!std.math.isFinite(value) or value < 0) {
             @panic("Bombelli factorization tolerance must be finite and non-negative");
         }
         return @floatCast(value);
     }
-    return @sqrt(std.math.floatEps(T));
+    return std.math.floatEps(T) *
+        @as(T, @floatFromInt(@max(dimension, 1)));
 }
 
 fn scaledNormColumn(
@@ -711,6 +777,22 @@ test "LU pivots, solves, and retains determinant sign" {
     try std.testing.expectApproxEqAbs(-25.0, factorization.determinant(), 1e-14);
 }
 
+test "factorization thresholds remain relative for tiny matrices" {
+    const tiny = [2][2]f64{
+        .{ 1e-20, 0 },
+        .{ 0, 2e-20 },
+    };
+    const expected = [2]f64{ 3, -4 };
+    try std.testing.expectEqualDeep(
+        expected,
+        solve(tiny, matVec(tiny, expected), .{}).?,
+    );
+    try std.testing.expectEqual(
+        FactorizationStatus.success,
+        cholesky(tiny, .{}).status,
+    );
+}
+
 test "Cholesky solves a symmetric positive-definite system" {
     const matrix = [3][3]f64{
         .{ 4, 12, -16 },
@@ -736,4 +818,17 @@ test "Householder QR solves a tall least-squares problem" {
     const solution = leastSquares(matrix, rhs, .{}).?;
     try std.testing.expectApproxEqAbs(3.5, solution[0], 1e-12);
     try std.testing.expectApproxEqAbs(1.4, solution[1], 1e-12);
+}
+
+test "Householder QR uses column pivoting for uneven scales" {
+    const matrix = [3][2]f64{
+        .{ 1e-8, 1 },
+        .{ 2e-8, 0 },
+        .{ 3e-8, 1 },
+    };
+    const expected = [2]f64{ 2, -3 };
+    const rhs = matVec(matrix, expected);
+    const solution = leastSquares(matrix, rhs, .{}).?;
+    try std.testing.expectApproxEqRel(expected[0], solution[0], 1e-8);
+    try std.testing.expectApproxEqAbs(expected[1], solution[1], 1e-12);
 }
