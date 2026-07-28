@@ -111,3 +111,27 @@ test "sparse polynomials support exact multivariate division" {
             .divideExact(expr("a").asPolynomial()) == null,
     );
 }
+
+test "symbolic matrix determinants are exact and retain row-swap sign" {
+    const matrix = comptime bombelli.exprMatrix(.{
+        .{ "0", "x", "1" },
+        .{ "1", "y", "2" },
+        .{ "3", "z", "4" },
+    });
+    const determinant = comptime matrix.determinant();
+    const expected = comptime expr("2*x + z - 3*y").asPolynomial();
+    try std.testing.expect(comptime determinant.asPolynomial().eql(expected));
+
+    const singular = comptime bombelli.exprMatrix(.{
+        .{ "x", "2*x" },
+        .{ "y", "2*y" },
+    }).determinant();
+    try std.testing.expectEqualStrings("0", comptime singular.render());
+
+    const one_by_one = comptime bombelli.exprMatrix(.{
+        .{"a + b"},
+    }).determinant();
+    try std.testing.expect(
+        comptime one_by_one.asPolynomial().eql(expr("a + b").asPolynomial()),
+    );
+}

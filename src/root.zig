@@ -10,6 +10,7 @@ const exact = @import("internal/core/exact.zig");
 const gauss_legendre = @import("internal/integrate/gauss_legendre.zig");
 const hybrid = @import("internal/integrate/hybrid.zig");
 const integration = @import("internal/integrate/symbolic.zig");
+pub const linalg = @import("linalg.zig");
 const multi = @import("internal/transform/multi.zig");
 const newton = @import("internal/solve/newton.zig");
 const parser = @import("internal/parse/parser.zig");

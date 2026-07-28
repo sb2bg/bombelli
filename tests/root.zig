@@ -5,4 +5,5 @@ test {
     _ = @import("integration.zig");
     _ = @import("codegen.zig");
     _ = @import("callable.zig");
+    _ = @import("linalg.zig");
 }

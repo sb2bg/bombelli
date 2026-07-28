@@ -384,6 +384,16 @@ pub fn ExprMatrix(comptime R: usize, comptime C: usize) type {
             );
         }
 
+        /// Computes this square polynomial matrix's exact determinant.
+        pub fn determinant(comptime self: Self) Expr {
+            @setEvalBranchQuota(limits.eval_branch.solve);
+            return @import("internal/algebra/determinant.zig").determinant(
+                R,
+                C,
+                self,
+            );
+        }
+
         /// Evaluates all entries and returns a fixed-size matrix.
         pub fn eval(comptime self: Self, values: anytype) [R][C]f64 {
             return @import("internal/runtime/evaluation.zig").evaluateMatrix(R, C, self, values);
