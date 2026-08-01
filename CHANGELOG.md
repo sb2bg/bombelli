@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-08-01
 
 ### Added
 
@@ -75,6 +75,18 @@
 - Top-level evaluation helpers safely accept temporary comptime programs,
   avoiding a Zig 0.16 temporary-receiver compiler failure in chained calls.
 
+### Validation
+
+- 155 runtime, property, hardening, and stress tests, plus 56 automatically
+  discovered compile-fail fixtures.
+- 342 seeded SymPy differential programs/problems and 4,984 independent oracle
+  assertions.
+- Standalone compilation and execution of five emitted callable types as both
+  Zig and C.
+
+Compiler cost, scaling, emitted size, and runtime measurements are in the
+[v0.2.0 validation baseline](docs/validation/release-baseline.md).
+
 ## 0.1.0 — 2026-07-25
 
 First public release. Bombelli is a compile-time symbolic mathematics
@@ -124,4 +136,4 @@ parser, allocator, graph traversal, or dynamic dispatch.
 - Standalone execution of emitted expression, quadrature, and Newton code
 
 Compiler cost, scaling, code size, and runtime measurements are in the
-[validation baseline](docs/validation/release-baseline.md).
+[v0.1.0 validation baseline](docs/validation/v0.1.0.md).

@@ -194,48 +194,58 @@ test { try std.testing.expectEqual(@as(f64, 1.0), value.eval(.{})); }
 def measure_emission(
     zig: str,
     repo: Path,
-    temporary: Path,
 ) -> list[dict[str, int | str]]:
     generators = (
-        "generate_expression_emission.zig",
-        "generate_quadrature_emission.zig",
-        "generate_newton_emission.zig",
+        (
+            "expression",
+            "generate_expression_zig.zig",
+            "generate_expression_c.zig",
+        ),
+        (
+            "smooth_expression",
+            "generate_smooth_expression_zig.zig",
+            "generate_smooth_expression_c.zig",
+        ),
+        (
+            "gradient",
+            "generate_gradient_zig.zig",
+            "generate_gradient_c.zig",
+        ),
+        (
+            "quadrature",
+            "generate_quadrature_zig.zig",
+            "generate_quadrature_c.zig",
+        ),
+        (
+            "newton",
+            "generate_newton_zig.zig",
+            "generate_newton_c.zig",
+        ),
     )
     results = []
-    for name in generators:
-        generated = run(
-            [
-                zig,
-                "run",
-                "--dep",
-                "bombelli",
-                f"-Mroot={repo / 'tests' / 'codegen' / name}",
-                f"-Mbombelli={repo / 'src' / 'root.zig'}",
-            ],
-            cwd=repo,
-        ).stdout
-        source_path = temporary / name.replace("generate_", "")
-        object_path = temporary / (source_path.stem + ".o")
-        source_path.write_text(generated)
-        run(
-            [
-                zig,
-                "build-obj",
-                str(source_path),
-                "-OReleaseFast",
-                f"-femit-bin={object_path}",
-            ],
-            cwd=repo,
-        )
+    for name, zig_generator, c_generator in generators:
+        sources = {}
+        for target, generator in (("zig", zig_generator), ("c", c_generator)):
+            sources[target] = run(
+                [
+                    zig,
+                    "run",
+                    "--dep",
+                    "bombelli",
+                    f"-Mroot={repo / 'tests' / 'codegen' / generator}",
+                    f"-Mbombelli={repo / 'src' / 'root.zig'}",
+                ],
+                cwd=repo,
+            ).stdout
         result = {
             "name": name,
-            "source_bytes": len(generated.encode()),
-            "object_bytes": object_path.stat().st_size,
+            "zig_source_bytes": len(sources["zig"].encode()),
+            "c_source_bytes": len(sources["c"].encode()),
         }
         results.append(result)
         print(
-            f"{name}: {result['source_bytes']} source bytes, "
-            f"{result['object_bytes']} object bytes",
+            f"{name}: {result['zig_source_bytes']} bytes of Zig, "
+            f"{result['c_source_bytes']} bytes of C",
             flush=True,
         )
     return results
@@ -359,7 +369,7 @@ def main() -> None:
                 "zig": run([zig, "version"], cwd=repo).stdout.strip(),
             },
             "compile_scaling": measure_scaling(zig, repo, temporary),
-            "emission": measure_emission(zig, repo, temporary),
+            "emission": measure_emission(zig, repo),
             "runtime": measure_runtime(zig, repo, temporary),
         }
     print(json.dumps(report, indent=2))

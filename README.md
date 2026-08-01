@@ -131,8 +131,8 @@ targets to single precision, which in C also selects the `sinf`/`powf` family.
 The test suite compiles the emitted C with `-std=c99 -Wall -Wextra -Werror`,
 runs it, and compares it against Bombelli's own evaluator.
 
-On a five-million-evaluation benchmark, a Bombelli-compiled expression ran at
-0.9991× the speed of equivalent handwritten Zig. Parity, as it should be,
+On a five-million-evaluation benchmark, a Bombelli-compiled expression took
+0.9910× as long as equivalent handwritten Zig. Parity, as it should be,
 because by runtime it _is_ handwritten-shaped code
 ([measurements](docs/validation/release-baseline.md)).
 
@@ -349,7 +349,7 @@ exe.root_module.addImport("bombelli", bombelli.module("bombelli"));
 
 ## More
 
-- [Changelog and v0.1.0 scope](CHANGELOG.md)
+- [Changelog and release history](CHANGELOG.md)
 - [Fitting runtime data](docs/guides/fitting-runtime-data.md)
 - [Expression-growth and construction baseline](docs/architecture/stress-baseline.md)
 - [Building a Symbolic Differentiator That Compiles Away Completely in Zig](docs/blog/building-a-symbolic-differentiator-that-compiles-away.md)
