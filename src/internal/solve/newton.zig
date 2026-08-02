@@ -13,6 +13,15 @@ pub const NewtonStatus = enum {
     singular_jacobian,
     non_converged,
     non_finite,
+    stagnated,
+    line_search_failed,
+};
+
+/// Controls whether Newton steps are accepted whole or globalized by a
+/// sufficient-decrease backtracking line search.
+pub const NewtonGlobalization = enum {
+    none,
+    backtracking,
 };
 
 pub const SensitivityStatus = enum {
@@ -37,6 +46,9 @@ pub fn NewtonResultForDomain(
         iterations: usize,
         residual_norm: f64,
         step_norm: f64,
+        step_scale: f64,
+        function_evaluations: usize,
+        backtracks: usize,
         status: NewtonStatus,
     };
 }
@@ -63,7 +75,12 @@ pub fn NewtonSolverForDomain(
         jacobian_program: ast.ExprMatrix(N, N),
         unknowns: [N][]const u8,
         tolerance: f64,
+        step_tolerance: f64,
         pivot_tolerance: f64,
+        globalization: NewtonGlobalization,
+        max_backtracks: usize,
+        backtrack_factor: f64,
+        armijo_constant: f64,
 
         pub const mathematical_domain = problem_domain;
         pub const ScalarType = Scalar;
@@ -129,6 +146,9 @@ pub fn NewtonSolverForDomain(
                 values,
             );
             var residual_norm = infinityNorm(N, residual);
+            var function_evaluations: usize = 1;
+            var backtracks: usize = 0;
+            var step_scale: f64 = 0.0;
             if (!allFiniteVector(N, values) or
                 !allFiniteVector(N, residual) or
                 !std.math.isFinite(residual_norm))
@@ -141,6 +161,9 @@ pub fn NewtonSolverForDomain(
                     0,
                     residual_norm,
                     0.0,
+                    step_scale,
+                    function_evaluations,
+                    backtracks,
                     .non_finite,
                 );
             }
@@ -153,6 +176,9 @@ pub fn NewtonSolverForDomain(
                     0,
                     residual_norm,
                     0.0,
+                    step_scale,
+                    function_evaluations,
+                    backtracks,
                     .converged,
                 );
             }
@@ -178,6 +204,9 @@ pub fn NewtonSolverForDomain(
                         iteration,
                         residual_norm,
                         step_norm,
+                        step_scale,
+                        function_evaluations,
+                        backtracks,
                         .non_finite,
                     );
                 }
@@ -199,22 +228,113 @@ pub fn NewtonSolverForDomain(
                     iteration,
                     residual_norm,
                     step_norm,
+                    step_scale,
+                    function_evaluations,
+                    backtracks,
                     .singular_jacobian,
                 );
-                step_norm = infinityNorm(N, step);
-                for (&values, step) |*entry, increment| {
-                    entry.* = number.add(entry.*, increment);
+                const full_step_norm = infinityNorm(N, step);
+                if (!allFiniteVector(N, step) or
+                    !std.math.isFinite(full_step_norm))
+                {
+                    return result(
+                        problem_domain,
+                        N,
+                        values,
+                        residual,
+                        iteration,
+                        residual_norm,
+                        full_step_norm,
+                        1.0,
+                        function_evaluations,
+                        backtracks,
+                        .non_finite,
+                    );
                 }
-                residual = evaluation.evaluateVectorWithVariablesAs(
-                    Scalar,
-                    N,
-                    N,
-                    self.residuals,
-                    inputs,
-                    self.unknowns,
-                    values,
-                );
-                residual_norm = infinityNorm(N, residual);
+
+                if (self.globalization == .none) {
+                    step_scale = 1.0;
+                    step_norm = full_step_norm;
+                    for (&values, step) |*entry, increment| {
+                        entry.* = number.add(entry.*, increment);
+                    }
+                    residual = evaluation.evaluateVectorWithVariablesAs(
+                        Scalar,
+                        N,
+                        N,
+                        self.residuals,
+                        inputs,
+                        self.unknowns,
+                        values,
+                    );
+                    function_evaluations += 1;
+                    residual_norm = infinityNorm(N, residual);
+                } else {
+                    var trial_scale: f64 = 1.0;
+                    var accepted = false;
+                    for (0..self.max_backtracks + 1) |attempt| {
+                        const scale = number.fromReal(Scalar, trial_scale);
+                        var trial_values: [N]Scalar = undefined;
+                        for (&trial_values, values, step) |
+                            *trial_value,
+                            current_value,
+                            increment,
+                        | {
+                            trial_value.* = number.add(
+                                current_value,
+                                number.mul(scale, increment),
+                            );
+                        }
+                        const trial_residual =
+                            evaluation.evaluateVectorWithVariablesAs(
+                                Scalar,
+                                N,
+                                N,
+                                self.residuals,
+                                inputs,
+                                self.unknowns,
+                                trial_values,
+                            );
+                        function_evaluations += 1;
+                        const trial_norm = infinityNorm(N, trial_residual);
+                        const sufficient_decrease = trial_norm <= self.tolerance or
+                            trial_norm <= (1.0 - self.armijo_constant * trial_scale) *
+                                residual_norm;
+                        if (allFiniteVector(N, trial_values) and
+                            allFiniteVector(N, trial_residual) and
+                            std.math.isFinite(trial_norm) and
+                            sufficient_decrease)
+                        {
+                            values = trial_values;
+                            residual = trial_residual;
+                            residual_norm = trial_norm;
+                            step_scale = trial_scale;
+                            step_norm = full_step_norm * trial_scale;
+                            accepted = true;
+                            break;
+                        }
+                        if (attempt == self.max_backtracks) break;
+                        trial_scale *= self.backtrack_factor;
+                        backtracks += 1;
+                    }
+                    if (!accepted) {
+                        step_scale = trial_scale;
+                        step_norm = full_step_norm * trial_scale;
+                        return result(
+                            problem_domain,
+                            N,
+                            values,
+                            residual,
+                            iteration,
+                            residual_norm,
+                            step_norm,
+                            step_scale,
+                            function_evaluations,
+                            backtracks,
+                            .line_search_failed,
+                        );
+                    }
+                }
                 if (!allFiniteVector(N, values) or
                     !allFiniteVector(N, residual) or
                     !std.math.isFinite(step_norm) or
@@ -228,6 +348,9 @@ pub fn NewtonSolverForDomain(
                         iteration + 1,
                         residual_norm,
                         step_norm,
+                        step_scale,
+                        function_evaluations,
+                        backtracks,
                         .non_finite,
                     );
                 }
@@ -240,7 +363,29 @@ pub fn NewtonSolverForDomain(
                         iteration + 1,
                         residual_norm,
                         step_norm,
+                        step_scale,
+                        function_evaluations,
+                        backtracks,
                         .converged,
+                    );
+                }
+                if (self.globalization == .backtracking and
+                    self.step_tolerance > 0.0 and
+                    step_norm <= self.step_tolerance *
+                        (1.0 + infinityNorm(N, values)))
+                {
+                    return result(
+                        problem_domain,
+                        N,
+                        values,
+                        residual,
+                        iteration + 1,
+                        residual_norm,
+                        step_norm,
+                        step_scale,
+                        function_evaluations,
+                        backtracks,
+                        .stagnated,
                     );
                 }
             }
@@ -252,6 +397,9 @@ pub fn NewtonSolverForDomain(
                 max_iterations,
                 residual_norm,
                 step_norm,
+                step_scale,
+                function_evaluations,
+                backtracks,
                 .non_converged,
             );
         }
@@ -276,6 +424,11 @@ pub fn NewtonSolverForDomain(
             @setEvalBranchQuota(limits.eval_branch.solve);
             if (problem_domain == .complex) {
                 @compileError("Bombelli complex Newton source emission is not implemented yet");
+            }
+            if (self.globalization != .none) {
+                @compileError(
+                    "Bombelli Newton source emission currently requires '.globalization = .none'",
+                );
             }
             return @import("../codegen/emit.zig").emitNewton(self, options);
         }
@@ -445,6 +598,7 @@ pub fn compileSystem(
         @compileError("Bombelli Newton solver currently requires a square system");
     }
     const Options = @TypeOf(options);
+    validateCompileOptions(Options);
     options_validation.requireTag(
         options,
         "algorithm",
@@ -473,6 +627,50 @@ pub fn compileSystem(
     if (!std.math.isFinite(pivot_tolerance) or pivot_tolerance <= 0.0) {
         @compileError("Bombelli Newton pivot_tolerance must be positive and finite");
     }
+    const step_tolerance: f64 = if (@hasField(Options, "step_tolerance"))
+        @floatCast(options.step_tolerance)
+    else
+        tolerance;
+    if (!std.math.isFinite(step_tolerance) or step_tolerance < 0.0) {
+        @compileError("Bombelli Newton step_tolerance must be nonnegative and finite");
+    }
+    const globalization: NewtonGlobalization = if (@hasField(
+        Options,
+        "globalization",
+    )) blk: {
+        const requested = @tagName(options.globalization);
+        if (std.mem.eql(u8, requested, "none")) break :blk .none;
+        if (std.mem.eql(u8, requested, "backtracking")) {
+            break :blk .backtracking;
+        }
+        @compileError(
+            "Bombelli Newton globalization must be '.none' or '.backtracking'",
+        );
+    } else .none;
+    const max_backtracks: usize = if (@hasField(Options, "max_backtracks"))
+        @intCast(options.max_backtracks)
+    else
+        16;
+    const backtrack_factor: f64 = if (@hasField(Options, "backtrack_factor"))
+        @floatCast(options.backtrack_factor)
+    else
+        0.5;
+    if (!std.math.isFinite(backtrack_factor) or
+        backtrack_factor <= 0.0 or
+        backtrack_factor >= 1.0)
+    {
+        @compileError("Bombelli Newton backtrack_factor must be finite and between 0 and 1");
+    }
+    const armijo_constant: f64 = if (@hasField(Options, "armijo_constant"))
+        @floatCast(options.armijo_constant)
+    else
+        1e-4;
+    if (!std.math.isFinite(armijo_constant) or
+        armijo_constant <= 0.0 or
+        armijo_constant >= 1.0)
+    {
+        @compileError("Bombelli Newton armijo_constant must be finite and between 0 and 1");
+    }
     if (problem.domain == .complex) {
         validateHolomorphic(N, problem.residuals);
     }
@@ -492,8 +690,34 @@ pub fn compileSystem(
         .jacobian_program = multi.matrix(N, N, derivatives),
         .unknowns = problem.unknowns,
         .tolerance = tolerance,
+        .step_tolerance = step_tolerance,
         .pivot_tolerance = pivot_tolerance,
+        .globalization = globalization,
+        .max_backtracks = max_backtracks,
+        .backtrack_factor = backtrack_factor,
+        .armijo_constant = armijo_constant,
     };
+}
+
+fn validateCompileOptions(comptime Options: type) void {
+    for (@typeInfo(Options).@"struct".fields) |field| {
+        const recognized = std.mem.eql(u8, field.name, "algorithm") or
+            std.mem.eql(u8, field.name, "jacobian") or
+            std.mem.eql(u8, field.name, "max_iterations") or
+            std.mem.eql(u8, field.name, "tolerance") or
+            std.mem.eql(u8, field.name, "step_tolerance") or
+            std.mem.eql(u8, field.name, "pivot_tolerance") or
+            std.mem.eql(u8, field.name, "globalization") or
+            std.mem.eql(u8, field.name, "max_backtracks") or
+            std.mem.eql(u8, field.name, "backtrack_factor") or
+            std.mem.eql(u8, field.name, "armijo_constant");
+        if (!recognized) {
+            @compileError(std.fmt.comptimePrint(
+                "Bombelli Newton solver option '.{s}' is not recognized",
+                .{field.name},
+            ));
+        }
+    }
 }
 
 fn validateHolomorphic(
@@ -605,6 +829,9 @@ fn result(
     iterations: usize,
     residual_norm: f64,
     step_norm: f64,
+    step_scale: f64,
+    function_evaluations: usize,
+    backtracks: usize,
     status: NewtonStatus,
 ) NewtonResultForDomain(problem_domain, N) {
     return .{
@@ -613,6 +840,9 @@ fn result(
         .iterations = iterations,
         .residual_norm = residual_norm,
         .step_norm = step_norm,
+        .step_scale = step_scale,
+        .function_evaluations = function_evaluations,
+        .backtracks = backtracks,
         .status = status,
     };
 }

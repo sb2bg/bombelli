@@ -349,6 +349,99 @@ test "generated Newton solvers converge with symbolic Jacobians" {
     try std.testing.expect(result.iterations > 0);
 }
 
+test "backtracking Newton globalizes difficult steps and reports diagnostics" {
+    const problem_value = comptime equationProblem("x^3 = 1", .{
+        .unknowns = .{.x},
+        .domain = .real,
+    });
+    const undamped = comptime problem_value.compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 12,
+        .tolerance = 1e-12,
+    });
+    const plain_result = undamped.eval(.{ .initial = .{ .x = 0.01 } });
+    try std.testing.expectEqual(NewtonStatus.non_converged, plain_result.status);
+
+    const damped = comptime problem_value.compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 12,
+        .tolerance = 1e-12,
+        .globalization = .backtracking,
+        .max_backtracks = 16,
+    });
+    const damped_result = damped.eval(.{ .initial = .{ .x = 0.01 } });
+    try std.testing.expectEqual(NewtonStatus.converged, damped_result.status);
+    try std.testing.expectApproxEqAbs(
+        1.0,
+        damped.value(damped_result, .x),
+        1e-12,
+    );
+    try std.testing.expect(damped_result.backtracks > 0);
+    try std.testing.expect(
+        damped_result.function_evaluations > damped_result.iterations + 1,
+    );
+    try std.testing.expect(damped_result.step_scale > 0.0);
+    try std.testing.expect(damped_result.step_scale <= 1.0);
+
+    const complex_damped = comptime equationProblem("z^3 = 1", .{
+        .unknowns = .{.z},
+        .domain = .complex,
+    }).compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 12,
+        .tolerance = 1e-12,
+        .globalization = .backtracking,
+        .max_backtracks = 16,
+    });
+    const complex_result = complex_damped.eval(.{
+        .initial = .{ .z = Complex.init(0.01, 0.0) },
+    });
+    try std.testing.expectEqual(NewtonStatus.converged, complex_result.status);
+    try expectComplexApprox(
+        Complex.init(1.0, 0.0),
+        complex_damped.value(complex_result, .z),
+        1e-12,
+    );
+}
+
+test "backtracking Newton distinguishes failed search from stagnation" {
+    const failed = comptime equationProblem("x^3 - 2*x + 2 = 0", .{
+        .unknowns = .{.x},
+        .domain = .real,
+    }).compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 8,
+        .tolerance = 1e-12,
+        .globalization = .backtracking,
+        .max_backtracks = 0,
+    }).eval(.{ .initial = .{ .x = 1.0 } });
+    try std.testing.expectEqual(NewtonStatus.line_search_failed, failed.status);
+    try std.testing.expectEqual(@as(usize, 0), failed.iterations);
+    try std.testing.expectEqual(@as(usize, 2), failed.function_evaluations);
+    try std.testing.expectEqual(@as(usize, 0), failed.backtracks);
+    try std.testing.expectEqual(@as(f64, 1.0), failed.values[0]);
+
+    const stagnated = comptime equationProblem("x^2 = 2", .{
+        .unknowns = .{.x},
+        .domain = .real,
+    }).compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 16,
+        .tolerance = 1e-30,
+        .step_tolerance = 1e-6,
+        .globalization = .backtracking,
+    }).eval(.{ .initial = .{ .x = 1.0 } });
+    try std.testing.expectEqual(NewtonStatus.stagnated, stagnated.status);
+    try std.testing.expect(stagnated.residual_norm > 1e-30);
+    try std.testing.expect(stagnated.step_norm <= 1e-6 *
+        (1.0 + @abs(stagnated.values[0])));
+}
+
 test "generated Newton solvers converge over complex systems" {
     const constant_solver = comptime equationProblem("z = i", .{
         .unknowns = .{.z},

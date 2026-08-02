@@ -108,6 +108,8 @@ pub const AdaptiveQuadratureStatus = adaptive_quadrature.AdaptiveStatus;
 pub const HybridIntegral = hybrid.HybridIntegral;
 /// Completion status from a generated Newton solver.
 pub const NewtonStatus = newton.NewtonStatus;
+/// Newton step globalization strategy.
+pub const NewtonGlobalization = newton.NewtonGlobalization;
 /// Returns the result type for a Newton solver with `N` unknowns.
 pub const NewtonResult = newton.NewtonResult;
 /// Returns a Newton result type whose scalar follows `problem_domain`.
