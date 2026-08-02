@@ -70,6 +70,43 @@ pub fn NewtonSolverForDomain(
         pub const maximum_iterations = max_iterations;
         const Self = @This();
 
+        /// Returns a solved value by its declared unknown name.
+        pub inline fn value(
+            comptime self: Self,
+            solve_result: NewtonResultForDomain(problem_domain, N),
+            comptime unknown: anytype,
+        ) Scalar {
+            return solve_result.values[self.unknownIndex(unknown)];
+        }
+
+        /// Returns the array index assigned to a declared unknown.
+        pub fn unknownIndex(
+            comptime self: Self,
+            comptime unknown: anytype,
+        ) usize {
+            const name = @tagName(unknown);
+            inline for (self.unknowns, 0..) |candidate, index| {
+                if (comptime std.mem.eql(u8, name, candidate)) return index;
+            }
+            @compileError(std.fmt.comptimePrint(
+                "Bombelli Newton unknown '.{s}' is not declared",
+                .{name},
+            ));
+        }
+
+        /// Returns the residual for an equation in declaration order.
+        pub inline fn residualAt(
+            comptime self: Self,
+            solve_result: NewtonResultForDomain(problem_domain, N),
+            comptime equation_index: usize,
+        ) Scalar {
+            _ = self;
+            if (equation_index >= N) {
+                @compileError("Bombelli Newton residual index is out of bounds");
+            }
+            return solve_result.residual[equation_index];
+        }
+
         pub inline fn eval(
             comptime self: Self,
             inputs: anytype,
@@ -165,8 +202,8 @@ pub fn NewtonSolverForDomain(
                     .singular_jacobian,
                 );
                 step_norm = infinityNorm(N, step);
-                for (&values, step) |*value, increment| {
-                    value.* = number.add(value.*, increment);
+                for (&values, step) |*entry, increment| {
+                    entry.* = number.add(entry.*, increment);
                 }
                 residual = evaluation.evaluateVectorWithVariablesAs(
                     Scalar,
@@ -280,6 +317,26 @@ pub fn NewtonSensitivitySolverForDomain(
 
         const Self = @This();
 
+        /// Returns a root value by its declared unknown name.
+        pub inline fn value(
+            comptime self: Self,
+            solve_result: SensitivityResultForDomain(problem_domain, N),
+            comptime unknown: anytype,
+        ) Scalar {
+            return self.solver.value(solve_result.root, unknown);
+        }
+
+        /// Returns a root sensitivity by its declared unknown name.
+        pub inline fn sensitivity(
+            comptime self: Self,
+            solve_result: SensitivityResultForDomain(problem_domain, N),
+            comptime unknown: anytype,
+        ) Scalar {
+            return solve_result.sensitivities[
+                self.solver.unknownIndex(unknown)
+            ];
+        }
+
         pub inline fn eval(
             comptime self: Self,
             inputs: anytype,
@@ -322,8 +379,8 @@ pub fn NewtonSensitivitySolverForDomain(
                 };
             }
             var right_hand_side: [N]Scalar = undefined;
-            for (parameter_derivatives, 0..) |value, index| {
-                right_hand_side[index] = number.neg(value);
+            for (parameter_derivatives, 0..) |derivative, index| {
+                right_hand_side[index] = number.neg(derivative);
             }
             const sensitivities = solveLinearSystemForScalar(
                 Scalar,

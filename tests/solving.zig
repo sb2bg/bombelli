@@ -331,14 +331,20 @@ test "generated Newton solvers converge with symbolic Jacobians" {
     try std.testing.expectEqual(NewtonStatus.converged, result.status);
     try std.testing.expectApproxEqAbs(
         1.0 / @sqrt(2.0),
-        result.values[0],
+        solver.value(result, .x),
         1e-12,
     );
     try std.testing.expectApproxEqAbs(
         1.0 / @sqrt(2.0),
-        result.values[1],
+        solver.value(result, .y),
         1e-12,
     );
+    try std.testing.expectApproxEqAbs(
+        result.residual[0],
+        solver.residualAt(result, 0),
+        0.0,
+    );
+    try std.testing.expectEqual(@as(usize, 1), comptime solver.unknownIndex(.y));
     try std.testing.expect(result.residual_norm <= 1e-12);
     try std.testing.expect(result.iterations > 0);
 }
@@ -492,12 +498,17 @@ test "generated solver sensitivities use implicit differentiation" {
     try std.testing.expectEqual(NewtonStatus.converged, result.root.status);
     try std.testing.expectApproxEqAbs(
         1.0 / @sqrt(2.0),
-        result.sensitivities[0],
+        sensitivity_solver.sensitivity(result, .x),
         1e-12,
     );
     try std.testing.expectApproxEqAbs(
         1.0 / @sqrt(2.0),
-        result.sensitivities[1],
+        sensitivity_solver.sensitivity(result, .y),
+        1e-12,
+    );
+    try std.testing.expectApproxEqAbs(
+        1.0 / @sqrt(2.0),
+        sensitivity_solver.value(result, .x),
         1e-12,
     );
 }
