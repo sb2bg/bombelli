@@ -14,6 +14,14 @@
   exponential, and logarithmic functions.
 - Complex quadratic solution branches. Exact polynomial results remain
   symbolic and can be evaluated with `evalAs(std.math.Complex(f64), ...)`.
+- The exact symbolic imaginary-unit constant `i`, including canonical
+  rendering, differentiation, complex expression evaluation, and complex
+  Newton residuals.
+- Named Newton accessors for solved values, unknown indices, residual
+  positions, root sensitivities, and sensitivity roots.
+- Opt-in Newton globalization with sufficient-decrease backtracking over real
+  and complex systems, scale-aware step stagnation, line-search failure
+  status, and function-evaluation/backtrack/step-scale diagnostics.
 
 ### Limits
 
@@ -21,6 +29,8 @@
   are rejected at compile time.
 - Nonlinear least squares, batch evaluation, quadrature, and standalone source
   emission remain real-only.
+- Standalone Newton source emission currently supports only undamped
+  `.globalization = .none` solvers.
 
 ## 0.2.0 — 2026-08-01
 

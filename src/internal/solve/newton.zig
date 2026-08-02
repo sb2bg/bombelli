@@ -9,11 +9,17 @@ const number = @import("../runtime/number.zig");
 const options_validation = @import("../core/options.zig");
 
 pub const NewtonStatus = enum {
+    /// The residual infinity norm reached `tolerance`.
     converged,
+    /// The symbolic Jacobian was numerically singular at the current point.
     singular_jacobian,
+    /// The configured Newton iteration budget was exhausted.
     non_converged,
+    /// An iterate, residual, Jacobian, or step became non-finite.
     non_finite,
+    /// A scaled accepted step was too small to make further progress.
     stagnated,
+    /// No trial step produced sufficient residual decrease.
     line_search_failed,
 };
 
@@ -41,13 +47,21 @@ pub fn NewtonResultForDomain(
 ) type {
     const Scalar = domain.Scalar(problem_domain);
     return struct {
+        /// Unknown values in declaration order.
         values: [N]Scalar,
+        /// Equation residuals in declaration order.
         residual: [N]Scalar,
+        /// Number of accepted Newton steps.
         iterations: usize,
+        /// Infinity norm of `residual`.
         residual_norm: f64,
+        /// Infinity norm of the last accepted or attempted scaled step.
         step_norm: f64,
+        /// Scale applied to the last accepted or attempted full Newton step.
         step_scale: f64,
+        /// Residual evaluations, including the initial point and trial steps.
         function_evaluations: usize,
+        /// Total line-search reductions across all iterations.
         backtracks: usize,
         status: NewtonStatus,
     };

@@ -150,6 +150,9 @@ Bombelli targets Zig 0.16.0 and uses only Zig's standard library.
 
 Evaluation can keep intermediates in `f16`, `f32`, `f64`, `f80`, `f128`, or
 Zig's standard `std.math.Complex(f32/f64)` with `evalAs`.
+The expression language reserves exact symbolic constants `pi` and `i`; `i`
+evaluates to the imaginary unit for a complex scalar and to `NaN` in a real
+evaluation, like any other expression outside the real domain.
 Structure-of-arrays batches remain real-valued and have sequential and
 parallel caller-owned APIs. Supported elementary functions include
 trigonometric, inverse trigonometric, hyperbolic, exponential, logarithmic,
@@ -183,8 +186,33 @@ const result = solver.eval(.{
     .initial = .{ .x = 1.0, .y = 1.0 },
     .r = 2.0,
 });
-// result.values, result.status, result.iterations
+const x = solver.value(result, .x);
+const y = solver.value(result, .y);
+// result.status, result.iterations, result.residual_norm
 ```
+
+For difficult initial points, opt into a sufficient-decrease backtracking
+line search:
+
+```zig
+const robust_solver = comptime problem.compile(.{
+    .algorithm = .newton,
+    .jacobian = .symbolic,
+    .max_iterations = 32,
+    .tolerance = 1e-12,
+    .globalization = .backtracking,
+    .max_backtracks = 16,
+});
+```
+
+Undamped `.globalization = .none` remains the default. Backtracking defaults
+to `.backtrack_factor = 0.5` and `.armijo_constant = 1e-4`.
+`.step_tolerance` defaults to `.tolerance` and detects a step too small
+relative to the current solution scale. Results distinguish `converged`,
+`singular_jacobian`, `non_converged`, `non_finite`, `stagnated`, and
+`line_search_failed`, and report `step_scale`, `function_evaluations`, and
+`backtracks`. Standalone Newton source emission currently requires the
+undamped default.
 
 The same API compiles holomorphic systems over the complex domain. Solver
 values, residuals, Jacobians, steps, parameters, and sensitivities then use
@@ -194,6 +222,10 @@ Zig's standard `std.math.Complex(f64)`; convergence norms and tolerances stay
 ```zig
 const std = @import("std");
 const Complex = std.math.Complex(f64);
+
+const euler_zero = comptime bombelli
+    .expr("exp(i*pi) + 1")
+    .evalAs(Complex, .{});
 
 const complex_solver = comptime bombelli
     .equationProblem("z^2 + 1 = 0", .{
@@ -210,7 +242,8 @@ const complex_solver = comptime bombelli
 const complex_result = complex_solver.eval(.{
     .initial = .{ .z = Complex.init(0.5, 0.5) },
 });
-// complex_result.values[0] is approximately 0 + 1i
+const z = complex_solver.value(complex_result, .z);
+// z is approximately 0 + 1i
 ```
 
 Complex Newton currently accepts holomorphic expression programs. `abs`,
@@ -230,12 +263,12 @@ const ds = sensitivity.eval(.{
     .initial = .{ .x = 1.0, .y = 1.0 },
     .r = 2.0,
 });
-// ds.sensitivities = { dx/dr, dy/dr }
+const dx_dr = sensitivity.sensitivity(ds, .x);
+const dy_dr = sensitivity.sensitivity(ds, .y);
 ```
 
-Both the solver and its sensitivities can be emitted as standalone Zig. The
-full pipeline (strings in, inspectable allocation-free kernel out) is the
-point.
+Real, undamped solvers can also be emitted as standalone Zig or C. The full
+pipeline (strings in, inspectable allocation-free kernel out) is the point.
 
 ## More workflows
 
