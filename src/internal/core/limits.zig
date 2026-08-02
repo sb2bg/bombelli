@@ -5,6 +5,7 @@ pub const polynomial_variables = 128;
 pub const symbolic_conditions = 128;
 
 pub const eval_branch = struct {
+    pub const evaluation = 100_000;
     pub const render = 1_000_000;
     pub const vector_render = 2_000_000;
     pub const matrix_render = 4_000_000;

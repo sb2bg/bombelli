@@ -556,6 +556,34 @@ test "rational powers are canonical and preserve exact bases" {
     try std.testing.expect(std.math.isNan(nonreal_square_root.eval(.{})));
 }
 
+test "expressions evaluate with the standard complex scalar" {
+    const Complex = std.math.Complex(f64);
+
+    const square_root = comptime expr("sqrt(-1)");
+    const imaginary_unit = square_root.evalAs(Complex, .{});
+    try std.testing.expectApproxEqAbs(0.0, imaginary_unit.re, 1e-15);
+    try std.testing.expectApproxEqAbs(1.0, imaginary_unit.im, 1e-15);
+
+    const polynomial = comptime expr("z^2 + 1");
+    const zero = polynomial.evalAs(Complex, .{
+        .z = Complex.init(0.0, 1.0),
+    });
+    try std.testing.expectApproxEqAbs(0.0, zero.re, 1e-15);
+    try std.testing.expectApproxEqAbs(0.0, zero.im, 1e-15);
+
+    const elementary = comptime expr("sin(z) + exp(z) + ln(z)");
+    const z = Complex.init(0.5, -0.25);
+    const actual = elementary.evalAs(Complex, .{ .z = z });
+    const expected = std.math.complex.sin(z)
+        .add(std.math.complex.exp(z))
+        .add(std.math.complex.log(z));
+    try std.testing.expectApproxEqAbs(expected.re, actual.re, 1e-14);
+    try std.testing.expectApproxEqAbs(expected.im, actual.im, 1e-14);
+
+    const promoted = comptime expr("x + 2").evalAs(Complex, .{ .x = 1.5 });
+    try std.testing.expectEqual(Complex.init(3.5, 0.0), promoted);
+}
+
 test "closure functions evaluate and differentiate" {
     const f = comptime expr("sqrt(x) + abs(y) + atan(z) + tan(z)");
     const actual = f.eval(.{ .x = 9.0, .y = -2.0, .z = 0.25 });

@@ -1,6 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const ast = @import("../../expression.zig");
+const limits = @import("../core/limits.zig");
+const number = @import("number.zig");
 
 pub const BatchInputError = error{
     InputLengthMismatch,
@@ -346,14 +348,36 @@ pub inline fn evaluateVectorWithVariables(
     comptime variable_names: [N][]const u8,
     variable_values: [N]f64,
 ) [R]f64 {
-    const results = evaluateNodesWithVariables(
+    return evaluateVectorWithVariablesAs(
+        f64,
+        R,
+        N,
+        expression,
+        values,
+        variable_names,
+        variable_values,
+    );
+}
+
+pub inline fn evaluateVectorWithVariablesAs(
+    comptime T: type,
+    comptime R: usize,
+    comptime N: usize,
+    comptime expression: ast.ExprVector(R),
+    values: anytype,
+    comptime variable_names: [N][]const u8,
+    variable_values: [N]T,
+) [R]T {
+    validateEvaluationScalar(T);
+    const results = evaluateNodesWithVariablesAs(
+        T,
         N,
         expression.nodes,
         values,
         variable_names,
         variable_values,
     );
-    var output: [R]f64 = undefined;
+    var output: [R]T = undefined;
     inline for (expression.roots, 0..) |root, index| {
         output[index] = results[@intCast(root)];
     }
@@ -369,14 +393,38 @@ pub inline fn evaluateMatrixWithVariables(
     comptime variable_names: [N][]const u8,
     variable_values: [N]f64,
 ) [R][C]f64 {
-    const results = evaluateNodesWithVariables(
+    return evaluateMatrixWithVariablesAs(
+        f64,
+        R,
+        C,
+        N,
+        expression,
+        values,
+        variable_names,
+        variable_values,
+    );
+}
+
+pub inline fn evaluateMatrixWithVariablesAs(
+    comptime T: type,
+    comptime R: usize,
+    comptime C: usize,
+    comptime N: usize,
+    comptime expression: ast.ExprMatrix(R, C),
+    values: anytype,
+    comptime variable_names: [N][]const u8,
+    variable_values: [N]T,
+) [R][C]T {
+    validateEvaluationScalar(T);
+    const results = evaluateNodesWithVariablesAs(
+        T,
         N,
         expression.nodes,
         values,
         variable_names,
         variable_values,
     );
-    var output: [R][C]f64 = undefined;
+    var output: [R][C]T = undefined;
     inline for (expression.roots, 0..) |row, row_index| {
         inline for (row, 0..) |root, column_index| {
             output[row_index][column_index] = results[@intCast(root)];
@@ -408,6 +456,7 @@ inline fn evaluateNodesWithResolver(
     context: anytype,
     comptime resolveSymbol: anytype,
 ) [nodes.len]Number {
+    @setEvalBranchQuota(limits.eval_branch.evaluation);
     // Finished programs are topologically ordered, so this unrolled loop emits
     // one numerical computation per stored node across every output root.
     var results: [nodes.len]Number = undefined;
@@ -419,48 +468,60 @@ inline fn evaluateNodesWithResolver(
             .float => |value| numberValue(Number, value),
             .constant => |value| constantValue(Number, value),
             .symbol => |name| resolveSymbol(Number, name, context),
-            .add => |binary| results[@intCast(binary.left)] +
+            .add => |binary| number.add(
+                results[@intCast(binary.left)],
                 results[@intCast(binary.right)],
+            ),
             .add_nary => |operands| blk: {
                 var sum = numberValue(Number, 0.0);
-                inline for (operands) |child| sum += results[@intCast(child)];
+                inline for (operands) |child| {
+                    sum = number.add(sum, results[@intCast(child)]);
+                }
                 break :blk sum;
             },
-            .sub => |binary| results[@intCast(binary.left)] -
+            .sub => |binary| number.sub(
+                results[@intCast(binary.left)],
                 results[@intCast(binary.right)],
-            .mul => |binary| results[@intCast(binary.left)] *
+            ),
+            .mul => |binary| number.mul(
+                results[@intCast(binary.left)],
                 results[@intCast(binary.right)],
+            ),
             .mul_nary => |operands| blk: {
                 var product = numberValue(Number, 1.0);
-                inline for (operands) |child| product *= results[@intCast(child)];
+                inline for (operands) |child| {
+                    product = number.mul(product, results[@intCast(child)]);
+                }
                 break :blk product;
             },
-            .div => |binary| results[@intCast(binary.left)] /
+            .div => |binary| number.div(
+                results[@intCast(binary.left)],
                 results[@intCast(binary.right)],
+            ),
             .pow => |power| integerPower(
                 results[@intCast(power.base)],
                 power.exponent,
             ),
-            .negate => |child| -results[@intCast(child)],
-            .sin => |child| @sin(results[@intCast(child)]),
-            .cos => |child| @cos(results[@intCast(child)]),
-            .tan => |child| @tan(results[@intCast(child)]),
-            .asin => |child| std.math.asin(results[@intCast(child)]),
-            .acos => |child| std.math.acos(results[@intCast(child)]),
-            .atan => |child| std.math.atan(results[@intCast(child)]),
-            .sinh => |child| hyperbolicSine(results[@intCast(child)]),
-            .cosh => |child| hyperbolicCosine(results[@intCast(child)]),
-            .tanh => |child| hyperbolicTangent(results[@intCast(child)]),
-            .abs => |child| @abs(results[@intCast(child)]),
-            .exp => |child| @exp(results[@intCast(child)]),
-            .ln => |child| @log(results[@intCast(child)]),
-            .log2 => |child| @log2(results[@intCast(child)]),
-            .log10 => |child| @log10(results[@intCast(child)]),
+            .negate => |child| number.neg(results[@intCast(child)]),
+            .sin => |child| number.sin(results[@intCast(child)]),
+            .cos => |child| number.cos(results[@intCast(child)]),
+            .tan => |child| number.tan(results[@intCast(child)]),
+            .asin => |child| number.asin(results[@intCast(child)]),
+            .acos => |child| number.acos(results[@intCast(child)]),
+            .atan => |child| number.atan(results[@intCast(child)]),
+            .sinh => |child| number.sinh(results[@intCast(child)]),
+            .cosh => |child| number.cosh(results[@intCast(child)]),
+            .tanh => |child| number.tanh(results[@intCast(child)]),
+            .abs => |child| number.absolute(results[@intCast(child)]),
+            .exp => |child| number.exp(results[@intCast(child)]),
+            .ln => |child| number.log(results[@intCast(child)]),
+            .log2 => |child| number.log2(results[@intCast(child)]),
+            .log10 => |child| number.log10(results[@intCast(child)]),
             .atan2 => |binary| arctangent2(
                 results[@intCast(binary.left)],
                 results[@intCast(binary.right)],
             ),
-            .hypot => |binary| std.math.hypot(
+            .hypot => |binary| hypotenuse(
                 results[@intCast(binary.left)],
                 results[@intCast(binary.right)],
             ),
@@ -491,75 +552,29 @@ inline fn evaluateNodesWithBoundVariable(
     );
 }
 
-inline fn evaluateNodesWithVariables(
+inline fn evaluateNodesWithVariablesAs(
+    comptime T: type,
     comptime N: usize,
     comptime nodes: []const ast.Node,
     values: anytype,
     comptime variable_names: [N][]const u8,
-    variable_values: [N]f64,
-) [nodes.len]f64 {
-    var results: [nodes.len]f64 = undefined;
-    inline for (nodes, 0..) |node, index| {
-        results[index] = switch (node) {
-            .integer => |value| @floatFromInt(value),
-            .rational => |value| value.toF64(),
-            .float => |value| value,
-            .constant => |value| value.value(),
-            .symbol => |name| variableValue(
-                N,
-                name,
-                values,
-                variable_names,
-                variable_values,
-            ),
-            .add => |binary| results[@intCast(binary.left)] +
-                results[@intCast(binary.right)],
-            .add_nary => |operands| blk: {
-                var sum: f64 = 0.0;
-                inline for (operands) |child| sum += results[@intCast(child)];
-                break :blk sum;
-            },
-            .sub => |binary| results[@intCast(binary.left)] -
-                results[@intCast(binary.right)],
-            .mul => |binary| results[@intCast(binary.left)] *
-                results[@intCast(binary.right)],
-            .mul_nary => |operands| blk: {
-                var product: f64 = 1.0;
-                inline for (operands) |child| product *= results[@intCast(child)];
-                break :blk product;
-            },
-            .div => |binary| results[@intCast(binary.left)] /
-                results[@intCast(binary.right)],
-            .pow => |power| integerPower(
-                results[@intCast(power.base)],
-                power.exponent,
-            ),
-            .negate => |child| -results[@intCast(child)],
-            .sin => |child| @sin(results[@intCast(child)]),
-            .cos => |child| @cos(results[@intCast(child)]),
-            .tan => |child| @tan(results[@intCast(child)]),
-            .asin => |child| std.math.asin(results[@intCast(child)]),
-            .acos => |child| std.math.acos(results[@intCast(child)]),
-            .atan => |child| std.math.atan(results[@intCast(child)]),
-            .sinh => |child| hyperbolicSine(results[@intCast(child)]),
-            .cosh => |child| hyperbolicCosine(results[@intCast(child)]),
-            .tanh => |child| hyperbolicTangent(results[@intCast(child)]),
-            .abs => |child| @abs(results[@intCast(child)]),
-            .exp => |child| @exp(results[@intCast(child)]),
-            .ln => |child| @log(results[@intCast(child)]),
-            .log2 => |child| @log2(results[@intCast(child)]),
-            .log10 => |child| @log10(results[@intCast(child)]),
-            .atan2 => |binary| arctangent2(
-                results[@intCast(binary.left)],
-                results[@intCast(binary.right)],
-            ),
-            .hypot => |binary| std.math.hypot(
-                results[@intCast(binary.left)],
-                results[@intCast(binary.right)],
-            ),
-        };
-    }
-    return results;
+    variable_values: [N]T,
+) [nodes.len]T {
+    const Context = VariableContext(
+        @TypeOf(values),
+        T,
+        N,
+        variable_names,
+    );
+    return evaluateNodesWithResolver(
+        T,
+        nodes,
+        Context{
+            .values = values,
+            .variable_values = variable_values,
+        },
+        variableSymbolValue,
+    );
 }
 
 inline fn validateOutput(comptime N: usize, output: anytype) void {
@@ -700,13 +715,12 @@ inline fn scalarSymbolValue(
     }
 
     const value = @field(values, name);
-    return switch (@typeInfo(@TypeOf(value))) {
-        .int, .comptime_int, .float, .comptime_float => numberValue(
-            Number,
-            value,
-        ),
+    const Value = @TypeOf(value);
+    if (comptime number.isComplex(Number) and Value == Number) return value;
+    return switch (@typeInfo(Value)) {
+        .int, .comptime_int, .float, .comptime_float => numberValue(Number, value),
         else => @compileError(std.fmt.comptimePrint(
-            "Bombelli eval field '.{s}' must be an integer or floating-point value",
+            "Bombelli eval field '.{s}' must be real numeric or match the requested complex scalar type",
             .{name},
         )),
     };
@@ -739,46 +753,40 @@ inline fn boundSymbolValue(
         scalarSymbolValue(Number, name, context.values);
 }
 
-inline fn variableValue(
+fn VariableContext(
+    comptime Values: type,
+    comptime T: type,
     comptime N: usize,
-    comptime name: []const u8,
-    values: anytype,
     comptime variable_names: [N][]const u8,
-    variable_values: [N]f64,
-) f64 {
-    inline for (variable_names, 0..) |candidate, index| {
+) type {
+    return struct {
+        pub const names = variable_names;
+        values: Values,
+        variable_values: [N]T,
+    };
+}
+
+inline fn variableSymbolValue(
+    comptime T: type,
+    comptime name: []const u8,
+    context: anytype,
+) T {
+    inline for (@TypeOf(context).names, 0..) |candidate, index| {
         if (comptime std.mem.eql(u8, name, candidate)) {
-            return variable_values[index];
+            return context.variable_values[index];
         }
     }
-    return symbolValue(name, values);
+    return scalarSymbolValue(T, name, context.values);
 }
 
 inline fn validateEvaluationScalar(comptime T: type) void {
-    if (@typeInfo(T) != .float) {
-        @compileError("Bombelli evalAs expects a floating-point scalar type");
+    if (comptime !number.isEvaluationNumber(T) or @typeInfo(T) == .vector) {
+        @compileError("Bombelli evalAs expects a floating-point or std.math.Complex scalar type");
     }
 }
 
 inline fn numberValue(comptime Number: type, value: anytype) Number {
-    const Scalar = switch (@typeInfo(Number)) {
-        .float => Number,
-        .vector => |vector| switch (@typeInfo(vector.child)) {
-            .float => vector.child,
-            else => @compileError("Bombelli internal evaluator expects a floating-point scalar or vector"),
-        },
-        else => @compileError("Bombelli internal evaluator expects a floating-point scalar or vector"),
-    };
-    const scalar: Scalar = switch (@typeInfo(@TypeOf(value))) {
-        .int, .comptime_int => @floatFromInt(value),
-        .float, .comptime_float => @floatCast(value),
-        else => @compileError("Bombelli internal evaluator cannot convert this numerical value"),
-    };
-    return switch (@typeInfo(Number)) {
-        .float => scalar,
-        .vector => @as(Number, @splat(scalar)),
-        else => comptime unreachable,
-    };
+    return number.fromReal(Number, value);
 }
 
 inline fn constantValue(
@@ -849,6 +857,9 @@ inline fn hyperbolicTangent(value: anytype) @TypeOf(value) {
 
 inline fn arctangent2(y: anytype, x: @TypeOf(y)) @TypeOf(y) {
     const Number = @TypeOf(y);
+    if (comptime number.isComplex(Number)) {
+        @compileError("Bombelli complex evaluation does not define atan2; use atan(y / x) when appropriate");
+    }
     return switch (@typeInfo(Number)) {
         .float => arctangent2Scalar(y, x),
         .vector => |vector| blk: {
@@ -860,6 +871,14 @@ inline fn arctangent2(y: anytype, x: @TypeOf(y)) @TypeOf(y) {
         },
         else => comptime unreachable,
     };
+}
+
+inline fn hypotenuse(x: anytype, y: @TypeOf(x)) @TypeOf(x) {
+    const Number = @TypeOf(x);
+    if (comptime number.isComplex(Number)) {
+        @compileError("Bombelli complex evaluation does not define hypot");
+    }
+    return std.math.hypot(x, y);
 }
 
 inline fn arctangent2Scalar(y: anytype, x: @TypeOf(y)) @TypeOf(y) {
@@ -912,38 +931,12 @@ inline fn integerPower(
             exponent.numerator);
         const powered = unsignedIntegerPower(base, magnitude);
         return if (exponent.numerator < 0)
-            numberValue(Number, 1.0) / powered
+            number.div(numberValue(Number, 1.0), powered)
         else
             powered;
     }
 
-    return switch (@typeInfo(Number)) {
-        .float => rationalPowerScalar(base, exponent),
-        .vector => |vector| blk: {
-            var result: Number = undefined;
-            inline for (0..vector.len) |lane| {
-                result[lane] = rationalPowerScalar(base[lane], exponent);
-            }
-            break :blk result;
-        },
-        else => comptime unreachable,
-    };
-}
-
-inline fn rationalPowerScalar(
-    base: anytype,
-    comptime exponent: @import("../core/exact.zig").Rational,
-) @TypeOf(base) {
-    const Scalar = @TypeOf(base);
-    const exponent_value = numberValue(Scalar, exponent.numerator) /
-        numberValue(Scalar, exponent.denominator);
-    const magnitude = if (Scalar == f32 or Scalar == f64)
-        std.math.pow(Scalar, @abs(base), exponent_value)
-    else
-        @exp(@log(@abs(base)) * exponent_value);
-    if (base >= 0.0) return magnitude;
-    if (exponent.denominator % 2 == 0) return std.math.nan(Scalar);
-    return if (@mod(exponent.numerator, 2) == 0) magnitude else -magnitude;
+    return number.rationalPower(base, exponent);
 }
 
 inline fn unsignedIntegerPower(
@@ -954,8 +947,8 @@ inline fn unsignedIntegerPower(
     if (exponent == 1) return base;
 
     const half = unsignedIntegerPower(base, exponent / 2);
-    const square = half * half;
-    return if (exponent % 2 == 0) square else square * base;
+    const square = number.mul(half, half);
+    return if (exponent % 2 == 0) square else number.mul(square, base);
 }
 
 const max_batch_threads = 32;
