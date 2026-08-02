@@ -344,6 +344,25 @@ test "generated Newton solvers converge with symbolic Jacobians" {
 }
 
 test "generated Newton solvers converge over complex systems" {
+    const constant_solver = comptime equationProblem("z = i", .{
+        .unknowns = .{.z},
+        .domain = .complex,
+    }).compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 4,
+        .tolerance = 1e-12,
+    });
+    const constant_result = constant_solver.eval(.{
+        .initial = .{ .z = 0.0 },
+    });
+    try std.testing.expectEqual(NewtonStatus.converged, constant_result.status);
+    try expectComplexApprox(
+        Complex.init(0.0, 1.0),
+        constant_result.values[0],
+        1e-12,
+    );
+
     const scalar_solver = comptime equationProblem("z^2 + 1 = 0", .{
         .unknowns = .{.z},
         .domain = .complex,

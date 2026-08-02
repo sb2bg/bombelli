@@ -20,11 +20,18 @@ pub const Power = struct {
 
 pub const Constant = enum {
     pi,
+    imaginary_unit,
 
-    /// Returns the closest `f64` to the mathematical constant.
+    /// Returns the closest `f64` to a real mathematical constant.
+    ///
+    /// The imaginary unit has no real value; evaluate an expression containing
+    /// it with `evalAs(std.math.Complex(...), values)` instead.
     pub fn value(self: Constant) f64 {
         return switch (self) {
             .pi => std.math.pi,
+            .imaginary_unit => @compileError(
+                "Bombelli imaginary unit 'i' has no real scalar value",
+            ),
         };
     }
 
@@ -32,7 +39,15 @@ pub const Constant = enum {
     pub fn name(self: Constant) []const u8 {
         return switch (self) {
             .pi => "pi",
+            .imaginary_unit => "i",
         };
+    }
+
+    /// Recognizes a reserved expression-language constant spelling.
+    pub fn fromName(source_name: []const u8) ?Constant {
+        if (std.mem.eql(u8, source_name, "pi")) return .pi;
+        if (std.mem.eql(u8, source_name, "i")) return .imaginary_unit;
+        return null;
     }
 };
 

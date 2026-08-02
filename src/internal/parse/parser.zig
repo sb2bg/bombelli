@@ -210,8 +210,8 @@ const Parser = struct {
         self.advance();
 
         if (self.current.kind != .left_paren) {
-            if (std.mem.eql(u8, name, "pi")) {
-                return self.builder.constant(.pi);
+            if (ast.Constant.fromName(name)) |constant| {
+                return self.builder.constant(constant);
             }
             return self.builder.symbol(name);
         }

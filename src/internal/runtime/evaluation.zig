@@ -800,6 +800,12 @@ inline fn constantValue(
         // requested scalar. Constant.value() intentionally remains the f64
         // convenience API.
         .pi => numberValue(Number, std.math.pi),
+        .imaginary_unit => if (comptime number.isComplex(Number))
+            Number.init(0.0, 1.0)
+        else
+            @compileError(
+                "Bombelli imaginary unit 'i' requires std.math.Complex evaluation",
+            ),
     };
 }
 

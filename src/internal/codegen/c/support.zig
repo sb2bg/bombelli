@@ -113,7 +113,7 @@ fn nodeSource(
             },
         ),
         .float => |value| floatSource(value),
-        .constant => |value| floatSource(value.value()),
+        .constant => |value| constantSource(value),
         .symbol => |name| symbolSource(name, bindings),
         .add => |binary| binarySource(binary, prefix, "+"),
         .sub => |binary| binarySource(binary, prefix, "-"),
@@ -154,6 +154,15 @@ fn nodeSource(
             binary,
             prefix,
             "hypot@suffix@",
+        ),
+    };
+}
+
+fn constantSource(comptime value: ast.Constant) []const u8 {
+    return switch (value) {
+        .pi => floatSource(std.math.pi),
+        .imaginary_unit => @compileError(
+            "Bombelli source emission currently supports only real-valued expressions; 'i' requires complex source emission",
         ),
     };
 }

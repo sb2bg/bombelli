@@ -559,6 +559,21 @@ test "rational powers are canonical and preserve exact bases" {
 test "expressions evaluate with the standard complex scalar" {
     const Complex = std.math.Complex(f64);
 
+    const imaginary_constant = comptime expr("i");
+    try std.testing.expectEqualStrings("i", comptime imaginary_constant.render());
+    try std.testing.expectEqual(
+        Complex.init(0.0, 1.0),
+        imaginary_constant.evalAs(Complex, .{}),
+    );
+
+    const euler_identity = comptime expr("exp(i * pi) + 1");
+    const euler_zero = euler_identity.evalAs(Complex, .{});
+    try std.testing.expectApproxEqAbs(0.0, euler_zero.re, 1e-15);
+    try std.testing.expectApproxEqAbs(0.0, euler_zero.im, 1e-15);
+
+    const derivative = comptime expr("i * z^2").diff(.z).simplify();
+    try std.testing.expectEqualStrings("2 * i * z", comptime derivative.render());
+
     const square_root = comptime expr("sqrt(-1)");
     const imaginary_unit = square_root.evalAs(Complex, .{});
     try std.testing.expectApproxEqAbs(0.0, imaginary_unit.re, 1e-15);

@@ -246,7 +246,7 @@ fn validateOptions(comptime Options: type) void {
 fn validateReserved(comptime name: []const u8) void {
     if (std.mem.eql(u8, name, "initial") or
         std.mem.eql(u8, name, "observations") or
-        std.mem.eql(u8, name, "pi"))
+        ast.Constant.fromName(name) != null)
     {
         @compileError(std.fmt.comptimePrint(
             "Bombelli residualModel name '.{s}' is reserved by the runtime solver",

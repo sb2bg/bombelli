@@ -107,6 +107,9 @@ fn nodeSource(
 fn constantSource(comptime value: ast.Constant) []const u8 {
     return switch (value) {
         .pi => "std.math.pi",
+        .imaginary_unit => @compileError(
+            "Bombelli source emission currently supports only real-valued expressions; 'i' requires complex source emission",
+        ),
     };
 }
 

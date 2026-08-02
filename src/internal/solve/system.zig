@@ -53,6 +53,7 @@ pub fn make(
         var values: [N][]const u8 = undefined;
         for (options.unknowns, 0..) |unknown, index| {
             values[index] = @tagName(unknown);
+            validateUnknownName(values[index]);
             for (0..index) |previous| {
                 if (std.mem.eql(u8, values[previous], values[index])) {
                     @compileError("Bombelli system unknowns must be unique");
@@ -89,6 +90,7 @@ pub fn makeEquationProblem(
         var values: [N][]const u8 = undefined;
         for (options.unknowns, 0..) |unknown, index| {
             values[index] = @tagName(unknown);
+            validateUnknownName(values[index]);
             for (0..index) |previous| {
                 if (std.mem.eql(u8, values[previous], values[index])) {
                     @compileError("Bombelli equation problem unknowns must be unique");
@@ -107,6 +109,15 @@ pub fn makeEquationProblem(
         .domain = @as(domain.Domain, options.domain),
         .assumptions = assumptions,
     };
+}
+
+fn validateUnknownName(comptime name: []const u8) void {
+    if (ast.Constant.fromName(name) != null) {
+        @compileError(std.fmt.comptimePrint(
+            "Bombelli system unknown '.{s}' is a reserved mathematical constant",
+            .{name},
+        ));
+    }
 }
 
 fn assumptionsType(comptime Options: type) type {

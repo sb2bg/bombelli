@@ -237,6 +237,7 @@ pub fn make(
     var names: [N][]const u8 = undefined;
     inline for (options.variables, 0..) |variable, index| {
         names[index] = @tagName(variable);
+        validateMathematicalName("variable", names[index]);
         inline for (0..index) |previous| {
             if (std.mem.eql(u8, names[previous], names[index])) {
                 @compileError("Bombelli model variables must be unique");
@@ -283,6 +284,7 @@ fn inputNames(
     var names: [P][]const u8 = undefined;
     inline for (options.inputs, 0..) |input, index| {
         names[index] = @tagName(input);
+        validateMathematicalName("input", names[index]);
         if (std.mem.eql(u8, names[index], "initial")) {
             @compileError("Bombelli model input '.initial' is reserved by compiled solvers");
         }
@@ -298,6 +300,18 @@ fn inputNames(
         }
     }
     return names;
+}
+
+fn validateMathematicalName(
+    comptime kind: []const u8,
+    comptime name: []const u8,
+) void {
+    if (ast.Constant.fromName(name) != null) {
+        @compileError(std.fmt.comptimePrint(
+            "Bombelli model {s} '.{s}' is a reserved mathematical constant",
+            .{ kind, name },
+        ));
+    }
 }
 
 fn validateDeclaredSymbols(
