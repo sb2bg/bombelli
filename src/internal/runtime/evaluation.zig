@@ -463,8 +463,10 @@ inline fn evaluateNodesWithResolver(
     inline for (nodes, 0..) |node, index| {
         results[index] = switch (node) {
             .integer => |value| numberValue(Number, value),
-            .rational => |value| numberValue(Number, value.numerator) /
+            .rational => |value| number.div(
+                numberValue(Number, value.numerator),
                 numberValue(Number, value.denominator),
+            ),
             .float => |value| numberValue(Number, value),
             .constant => |value| constantValue(Number, value),
             .symbol => |name| resolveSymbol(Number, name, context),

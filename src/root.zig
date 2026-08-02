@@ -110,14 +110,23 @@ pub const HybridIntegral = hybrid.HybridIntegral;
 pub const NewtonStatus = newton.NewtonStatus;
 /// Returns the result type for a Newton solver with `N` unknowns.
 pub const NewtonResult = newton.NewtonResult;
+/// Returns a Newton result type whose scalar follows `problem_domain`.
+pub const NewtonResultForDomain = newton.NewtonResultForDomain;
 /// Returns a fixed-size compiled Newton solver type.
 pub const NewtonSolver = newton.NewtonSolver;
+/// Returns a fixed-size Newton solver type specialized for a domain.
+pub const NewtonSolverForDomain = newton.NewtonSolverForDomain;
 /// Completion status from implicit Newton sensitivity evaluation.
 pub const NewtonSensitivityStatus = newton.SensitivityStatus;
 /// Returns the result type for implicit solver sensitivities.
 pub const NewtonSensitivityResult = newton.SensitivityResult;
+/// Returns an implicit-sensitivity result type specialized for a domain.
+pub const NewtonSensitivityResultForDomain = newton.SensitivityResultForDomain;
 /// Returns a compiled implicit-sensitivity solver type.
 pub const NewtonSensitivitySolver = newton.NewtonSensitivitySolver;
+/// Returns an implicit-sensitivity solver type specialized for a domain.
+pub const NewtonSensitivitySolverForDomain =
+    newton.NewtonSensitivitySolverForDomain;
 /// Robust scalar-residual loss configuration.
 pub const Loss = optimize_types.Loss;
 /// Robust scalar-residual loss families.

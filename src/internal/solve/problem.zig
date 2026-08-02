@@ -49,7 +49,11 @@ pub fn SystemProblem(
         pub fn compile(
             comptime self: Self,
             comptime options: anytype,
-        ) @import("newton.zig").NewtonSolver(N, options.max_iterations) {
+        ) @import("newton.zig").NewtonSolverForDomain(
+            self.domain,
+            N,
+            options.max_iterations,
+        ) {
             @setEvalBranchQuota(limits.eval_branch.solve);
             return @import("newton.zig").compileSystem(
                 M,
@@ -85,7 +89,11 @@ pub fn EquationProblem(
         pub fn compile(
             comptime self: Self,
             comptime options: anytype,
-        ) @import("newton.zig").NewtonSolver(N, options.max_iterations) {
+        ) @import("newton.zig").NewtonSolverForDomain(
+            self.domain,
+            N,
+            options.max_iterations,
+        ) {
             @setEvalBranchQuota(limits.eval_branch.solve);
             const problem = systemFromEquation(N, Assumptions, self);
             return problem.compile(options);

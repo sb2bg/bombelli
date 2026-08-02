@@ -8,6 +8,12 @@ const nonzero = bombelli.nonzero;
 const SolutionSet = bombelli.SolutionSet;
 const NewtonStatus = bombelli.NewtonStatus;
 const NewtonSensitivityStatus = bombelli.NewtonSensitivityStatus;
+const Complex = std.math.Complex(f64);
+
+fn expectComplexApprox(expected: Complex, actual: Complex, tolerance: f64) !void {
+    try std.testing.expectApproxEqAbs(expected.re, actual.re, tolerance);
+    try std.testing.expectApproxEqAbs(expected.im, actual.im, tolerance);
+}
 
 test "equations and systems preserve statements and explicit unknowns" {
     const parsed = comptime equation("x + 1 = y");
@@ -269,6 +275,22 @@ test "polynomial equation solver returns exact and radical branches" {
     try std.testing.expect(no_real_roots == .empty);
 }
 
+test "polynomial equation solver retains complex radical branches" {
+    const roots = comptime equationProblem("x^2 + 1 = 0", .{
+        .unknowns = .{.x},
+        .domain = .complex,
+    }).solve(.polynomial).requireFinite();
+    try std.testing.expectEqual(@as(usize, 2), roots.branch_count);
+
+    const first = comptime roots.branch(0).evalAs(Complex, .{})[0];
+    const second = comptime roots.branch(1).evalAs(Complex, .{})[0];
+    try std.testing.expectApproxEqAbs(0.0, first.re, 1e-15);
+    try std.testing.expectApproxEqAbs(1.0, @abs(first.im), 1e-15);
+    try std.testing.expectApproxEqAbs(0.0, second.re, 1e-15);
+    try std.testing.expectApproxEqAbs(1.0, @abs(second.im), 1e-15);
+    try std.testing.expectApproxEqAbs(0.0, first.add(second).magnitude(), 1e-15);
+}
+
 test "solution sets can retain solved branches with an unresolved remainder" {
     const Set = SolutionSet(1);
     const roots = comptime equationProblem("x^2 - 1 = 0", .{
@@ -319,6 +341,53 @@ test "generated Newton solvers converge with symbolic Jacobians" {
     );
     try std.testing.expect(result.residual_norm <= 1e-12);
     try std.testing.expect(result.iterations > 0);
+}
+
+test "generated Newton solvers converge over complex systems" {
+    const scalar_solver = comptime equationProblem("z^2 + 1 = 0", .{
+        .unknowns = .{.z},
+        .domain = .complex,
+    }).compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 32,
+        .tolerance = 1e-12,
+    });
+    const scalar_result = scalar_solver.eval(.{
+        .initial = .{ .z = Complex.init(0.5, 0.5) },
+    });
+    try std.testing.expectEqual(NewtonStatus.converged, scalar_result.status);
+    try expectComplexApprox(
+        Complex.init(0.0, 1.0),
+        scalar_result.values[0],
+        1e-12,
+    );
+    try std.testing.expect(scalar_result.residual_norm <= 1e-12);
+
+    const system_solver = comptime system(.{
+        "a*x + y = b",
+        "x - a*y = c",
+    }, .{
+        .unknowns = .{ .x, .y },
+        .domain = .complex,
+    }).compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 4,
+        .tolerance = 1e-12,
+    });
+    const expected_x = Complex.init(1.0, 2.0);
+    const expected_y = Complex.init(-0.5, 0.25);
+    const a = Complex.init(2.0, -1.0);
+    const system_result = system_solver.eval(.{
+        .initial = .{ .x = 0.0, .y = 0.0 },
+        .a = a,
+        .b = a.mul(expected_x).add(expected_y),
+        .c = expected_x.sub(a.mul(expected_y)),
+    });
+    try std.testing.expectEqual(NewtonStatus.converged, system_result.status);
+    try expectComplexApprox(expected_x, system_result.values[0], 1e-12);
+    try expectComplexApprox(expected_y, system_result.values[1], 1e-12);
 }
 
 test "generated Newton linear solves pivot at runtime" {
@@ -410,6 +479,35 @@ test "generated solver sensitivities use implicit differentiation" {
     try std.testing.expectApproxEqAbs(
         1.0 / @sqrt(2.0),
         result.sensitivities[1],
+        1e-12,
+    );
+}
+
+test "generated complex solver sensitivities stay in the complex domain" {
+    const solver = comptime equationProblem("z^2 = p", .{
+        .unknowns = .{.z},
+        .domain = .complex,
+    }).compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 32,
+        .tolerance = 1e-12,
+    });
+    const sensitivity = comptime solver.diff(.p);
+    const expected_root = Complex.init(1.0, 1.0);
+    const result = sensitivity.eval(.{
+        .initial = .{ .z = Complex.init(0.8, 1.2) },
+        .p = expected_root.mul(expected_root),
+    });
+    try std.testing.expectEqual(NewtonStatus.converged, result.root.status);
+    try std.testing.expectEqual(
+        NewtonSensitivityStatus.converged,
+        result.status,
+    );
+    try expectComplexApprox(expected_root, result.root.values[0], 1e-12);
+    try expectComplexApprox(
+        Complex.init(0.25, -0.25),
+        result.sensitivities[0],
         1e-12,
     );
 }
