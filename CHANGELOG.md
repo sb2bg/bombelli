@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `.complex` equation and system domains using Zig's standard
+  `std.math.Complex(f64)` scalar. The existing `problem.compile(...).eval(...)`
+  API now specializes Newton iteration, symbolic-Jacobian evaluation, runtime
+  pivoting, result values, and implicit sensitivities from the problem domain.
+- Complex `evalAs`/`evalIntoAs` support for scalar, vector, and matrix
+  expression programs with real-input promotion, principal rational powers,
+  and the standard complex trigonometric, inverse-trigonometric, hyperbolic,
+  exponential, and logarithmic functions.
+- Complex quadratic solution branches. Exact polynomial results remain
+  symbolic and can be evaluated with `evalAs(std.math.Complex(f64), ...)`.
+
+### Limits
+
+- Complex Newton residuals must be holomorphic. `abs`, `atan2`, and `hypot`
+  are rejected at compile time.
+- Nonlinear least squares, batch evaluation, quadrature, and standalone source
+  emission remain real-only.
+
 ## 0.2.0 — 2026-08-01
 
 ### Added

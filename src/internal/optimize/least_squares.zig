@@ -55,6 +55,9 @@ pub fn makeProblem(
     comptime P: usize,
     comptime model: anytype,
 ) LeastSquaresProblem(M, N, P) {
+    if (model.domain != .real) {
+        @compileError("Bombelli nonlinear least squares currently supports only real-domain models");
+    }
     const residuals = comptime model.outputs.simplify();
     const jacobian = comptime model.jacobian().simplify();
     return .{

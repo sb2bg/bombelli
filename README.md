@@ -148,11 +148,13 @@ Bombelli targets Zig 0.16.0 and uses only Zig's standard library.
 | `system` | exact elimination or symbolic Jacobian | Newton solve and implicit sensitivities |
 | native `[N]T` / `[R][C]T` arrays | fixed shape and type checking | LU, Cholesky, pivoted QR, solve, inverse, and matrix utilities |
 
-Evaluation can keep intermediates in `f16`, `f32`, `f64`, `f80`, or `f128`
-with `evalAs`. Structure-of-arrays batches have sequential and parallel
-caller-owned APIs. Supported elementary functions include trigonometric,
-inverse trigonometric, hyperbolic, exponential, logarithmic, `abs`, `sqrt`,
-`atan2`, and overflow-safe `hypot`.
+Evaluation can keep intermediates in `f16`, `f32`, `f64`, `f80`, `f128`, or
+Zig's standard `std.math.Complex(f32/f64)` with `evalAs`.
+Structure-of-arrays batches remain real-valued and have sequential and
+parallel caller-owned APIs. Supported elementary functions include
+trigonometric, inverse trigonometric, hyperbolic, exponential, logarithmic,
+`abs`, `sqrt`, `atan2`, and overflow-safe `hypot`; `atan2` and `hypot` are
+real-only.
 
 ## From equations to a compiled solver
 
@@ -183,6 +185,39 @@ const result = solver.eval(.{
 });
 // result.values, result.status, result.iterations
 ```
+
+The same API compiles holomorphic systems over the complex domain. Solver
+values, residuals, Jacobians, steps, parameters, and sensitivities then use
+Zig's standard `std.math.Complex(f64)`; convergence norms and tolerances stay
+`f64`:
+
+```zig
+const std = @import("std");
+const Complex = std.math.Complex(f64);
+
+const complex_solver = comptime bombelli
+    .equationProblem("z^2 + 1 = 0", .{
+        .unknowns = .{.z},
+        .domain = .complex,
+    })
+    .compile(.{
+        .algorithm = .newton,
+        .jacobian = .symbolic,
+        .max_iterations = 32,
+        .tolerance = 1e-12,
+    });
+
+const complex_result = complex_solver.eval(.{
+    .initial = .{ .z = Complex.init(0.5, 0.5) },
+});
+// complex_result.values[0] is approximately 0 + 1i
+```
+
+Complex Newton currently accepts holomorphic expression programs. `abs`,
+`atan2`, and `hypot` residuals are rejected at compile time. Nonlinear least
+squares, batch evaluation, quadrature, and standalone source emission remain
+real-only. Exact quadratic solving retains complex radical branches; evaluate
+those expression branches with `evalAs(std.math.Complex(f64), inputs)`.
 
 Then differentiate the _solver itself_ with respect to a parameter. Bombelli
 derives the implicit sensitivities `dx/dr` and `dy/dr` from the symbolic
@@ -327,9 +362,9 @@ Think curve fitting and calibration, regressions with custom symbolic
 residuals, embedded control laws, fixed physical models, generated Jacobians
 for simulation and estimation, specialized quadrature, and small
 high-confidence numerical kernels. If the model structure itself must change
-at runtime, or you need arbitrary-precision arithmetic, complex analysis, or
-open-ended equation solving, use a runtime numerical framework or CAS,
-possibly to derive the model you then hand to Bombelli.
+at runtime, or you need arbitrary-precision arithmetic, non-holomorphic
+complex optimization, or open-ended equation solving, use a runtime numerical
+framework or CAS, possibly to derive the model you then hand to Bombelli.
 
 ## Getting started
 

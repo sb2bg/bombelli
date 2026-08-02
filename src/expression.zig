@@ -184,7 +184,7 @@ pub const Expr = struct {
         return @import("internal/runtime/evaluation.zig").evaluate(self, values);
     }
 
-    /// Evaluates the expression using the requested floating-point scalar type.
+    /// Evaluates using a floating-point or `std.math.Complex` scalar type.
     pub fn evalAs(comptime self: Expr, comptime T: type, values: anytype) T {
         return @import("internal/runtime/evaluation.zig").evaluateAs(
             T,
@@ -334,7 +334,7 @@ pub fn ExprVector(comptime N: usize) type {
             return @import("internal/runtime/evaluation.zig").evaluateVector(N, self, values);
         }
 
-        /// Evaluates all components using the requested floating-point type.
+        /// Evaluates using a floating-point or `std.math.Complex` scalar type.
         pub fn evalAs(
             comptime self: Self,
             comptime T: type,
@@ -462,7 +462,7 @@ pub fn ExprMatrix(comptime R: usize, comptime C: usize) type {
             return @import("internal/runtime/evaluation.zig").evaluateMatrix(R, C, self, values);
         }
 
-        /// Evaluates all entries using the requested floating-point type.
+        /// Evaluates using a floating-point or `std.math.Complex` scalar type.
         pub fn evalAs(
             comptime self: Self,
             comptime T: type,
