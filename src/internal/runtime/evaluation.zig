@@ -793,7 +793,7 @@ inline fn numberValue(comptime Number: type, value: anytype) Number {
 
 inline fn constantValue(
     comptime Number: type,
-    value: ast.Constant,
+    comptime value: ast.Constant,
 ) Number {
     return switch (value) {
         // Keep the literal at comptime precision until it is converted to the
@@ -803,9 +803,9 @@ inline fn constantValue(
         .imaginary_unit => if (comptime number.isComplex(Number))
             Number.init(0.0, 1.0)
         else
-            @compileError(
-                "Bombelli imaginary unit 'i' requires std.math.Complex evaluation",
-            ),
+            // Match other expressions outside the real domain, such as
+            // sqrt(-1), by producing a non-finite real result.
+            numberValue(Number, std.math.nan(f64)),
     };
 }
 

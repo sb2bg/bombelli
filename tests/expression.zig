@@ -565,6 +565,7 @@ test "expressions evaluate with the standard complex scalar" {
         Complex.init(0.0, 1.0),
         imaginary_constant.evalAs(Complex, .{}),
     );
+    try std.testing.expect(std.math.isNan(imaginary_constant.eval(.{})));
 
     const euler_identity = comptime expr("exp(i * pi) + 1");
     const euler_zero = euler_identity.evalAs(Complex, .{});
