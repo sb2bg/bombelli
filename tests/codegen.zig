@@ -457,6 +457,36 @@ test "Newton Zig emission is standalone fixed-size numerical code" {
     try std.testing.expect(std.mem.indexOf(u8, source, "ast.Node") == null);
 }
 
+test "runtime-observation least-squares Zig emission preserves the solver ABI" {
+    const fitter = comptime bombelli.residualModel(.{
+        "offset + slope*x - y",
+    }, .{
+        .variables = .{ .offset, .slope },
+        .data = .{ .x, .y },
+    }).leastSquares().compile(.{
+        .bounds = .{ .slope = .{ .lower = 0.0 } },
+        .loss = bombelli.loss.huber(0.5),
+        .max_iterations = 16,
+    });
+    const source = comptime fitter.emit(.{
+        .target = .zig,
+        .mode = .out_of_place,
+        .name = "fit_line",
+    });
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "pub fn fit_line(inputs: anytype, output: *fit_lineResult)",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "observations: anytype",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "allocator") == null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "@import(\"bombelli\")") == null);
+}
+
 test "Zig emission spells pi as an explicit std constant" {
     const source = comptime expr("pi * r^2").emit(.{
         .target = .zig,

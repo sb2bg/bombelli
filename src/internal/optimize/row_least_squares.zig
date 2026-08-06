@@ -190,6 +190,20 @@ pub fn Solver(
             ));
         }
 
+        /// Emits this compiled runtime-observation fitter as a standalone
+        /// Zig or C callable. The symbolic residual/Jacobian kernel and every
+        /// numerical policy option are baked into the emitted source.
+        pub fn emit(
+            comptime self: Self,
+            comptime options: anytype,
+        ) []const u8 {
+            @setEvalBranchQuota(@import("../core/limits.zig").eval_branch.solve);
+            return @import("../codegen/emit.zig").emitRowLeastSquares(
+                self,
+                options,
+            );
+        }
+
         /// Fits `inputs.initial` to `inputs.observations`.
         ///
         /// Observations may be a fixed array, pointer to a fixed array, or

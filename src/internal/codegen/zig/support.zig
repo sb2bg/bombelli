@@ -278,6 +278,29 @@ pub fn append(comptime left: []const u8, comptime right: []const u8) []const u8 
     return std.fmt.comptimePrint("{s}{s}", .{ left, right });
 }
 
+/// Fills a source template's `@placeholder@` slots from a tuple of pairs.
+pub fn fill(comptime template: []const u8, comptime pairs: anytype) []const u8 {
+    var filled: []const u8 = template;
+    inline for (pairs) |pair| {
+        filled = replace(filled, pair[0], pair[1]);
+    }
+    return filled;
+}
+
+fn replace(
+    comptime source: []const u8,
+    comptime needle: []const u8,
+    comptime replacement: []const u8,
+) []const u8 {
+    var rewritten: []const u8 = "";
+    var index: usize = 0;
+    while (std.mem.indexOfPos(u8, source, index, needle)) |found| {
+        rewritten = rewritten ++ source[index..found] ++ replacement;
+        index = found + needle.len;
+    }
+    return rewritten ++ source[index..];
+}
+
 pub fn prelude() []const u8 {
     return
     \\const std = @import("std");

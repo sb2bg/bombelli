@@ -52,3 +52,27 @@ pub const solver_inputs = .{
     .initial = .{ .x = 0.7, .y = 0.7 },
     .r = 1.0,
 };
+
+pub const fit_observations = [_]struct { x: f64, y: f64 }{
+    .{ .x = 0.0, .y = 1.0 },
+    .{ .x = 1.0, .y = 3.0 },
+    .{ .x = 2.0, .y = 5.0 },
+    .{ .x = 3.0, .y = 7.0 },
+};
+
+pub const fitter = bombelli.residualModel(.{
+    "offset + slope*x - y",
+}, .{
+    .variables = .{ .offset, .slope },
+    .data = .{ .x, .y },
+}).leastSquares().compile(.{
+    .bounds = .{ .slope = .{ .lower = 0.0 } },
+    .loss = bombelli.loss.huber(0.5),
+    .tolerance = 1e-12,
+    .max_iterations = 32,
+});
+
+pub const fitter_inputs = .{
+    .initial = .{ .offset = 0.5, .slope = 0.5 },
+    .observations = fit_observations[0..],
+};

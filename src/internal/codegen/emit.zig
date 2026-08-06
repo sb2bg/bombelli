@@ -73,6 +73,16 @@ pub fn emitNewton(
     };
 }
 
+pub fn emitRowLeastSquares(
+    comptime solver: anytype,
+    comptime options: anytype,
+) []const u8 {
+    return switch (selectTarget(options)) {
+        .zig => zig_backend.emitRowLeastSquares(solver, options),
+        .c => c_backend.emitRowLeastSquares(solver, options),
+    };
+}
+
 /// Validates the target-independent options and resolves the backend.
 fn selectTarget(comptime options: anytype) EmitTarget {
     const Options = @TypeOf(options);
