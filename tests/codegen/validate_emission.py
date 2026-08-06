@@ -70,6 +70,14 @@ CASES = (
         c_unit="generated_newton.c",
         c_driver="drive_newton.c",
     ),
+    Case(
+        name="fitter",
+        zig_generator="generate_fitter_zig.zig",
+        zig_harness="test_fitter_emission.zig",
+        c_generator="generate_fitter_c.zig",
+        c_unit="generated_fitter.c",
+        c_driver="drive_fitter.c",
+    ),
 )
 
 FORBIDDEN = (

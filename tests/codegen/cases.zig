@@ -67,7 +67,7 @@ pub const fitter = bombelli.residualModel(.{
     .data = .{ .x, .y },
 }).leastSquares().compile(.{
     .bounds = .{ .slope = .{ .lower = 0.0 } },
-    .loss = bombelli.loss.huber(0.5),
+    .loss = bombelli.loss.cauchy(0.5),
     .tolerance = 1e-12,
     .max_iterations = 32,
 });

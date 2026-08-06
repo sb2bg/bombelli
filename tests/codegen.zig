@@ -487,6 +487,41 @@ test "runtime-observation least-squares Zig emission preserves the solver ABI" {
     try std.testing.expect(std.mem.indexOf(u8, source, "@import(\"bombelli\")") == null);
 }
 
+test "runtime-observation least-squares C emission uses named runtime-row types" {
+    const fitter = comptime bombelli.residualModel(.{
+        "offset + slope*x - y",
+    }, .{
+        .variables = .{ .offset, .slope },
+        .data = .{ .x, .y },
+    }).leastSquares().compile(.{
+        .bounds = .{ .slope = .{ .lower = 0.0 } },
+        .loss = bombelli.loss.huber(0.5),
+        .max_iterations = 16,
+    });
+    const source = comptime fitter.emit(.{
+        .target = .c,
+        .mode = .out_of_place,
+        .name = "fit_line",
+    });
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "typedef struct fit_line_observation",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "const fit_line_observation *observations;",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        source,
+        "void fit_line(const fit_line_inputs *inputs, fit_line_result *output)",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "allocator") == null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "@import") == null);
+}
+
 test "Zig emission spells pi as an explicit std constant" {
     const source = comptime expr("pi * r^2").emit(.{
         .target = .zig,

@@ -31,5 +31,35 @@ pub fn main(init: std.process.Init) !void {
     try out.print("newton_y {d:.17}\n", .{solved.values[1]});
     try out.print("newton_residual_norm {d:.17}\n", .{solved.residual_norm});
 
+    const fitted = cases.fitter.eval(cases.fitter_inputs);
+    try out.print("fitter_status {d}\n", .{@intFromEnum(fitted.status)});
+    try out.print("fitter_iterations {d}\n", .{fitted.iterations});
+    try out.print("fitter_rank {d}\n", .{fitted.rank});
+    try out.print("fitter_function_evaluations {d}\n", .{fitted.function_evaluations});
+    try out.print("fitter_offset {d:.17}\n", .{fitted.values[0]});
+    try out.print("fitter_slope {d:.17}\n", .{fitted.values[1]});
+    try out.print("fitter_cost {d:.17}\n", .{fitted.cost});
+    try out.print("fitter_gradient_norm {d:.17}\n", .{fitted.gradient_norm});
+
+    const empty_fit = cases.fitter.eval(.{
+        .initial = cases.fitter_inputs.initial,
+        .observations = cases.fit_observations[0..0],
+    });
+    try out.print("fitter_empty_status {d}\n", .{@intFromEnum(empty_fit.status)});
+    const infeasible_fit = cases.fitter.eval(.{
+        .initial = .{ .offset = 0.5, .slope = -0.5 },
+        .observations = cases.fit_observations[0..],
+    });
+    try out.print("fitter_infeasible_status {d}\n", .{@intFromEnum(infeasible_fit.status)});
+    var bad_fit_observations = cases.fit_observations;
+    bad_fit_observations[2].y = std.math.nan(f64);
+    const nonfinite_fit = cases.fitter.eval(.{
+        .initial = cases.fitter_inputs.initial,
+        .observations = bad_fit_observations[0..],
+    });
+    try out.print("fitter_nonfinite_observation_status {d}\n", .{
+        @intFromEnum(nonfinite_fit.status),
+    });
+
     try out.flush();
 }
