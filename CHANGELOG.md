@@ -22,6 +22,12 @@
 - Opt-in Newton globalization with sufficient-decrease backtracking over real
   and complex systems, scale-aware step stagnation, line-search failure
   status, and function-evaluation/backtrack/step-scale diagnostics.
+- Standalone Zig and C99 emission for compiled `residualModel` nonlinear
+  least-squares fitters. Generated units bake in the symbolic residual and
+  Jacobian kernels plus robust loss, bounds, scaling, tolerances, damping, and
+  evaluation budgets; accept runtime-length observation collections through
+  named schemas; preserve every result status and diagnostic; allocate no
+  memory; and retain `O(parameter_count²)` working storage.
 
 ### Limits
 
@@ -29,6 +35,8 @@
   are rejected at compile time.
 - Nonlinear least squares, batch evaluation, quadrature, and standalone source
   emission remain real-only.
+- Runtime-observation least-squares evaluation and source emission currently
+  use `f64` only.
 - Standalone Newton source emission currently supports only undamped
   `.globalization = .none` solvers.
 

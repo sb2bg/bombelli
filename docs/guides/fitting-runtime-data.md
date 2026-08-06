@@ -123,6 +123,41 @@ known, provide characteristic values:
 },
 ```
 
+## Standalone Zig and C emission
+
+The compiled fitter, not just its residual-row evaluator, can be emitted as a
+standalone allocation-free callable:
+
+```zig
+const zig_source = comptime fit.emit(.{
+    .target = .zig,
+    .mode = .out_of_place,
+    .name = "fit_decay",
+});
+
+const c_source = comptime fit.emit(.{
+    .target = .c,
+    .mode = .out_of_place,
+    .name = "fit_decay",
+});
+```
+
+The generated source bakes in the residual and symbolic Jacobian programs and
+every compile option: loss, bounds, scaling, tolerances, damping policy, and
+evaluation limits. It carries no parser, symbolic graph, Bombelli import, or
+allocator, and its working storage remains `O(parameters²)` regardless of the
+observation count.
+
+The Zig callable accepts the same `.initial` and `.observations` input shape as
+`fit.eval()`. C receives generated `<name>_initial`, `<name>_observation`, and
+`<name>_inputs` structs; the last contains an observation pointer and
+`observation_count`. Both targets expose a result type with the same statuses,
+parameter order, counters, rank, bound activity, and norms as the compiled
+Bombelli object.
+
+Runtime-observation fitting currently computes and emits in `f64`; requesting
+`.scalar = .f32` is rejected at compile time.
+
 ## Result and termination
 
 `result.converged()` is true only for gradient, cost, or step convergence.

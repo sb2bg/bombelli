@@ -70,8 +70,24 @@ Jacobian. The compiled Levenberg–Marquardt solver supports automatic or user
 scaling, box bounds, linear/Huber/soft-L1/Cauchy losses, rank diagnostics,
 hard evaluation budgets, and explicit terminal statuses.
 
-You don't have to take that on faith. Ask the same object to `emit()` and
-read the code yourself:
+The compiled fitter can become a standalone Zig or C99 translation unit too:
+
+```zig
+const source = comptime fit.emit(.{
+    .target = .c,
+    .mode = .out_of_place,
+    .name = "fit_decay",
+});
+```
+
+Its model, symbolic Jacobian, bounds, loss, scaling, tolerances, and evaluation
+budgets are baked into the generated source. The C ABI supplies named initial
+and observation structs plus an observation pointer and runtime count; the
+result preserves every status and diagnostic from `fit.eval()`. The emitted
+solver is allocation-free and retains `O(parameters²)` working storage.
+
+Expression kernels are equally inspectable. Ask the derivative from the
+opening example to `emit()` and read the code yourself:
 
 ```zig
 const source = comptime derivative.emit(.{
@@ -144,7 +160,7 @@ Bombelli targets Zig 0.16.0 and uses only Zig's standard library.
 | --- | --- | --- |
 | `expr` / `exprVector` | simplify, substitute, differentiate, integrate, emit | scalar, vector, matrix, and batch evaluation |
 | `model` | Jacobian, Hessian, fused linearization | values, JVP, VJP, fixed-size least squares |
-| `residualModel` | one symbolic residual-row kernel | robust bounded fitting over runtime observation slices |
+| `residualModel` | symbolic row kernel, Jacobian, standalone fitter | robust bounded fitting over runtime observation slices |
 | `system` | exact elimination or symbolic Jacobian | Newton solve and implicit sensitivities |
 | native `[N]T` / `[R][C]T` arrays | fixed shape and type checking | LU, Cholesky, pivoted QR, solve, inverse, and matrix utilities |
 
