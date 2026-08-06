@@ -348,14 +348,12 @@ const ConversionContext = struct {
             ),
             .rational => |value| constant(self.variables, value),
             .symbol => |name| symbol(self.variables, name),
-            .add => |binary| self.convert(binary.left).add(self.convert(binary.right)),
             .add_nary => |operands| blk: {
                 var sum = zero(self.variables);
                 for (operands) |child| sum = sum.add(self.convert(child));
                 break :blk sum;
             },
             .sub => |binary| self.convert(binary.left).sub(self.convert(binary.right)),
-            .mul => |binary| self.convert(binary.left).mul(self.convert(binary.right)),
             .mul_nary => |operands| blk: {
                 var product = constant(
                     self.variables,
@@ -385,25 +383,14 @@ const ConversionContext = struct {
                     @intCast(power.exponent.numerator),
                 );
             },
-            .negate => |child| self.convert(child).scale(
-                exact.Rational.fromInteger(-1),
-            ),
+            .unary => |unary| switch (unary.op) {
+                .negate => self.convert(unary.child).scale(
+                    exact.Rational.fromInteger(-1),
+                ),
+                else => unsupported("transcendental functions are not polynomials"),
+            },
             .float => unsupported("floating-point constants are not exact polynomials"),
             .constant => unsupported("transcendental constants are not exact polynomials"),
-            .sin,
-            .cos,
-            .tan,
-            .asin,
-            .acos,
-            .atan,
-            .sinh,
-            .cosh,
-            .tanh,
-            .abs,
-            .exp,
-            .ln,
-            .log2,
-            .log10,
             .atan2,
             .hypot,
             => unsupported(

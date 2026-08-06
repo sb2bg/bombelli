@@ -10,7 +10,7 @@ pub fn dependsOn(
         dependent[index] = switch (node) {
             .integer, .rational, .float, .constant => false,
             .symbol => |name| std.mem.eql(u8, name, variable),
-            .add, .sub, .mul, .div => |binary| dependent[@intCast(binary.left)] or
+            .sub, .div => |binary| dependent[@intCast(binary.left)] or
                 dependent[@intCast(binary.right)],
             .add_nary, .mul_nary => |operands| blk: {
                 var any = false;
@@ -20,22 +20,7 @@ pub fn dependsOn(
                 break :blk any;
             },
             .pow => |power| dependent[@intCast(power.base)],
-            .negate,
-            .sin,
-            .cos,
-            .tan,
-            .asin,
-            .acos,
-            .atan,
-            .sinh,
-            .cosh,
-            .tanh,
-            .abs,
-            .exp,
-            .ln,
-            .log2,
-            .log10,
-            => |child| dependent[@intCast(child)],
+            .unary => |unary| dependent[@intCast(unary.child)],
             .atan2, .hypot => |binary| dependent[@intCast(binary.left)] or
                 dependent[@intCast(binary.right)],
         };

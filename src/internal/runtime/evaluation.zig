@@ -262,11 +262,7 @@ pub inline fn evaluateVectorInto(
     output: anytype,
     values: anytype,
 ) void {
-    validateOutput(N, output);
-    const results = evaluateNodes(expression.nodes, values);
-    inline for (expression.roots, 0..) |root, index| {
-        output[index] = results[@intCast(root)];
-    }
+    evaluateVectorIntoAs(f64, N, expression, output, values);
 }
 
 pub inline fn evaluateVectorIntoAs(
@@ -313,13 +309,7 @@ pub inline fn evaluateMatrixInto(
     output: anytype,
     values: anytype,
 ) void {
-    validateMatrixOutput(R, C, output);
-    const results = evaluateNodes(expression.nodes, values);
-    inline for (expression.roots, 0..) |row, row_index| {
-        inline for (row, 0..) |root, column_index| {
-            output[row_index][column_index] = results[@intCast(root)];
-        }
-    }
+    evaluateMatrixIntoAs(f64, R, C, expression, output, values);
 }
 
 pub inline fn evaluateMatrixIntoAs(
@@ -470,10 +460,6 @@ inline fn evaluateNodesWithResolver(
             .float => |value| numberValue(Number, value),
             .constant => |value| constantValue(Number, value),
             .symbol => |name| resolveSymbol(Number, name, context),
-            .add => |binary| number.add(
-                results[@intCast(binary.left)],
-                results[@intCast(binary.right)],
-            ),
             .add_nary => |operands| blk: {
                 var sum = numberValue(Number, 0.0);
                 inline for (operands) |child| {
@@ -482,10 +468,6 @@ inline fn evaluateNodesWithResolver(
                 break :blk sum;
             },
             .sub => |binary| number.sub(
-                results[@intCast(binary.left)],
-                results[@intCast(binary.right)],
-            ),
-            .mul => |binary| number.mul(
                 results[@intCast(binary.left)],
                 results[@intCast(binary.right)],
             ),
@@ -504,21 +486,11 @@ inline fn evaluateNodesWithResolver(
                 results[@intCast(power.base)],
                 power.exponent,
             ),
-            .negate => |child| number.neg(results[@intCast(child)]),
-            .sin => |child| number.sin(results[@intCast(child)]),
-            .cos => |child| number.cos(results[@intCast(child)]),
-            .tan => |child| number.tan(results[@intCast(child)]),
-            .asin => |child| number.asin(results[@intCast(child)]),
-            .acos => |child| number.acos(results[@intCast(child)]),
-            .atan => |child| number.atan(results[@intCast(child)]),
-            .sinh => |child| number.sinh(results[@intCast(child)]),
-            .cosh => |child| number.cosh(results[@intCast(child)]),
-            .tanh => |child| number.tanh(results[@intCast(child)]),
-            .abs => |child| number.absolute(results[@intCast(child)]),
-            .exp => |child| number.exp(results[@intCast(child)]),
-            .ln => |child| number.log(results[@intCast(child)]),
-            .log2 => |child| number.log2(results[@intCast(child)]),
-            .log10 => |child| number.log10(results[@intCast(child)]),
+            .unary => |unary| evaluateUnary(
+                Number,
+                unary.op,
+                results[@intCast(unary.child)],
+            ),
             .atan2 => |binary| arctangent2(
                 results[@intCast(binary.left)],
                 results[@intCast(binary.right)],
@@ -530,6 +502,30 @@ inline fn evaluateNodesWithResolver(
         };
     }
     return results;
+}
+
+inline fn evaluateUnary(
+    comptime Number: type,
+    comptime operation: ast.UnaryOp,
+    value: Number,
+) Number {
+    return switch (operation) {
+        .negate => number.neg(value),
+        .sin => number.sin(value),
+        .cos => number.cos(value),
+        .tan => number.tan(value),
+        .asin => number.asin(value),
+        .acos => number.acos(value),
+        .atan => number.atan(value),
+        .sinh => number.sinh(value),
+        .cosh => number.cosh(value),
+        .tanh => number.tanh(value),
+        .abs => number.absolute(value),
+        .exp => number.exp(value),
+        .ln => number.log(value),
+        .log2 => number.log2(value),
+        .log10 => number.log10(value),
+    };
 }
 
 inline fn evaluateNodesWithBoundVariable(
@@ -696,10 +692,6 @@ inline fn validateMatrixOutputAs(
     }
 }
 
-inline fn symbolValue(comptime name: []const u8, values: anytype) f64 {
-    return scalarSymbolValue(f64, name, values);
-}
-
 inline fn scalarSymbolValue(
     comptime Number: type,
     comptime name: []const u8,
@@ -806,60 +798,6 @@ inline fn constantValue(
             // Match other expressions outside the real domain, such as
             // sqrt(-1), by producing a non-finite real result.
             numberValue(Number, std.math.nan(f64)),
-    };
-}
-
-inline fn hyperbolicSine(value: anytype) @TypeOf(value) {
-    const Number = @TypeOf(value);
-    return switch (@typeInfo(Number)) {
-        .float => if (comptime Number == f32 or Number == f64)
-            std.math.sinh(value)
-        else
-            (@exp(value) - @exp(-value)) / numberValue(Number, 2.0),
-        .vector => |vector| blk: {
-            var result: Number = undefined;
-            inline for (0..vector.len) |lane| {
-                result[lane] = hyperbolicSine(value[lane]);
-            }
-            break :blk result;
-        },
-        else => comptime unreachable,
-    };
-}
-
-inline fn hyperbolicCosine(value: anytype) @TypeOf(value) {
-    const Number = @TypeOf(value);
-    return switch (@typeInfo(Number)) {
-        .float => if (comptime Number == f32 or Number == f64)
-            std.math.cosh(value)
-        else
-            (@exp(value) + @exp(-value)) / numberValue(Number, 2.0),
-        .vector => |vector| blk: {
-            var result: Number = undefined;
-            inline for (0..vector.len) |lane| {
-                result[lane] = hyperbolicCosine(value[lane]);
-            }
-            break :blk result;
-        },
-        else => comptime unreachable,
-    };
-}
-
-inline fn hyperbolicTangent(value: anytype) @TypeOf(value) {
-    const Number = @TypeOf(value);
-    return switch (@typeInfo(Number)) {
-        .float => if (comptime Number == f32 or Number == f64)
-            std.math.tanh(value)
-        else
-            hyperbolicSine(value) / hyperbolicCosine(value),
-        .vector => |vector| blk: {
-            var result: Number = undefined;
-            inline for (0..vector.len) |lane| {
-                result[lane] = hyperbolicTangent(value[lane]);
-            }
-            break :blk result;
-        },
-        else => comptime unreachable,
     };
 }
 
@@ -1006,22 +944,11 @@ pub fn prefersVectorLanes(comptime expression: ast.Expr) bool {
     if (batch_vector_length == 1) return false;
     inline for (expression.nodes) |node| {
         switch (node) {
-            .sin,
-            .cos,
-            .tan,
-            .asin,
-            .acos,
-            .atan,
-            .sinh,
-            .cosh,
-            .tanh,
-            .exp,
-            .ln,
-            .log2,
-            .log10,
-            .atan2,
-            .hypot,
-            => return false,
+            .unary => |unary| switch (unary.op) {
+                .negate, .abs => {},
+                else => return false,
+            },
+            .atan2, .hypot => return false,
             .pow => |power| if (power.exponent.denominator != 1) return false,
             else => {},
         }

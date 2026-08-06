@@ -6,10 +6,8 @@
 
 const std = @import("std");
 const ast = @import("expression.zig");
-const evaluation = @import("internal/runtime/evaluation.zig");
 const linearization = @import("internal/model/linearization.zig");
-const multi = @import("internal/transform/multi.zig");
-const parser = @import("internal/parse/parser.zig");
+const program = @import("internal/model/program.zig");
 const row_least_squares = @import("internal/optimize/row_least_squares.zig");
 
 /// Resolves the model type produced by a residual tuple and option struct.
@@ -29,7 +27,6 @@ pub fn ResidualModelType(
         ast.tupleLength(@FieldType(Options, "variables")),
         ast.tupleLength(@FieldType(Options, "data")),
         @FieldType(Options, "variables"),
-        @FieldType(Options, "data"),
     );
 }
 
@@ -39,7 +36,6 @@ pub fn ResidualModel(
     comptime N: usize,
     comptime P: usize,
     comptime Variables: type,
-    comptime Data: type,
 ) type {
     if (R == 0) {
         @compileError("Bombelli residualModel requires at least one residual");
@@ -54,7 +50,6 @@ pub fn ResidualModel(
     return struct {
         residuals: ast.ExprVector(R),
         variable_tags: Variables,
-        data_tags: Data,
         variables: [N][]const u8,
         data: [P][]const u8,
 
@@ -77,14 +72,13 @@ pub fn ResidualModel(
             comptime self: Self,
             inputs: anytype,
         ) [R]f64 {
-            comptime evaluation.validateInputFields(
-                @TypeOf(inputs),
-                &.{self.residuals.nodes},
+            return program.evaluate(
+                R,
+                self.residuals,
                 self.variables[0..] ++ self.data[0..],
-                &.{},
+                inputs,
                 "residualModel eval",
             );
-            return self.residuals.eval(inputs);
         }
 
         /// Evaluates one residual block into caller-owned storage.
@@ -93,26 +87,28 @@ pub fn ResidualModel(
             output: *[R]f64,
             inputs: anytype,
         ) void {
-            output.* = self.eval(inputs);
+            program.evaluateInto(
+                R,
+                self.residuals,
+                self.variables[0..] ++ self.data[0..],
+                output,
+                inputs,
+                "residualModel eval",
+            );
         }
 
         /// Builds the symbolic per-observation Jacobian.
         pub fn jacobian(
             comptime self: Self,
         ) ast.ExprMatrix(R, N) {
-            return self.residuals.jacobian(self.variable_tags);
+            return program.jacobian(R, N, self.residuals, self.variable_tags);
         }
 
         /// Compiles residuals and first derivatives into one shared DAG.
         pub fn linearize(
             comptime self: Self,
         ) linearization.Program(R, N) {
-            return linearization.make(
-                R,
-                N,
-                self.residuals,
-                self.jacobian(),
-            );
+            return program.linearize(R, N, self.residuals, self.variable_tags);
         }
 
         /// Evaluates one residual block and Jacobian in one shared DAG pass.
@@ -120,15 +116,15 @@ pub fn ResidualModel(
             comptime self: Self,
             inputs: anytype,
         ) linearization.Result(R, N, f64) {
-            const program = comptime self.linearize();
-            comptime evaluation.validateInputFields(
-                @TypeOf(inputs),
-                &.{program.combined.nodes},
+            return program.valueAndJacobian(
+                R,
+                N,
+                self.residuals,
+                self.variable_tags,
                 self.variables[0..] ++ self.data[0..],
-                &.{},
+                inputs,
                 "residualModel valueAndJacobian",
             );
-            return program.eval(inputs);
         }
 
         /// Interprets each runtime observation as one residual block.
@@ -204,11 +200,7 @@ pub fn make(
         }
     }
 
-    var expressions: [R]ast.Expr = undefined;
-    inline for (sources, 0..) |source, index| {
-        expressions[index] = parser.parse(source);
-    }
-    const residuals = comptime multi.vector(R, expressions);
+    const residuals = comptime program.parseVector(R, sources);
     comptime validateSymbols(
         R,
         N,
@@ -220,7 +212,6 @@ pub fn make(
     return .{
         .residuals = residuals,
         .variable_tags = options.variables,
-        .data_tags = options.data,
         .variables = variable_names,
         .data = data_names,
     };
@@ -263,21 +254,10 @@ fn validateSymbols(
     comptime variables: [N][]const u8,
     comptime data: [P][]const u8,
 ) void {
-    for (residuals.nodes) |node| {
-        if (node != .symbol) continue;
-        const symbol = node.symbol;
-        var declared = false;
-        for (variables) |variable| {
-            if (std.mem.eql(u8, symbol, variable)) declared = true;
-        }
-        for (data) |field| {
-            if (std.mem.eql(u8, symbol, field)) declared = true;
-        }
-        if (!declared) {
-            @compileError(std.fmt.comptimePrint(
-                "Bombelli residualModel symbol '{s}' is neither a variable nor a data field",
-                .{symbol},
-            ));
-        }
-    }
+    program.validateSymbols(
+        residuals,
+        &variables,
+        &data,
+        "Bombelli residualModel symbol '{s}' is neither a variable nor a data field",
+    );
 }

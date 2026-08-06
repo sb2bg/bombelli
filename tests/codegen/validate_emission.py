@@ -15,69 +15,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 
-
-@dataclass(frozen=True)
-class Case:
-    name: str
-    zig_generator: str
-    zig_harness: str
-    c_generator: str
-    c_unit: str
-    c_driver: str
-
-
-CASES = (
-    Case(
-        name="expression",
-        zig_generator="generate_expression_zig.zig",
-        zig_harness="test_expression_emission.zig",
-        c_generator="generate_expression_c.zig",
-        c_unit="generated_expression.c",
-        c_driver="drive_expression.c",
-    ),
-    Case(
-        name="smooth_expression",
-        zig_generator="generate_smooth_expression_zig.zig",
-        zig_harness="test_smooth_expression_emission.zig",
-        c_generator="generate_smooth_expression_c.zig",
-        c_unit="generated_smooth_expression.c",
-        c_driver="drive_smooth_expression.c",
-    ),
-    Case(
-        name="gradient",
-        zig_generator="generate_gradient_zig.zig",
-        zig_harness="test_gradient_emission.zig",
-        c_generator="generate_gradient_c.zig",
-        c_unit="generated_gradient.c",
-        c_driver="drive_gradient.c",
-    ),
-    Case(
-        name="quadrature",
-        zig_generator="generate_quadrature_zig.zig",
-        zig_harness="test_quadrature_emission.zig",
-        c_generator="generate_quadrature_c.zig",
-        c_unit="generated_quadrature.c",
-        c_driver="drive_quadrature.c",
-    ),
-    Case(
-        name="newton",
-        zig_generator="generate_newton_zig.zig",
-        zig_harness="test_newton_emission.zig",
-        c_generator="generate_newton_c.zig",
-        c_unit="generated_newton.c",
-        c_driver="drive_newton.c",
-    ),
-    Case(
-        name="fitter",
-        zig_generator="generate_fitter_zig.zig",
-        zig_harness="test_fitter_emission.zig",
-        c_generator="generate_fitter_c.zig",
-        c_unit="generated_fitter.c",
-        c_driver="drive_fitter.c",
-    ),
+CASE_NAMES = tuple(
+    (Path(__file__).with_name("case_names.txt")).read_text().splitlines()
 )
 
 FORBIDDEN = (
@@ -122,22 +63,25 @@ def run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return completed
 
 
-def generate(zig: str, repo: Path, generator: str) -> str:
+def generate(zig: str, repo: Path, case: str, target: str) -> str:
     source = run(
         [
             zig,
             "run",
             "--dep",
             "bombelli",
-            f"-Mroot={repo / 'tests' / 'codegen' / generator}",
+            f"-Mroot={repo / 'tests' / 'codegen' / 'generate.zig'}",
             f"-Mbombelli={repo / 'src' / 'root.zig'}",
+            "--",
+            case,
+            target,
         ],
         repo,
     ).stdout
     for forbidden in FORBIDDEN:
         if forbidden in source:
             raise SystemExit(
-                f"{generator} emitted forbidden runtime machinery: {forbidden}"
+                f"{case}/{target} emitted forbidden runtime machinery: {forbidden}"
             )
     return source
 
@@ -163,13 +107,13 @@ def parse_values(text: str) -> dict[str, str]:
     return values
 
 
-def compare(case: Case, reference: dict[str, str], actual: dict[str, str]) -> None:
+def compare(case: str, reference: dict[str, str], actual: dict[str, str]) -> None:
     if not actual:
-        raise SystemExit(f"{case.name}: the C driver printed nothing")
+        raise SystemExit(f"{case}: the C driver printed nothing")
     for label, printed in actual.items():
         if label not in reference:
             raise SystemExit(
-                f"{case.name}: the C driver printed unknown label {label!r}"
+                f"{case}: the C driver printed unknown label {label!r}"
             )
         expected = reference[label]
         if math.isclose(
@@ -180,7 +124,7 @@ def compare(case: Case, reference: dict[str, str], actual: dict[str, str]) -> No
         ):
             continue
         raise SystemExit(
-            f"{case.name}: emitted C disagrees with Bombelli on {label}: "
+            f"{case}: emitted C disagrees with Bombelli on {label}: "
             f"expected {expected}, computed {printed}"
         )
 
@@ -209,9 +153,9 @@ def main() -> None:
     total_bytes = 0
     with tempfile.TemporaryDirectory(prefix="bombelli-emission-") as temp:
         temporary = Path(temp)
-        for case in CASES:
-            zig_source = generate(zig, repo, case.zig_generator)
-            unit = temporary / f"{case.name}_emission.zig"
+        for case in CASE_NAMES:
+            zig_source = generate(zig, repo, case, "zig")
+            unit = temporary / f"{case}_emission.zig"
             unit.write_text(zig_source)
             run(
                 [
@@ -221,20 +165,22 @@ def main() -> None:
                     "generated",
                     "--dep",
                     "bombelli",
-                    f"-Mroot={codegen / case.zig_harness}",
+                    f"-Mroot={codegen / f'test_{case}_emission.zig'}",
                     f"-Mgenerated={unit}",
                     f"-Mbombelli={repo / 'src' / 'root.zig'}",
                 ],
                 repo,
             )
 
-            c_source = generate(zig, repo, case.c_generator)
-            check_c_includes(case.c_generator, c_source)
-            (temporary / case.c_unit).write_text(c_source)
-            shutil.copy(codegen / case.c_driver, temporary / case.c_driver)
-            executable = temporary / f"{case.name}_driver"
+            c_source = generate(zig, repo, case, "c")
+            check_c_includes(case, c_source)
+            c_unit = f"generated_{case}.c"
+            c_driver = f"drive_{case}.c"
+            (temporary / c_unit).write_text(c_source)
+            shutil.copy(codegen / c_driver, temporary / c_driver)
+            executable = temporary / f"{case}_driver"
             run(
-                [zig, "cc", *C_FLAGS, case.c_driver, "-o", str(executable), "-lm"],
+                [zig, "cc", *C_FLAGS, c_driver, "-o", str(executable), "-lm"],
                 temporary,
             )
             compare(
@@ -246,14 +192,14 @@ def main() -> None:
             emitted = len(zig_source.encode()) + len(c_source.encode())
             total_bytes += emitted
             print(
-                f"{case.name}: {len(zig_source.encode())} bytes of Zig, "
+                f"{case}: {len(zig_source.encode())} bytes of Zig, "
                 f"{len(c_source.encode())} bytes of C, "
                 "standalone behavior passed for both targets",
                 flush=True,
             )
 
     print(
-        f"Standalone emission validation passed for {len(CASES)} "
+        f"Standalone emission validation passed for {len(CASE_NAMES)} "
         f"callable types across 2 targets ({total_bytes} source bytes total)."
     )
 

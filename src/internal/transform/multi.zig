@@ -15,7 +15,7 @@ pub fn vector(
             expression.construction_peak_nodes,
         );
         var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
-        roots[index] = cloneNodes(&builder, expression.nodes, expression.root, &cache);
+        roots[index] = builder.cloneNode(expression.nodes, expression.root, &cache);
         sources[index] = expression.source;
     }
     var result = builder.finishVector(N, roots, sources);
@@ -42,8 +42,7 @@ pub fn matrix(
                 expression.construction_peak_nodes,
             );
             var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
-            roots[row_index][column_index] = cloneNodes(
-                &builder,
+            roots[row_index][column_index] = builder.cloneNode(
                 expression.nodes,
                 expression.root,
                 &cache,
@@ -183,83 +182,6 @@ pub fn extractRoot(
 ) ast.Expr {
     var builder = build.Builder{};
     var cache = [_]ast.NodeId{ast.invalid_node} ** nodes.len;
-    const cloned_root = cloneNodes(&builder, nodes, root, &cache);
+    const cloned_root = builder.cloneNode(nodes, root, &cache);
     return builder.finish(cloned_root, source);
-}
-
-fn cloneNodes(
-    builder: *build.Builder,
-    comptime nodes: []const ast.Node,
-    id: ast.NodeId,
-    cache: []ast.NodeId,
-) ast.NodeId {
-    const index: usize = @intCast(id);
-    if (cache[index] != ast.invalid_node) return cache[index];
-
-    const result = switch (nodes[index]) {
-        .integer => |value| builder.integer(value),
-        .rational => |value| builder.rational(value),
-        .float => |value| builder.float(value),
-        .constant => |value| builder.constant(value),
-        .symbol => |name| builder.symbol(name),
-        .add => |binary| builder.add(
-            cloneNodes(builder, nodes, binary.left, cache),
-            cloneNodes(builder, nodes, binary.right, cache),
-        ),
-        .add_nary => |operands| blk: {
-            var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
-            for (operands, 0..) |child, operand_index| {
-                cloned[operand_index] = cloneNodes(builder, nodes, child, cache);
-            }
-            break :blk builder.addNary(cloned[0..operands.len]);
-        },
-        .sub => |binary| builder.sub(
-            cloneNodes(builder, nodes, binary.left, cache),
-            cloneNodes(builder, nodes, binary.right, cache),
-        ),
-        .mul => |binary| builder.mul(
-            cloneNodes(builder, nodes, binary.left, cache),
-            cloneNodes(builder, nodes, binary.right, cache),
-        ),
-        .mul_nary => |operands| blk: {
-            var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
-            for (operands, 0..) |child, operand_index| {
-                cloned[operand_index] = cloneNodes(builder, nodes, child, cache);
-            }
-            break :blk builder.mulNary(cloned[0..operands.len]);
-        },
-        .div => |binary| builder.div(
-            cloneNodes(builder, nodes, binary.left, cache),
-            cloneNodes(builder, nodes, binary.right, cache),
-        ),
-        .pow => |power| builder.power(
-            cloneNodes(builder, nodes, power.base, cache),
-            power.exponent,
-        ),
-        .negate => |child| builder.negate(cloneNodes(builder, nodes, child, cache)),
-        .sin => |child| builder.sine(cloneNodes(builder, nodes, child, cache)),
-        .cos => |child| builder.cosine(cloneNodes(builder, nodes, child, cache)),
-        .tan => |child| builder.tangent(cloneNodes(builder, nodes, child, cache)),
-        .asin => |child| builder.arcsine(cloneNodes(builder, nodes, child, cache)),
-        .acos => |child| builder.arccosine(cloneNodes(builder, nodes, child, cache)),
-        .atan => |child| builder.arctangent(cloneNodes(builder, nodes, child, cache)),
-        .sinh => |child| builder.hyperbolicSine(cloneNodes(builder, nodes, child, cache)),
-        .cosh => |child| builder.hyperbolicCosine(cloneNodes(builder, nodes, child, cache)),
-        .tanh => |child| builder.hyperbolicTangent(cloneNodes(builder, nodes, child, cache)),
-        .abs => |child| builder.absolute(cloneNodes(builder, nodes, child, cache)),
-        .exp => |child| builder.exponential(cloneNodes(builder, nodes, child, cache)),
-        .ln => |child| builder.logarithm(cloneNodes(builder, nodes, child, cache)),
-        .log2 => |child| builder.logarithm2(cloneNodes(builder, nodes, child, cache)),
-        .log10 => |child| builder.logarithm10(cloneNodes(builder, nodes, child, cache)),
-        .atan2 => |binary| builder.arctangent2(
-            cloneNodes(builder, nodes, binary.left, cache),
-            cloneNodes(builder, nodes, binary.right, cache),
-        ),
-        .hypot => |binary| builder.hypotenuse(
-            cloneNodes(builder, nodes, binary.left, cache),
-            cloneNodes(builder, nodes, binary.right, cache),
-        ),
-    };
-    cache[index] = result;
-    return result;
 }

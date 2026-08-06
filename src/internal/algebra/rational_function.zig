@@ -158,7 +158,6 @@ const ConversionContext = struct {
             )),
             .rational => |value| fromPolynomial(polynomial.exactConstant(value)),
             .symbol => |name| fromPolynomial(polynomial.indeterminate(name)),
-            .add => |binary| self.convert(binary.left).add(self.convert(binary.right)),
             .add_nary => |operands| blk: {
                 var sum = fromPolynomial(polynomial.exactConstant(
                     exact.Rational.fromInteger(0),
@@ -167,7 +166,6 @@ const ConversionContext = struct {
                 break :blk sum;
             },
             .sub => |binary| self.convert(binary.left).sub(self.convert(binary.right)),
-            .mul => |binary| self.convert(binary.left).mul(self.convert(binary.right)),
             .mul_nary => |operands| blk: {
                 var product = fromPolynomial(polynomial.exactConstant(
                     exact.Rational.fromInteger(1),
@@ -182,23 +180,12 @@ const ConversionContext = struct {
                 }
                 break :blk self.convert(power.base).pow(power.exponent.numerator);
             },
-            .negate => |child| self.convert(child).negate(),
+            .unary => |unary| switch (unary.op) {
+                .negate => self.convert(unary.child).negate(),
+                else => unsupported("transcendental functions are not rational functions"),
+            },
             .float => unsupported("floating-point constants are not exact rational functions"),
             .constant => unsupported("transcendental constants are not exact rational functions"),
-            .sin,
-            .cos,
-            .tan,
-            .asin,
-            .acos,
-            .atan,
-            .sinh,
-            .cosh,
-            .tanh,
-            .abs,
-            .exp,
-            .ln,
-            .log2,
-            .log10,
             .atan2,
             .hypot,
             => unsupported(

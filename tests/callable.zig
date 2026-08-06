@@ -2,24 +2,13 @@ const std = @import("std");
 const bombelli = @import("bombelli");
 
 const expr = bombelli.expr;
-const callable = bombelli.callable;
 
-test "callable helpers preserve compile-time-specialized structural interfaces" {
+test "top-level evaluation helpers preserve compile-time specialization" {
     const expression = comptime expr("x^2 + y");
     try std.testing.expectEqual(
         @as(f64, 7.0),
-        callable.eval(expression, .{ .x = 2.0, .y = 3.0 }),
+        bombelli.eval(expression, .{ .x = 2.0, .y = 3.0 }),
     );
-
-    const emitted = comptime callable.emit(expression, .{
-        .target = .zig,
-        .mode = .out_of_place,
-    });
-    try std.testing.expect(std.mem.indexOf(
-        u8,
-        emitted,
-        "pub fn bombelli_generated",
-    ) != null);
 
     const rule = comptime expr("x^2").quadrature(.{
         .variable = .x,
@@ -28,11 +17,9 @@ test "callable helpers preserve compile-time-specialized structural interfaces" 
     });
     try std.testing.expectApproxEqAbs(
         1.0 / 3.0,
-        callable.eval(rule, .{ .from = 0.0, .to = 1.0 }),
+        bombelli.eval(rule, .{ .from = 0.0, .to = 1.0 }),
         1e-15,
     );
-    try std.testing.expect(callable.supports(@TypeOf(expression), "diff"));
-    try std.testing.expect(callable.supports(@TypeOf(rule), "emit"));
 }
 
 test "top-level evaluation composes temporary symbolic programs" {

@@ -121,26 +121,12 @@ fn renderBare(
         .float => |value| renderFloat(value),
         .constant => |value| value.name(),
         .symbol => |name| name,
-        .add => |binary| std.fmt.comptimePrint(
-            "{s} + {s}",
-            .{
-                renderChild(expression, binary.left, .add_left, rendered),
-                renderChild(expression, binary.right, .add_right, rendered),
-            },
-        ),
         .add_nary => |operands| renderNaryAdd(expression, operands, rendered),
         .sub => |binary| std.fmt.comptimePrint(
             "{s} - {s}",
             .{
                 renderChild(expression, binary.left, .sub_left, rendered),
                 renderChild(expression, binary.right, .sub_right, rendered),
-            },
-        ),
-        .mul => |binary| std.fmt.comptimePrint(
-            "{s} * {s}",
-            .{
-                renderChild(expression, binary.left, .mul_left, rendered),
-                renderChild(expression, binary.right, .mul_right, rendered),
             },
         ),
         .mul_nary => |operands| renderNaryMul(expression, operands, rendered),
@@ -172,24 +158,18 @@ fn renderBare(
                     power.exponent.denominator,
                 },
             ),
-        .negate => |child| std.fmt.comptimePrint(
-            "-{s}",
-            .{renderChild(expression, child, .negate_child, rendered)},
-        ),
-        .sin => |child| renderFunction(expression, "sin", child, rendered),
-        .cos => |child| renderFunction(expression, "cos", child, rendered),
-        .tan => |child| renderFunction(expression, "tan", child, rendered),
-        .asin => |child| renderFunction(expression, "asin", child, rendered),
-        .acos => |child| renderFunction(expression, "acos", child, rendered),
-        .atan => |child| renderFunction(expression, "atan", child, rendered),
-        .sinh => |child| renderFunction(expression, "sinh", child, rendered),
-        .cosh => |child| renderFunction(expression, "cosh", child, rendered),
-        .tanh => |child| renderFunction(expression, "tanh", child, rendered),
-        .abs => |child| renderFunction(expression, "abs", child, rendered),
-        .exp => |child| renderFunction(expression, "exp", child, rendered),
-        .ln => |child| renderFunction(expression, "ln", child, rendered),
-        .log2 => |child| renderFunction(expression, "log2", child, rendered),
-        .log10 => |child| renderFunction(expression, "log10", child, rendered),
+        .unary => |unary| if (unary.op == .negate)
+            std.fmt.comptimePrint(
+                "-{s}",
+                .{renderChild(expression, unary.child, .negate_child, rendered)},
+            )
+        else
+            renderFunction(
+                expression,
+                @tagName(unary.op),
+                unary.child,
+                rendered,
+            ),
         .atan2 => |binary| renderBinaryFunction(
             "atan2",
             binary,
@@ -288,12 +268,10 @@ fn negativeMagnitude(
     comptime rendered: []const []const u8,
 ) ?[]const u8 {
     return switch (expression.node(child)) {
-        .negate => |grandchild| renderChild(
-            expression,
-            grandchild,
-            .sub_right,
-            rendered,
-        ),
+        .unary => |unary| if (unary.op == .negate)
+            renderChild(expression, unary.child, .sub_right, rendered)
+        else
+            null,
         .integer => |value| if (value < 0 and value != std.math.minInt(i64))
             std.fmt.comptimePrint("{d}", .{-value})
         else
@@ -412,9 +390,9 @@ fn needsParentheses(node: ast.Node, context: Context) bool {
 
 fn nodePrecedence(node: ast.Node) u8 {
     return switch (node) {
-        .add, .add_nary, .sub => 10,
-        .mul, .mul_nary, .div => 20,
-        .negate => 30,
+        .add_nary, .sub => 10,
+        .mul_nary, .div => 20,
+        .unary => |unary| if (unary.op == .negate) 30 else 50,
         .pow => 40,
         .integer => |value| if (value < 0) 30 else 50,
         // Rationals render as infix division, so they must retain division
@@ -423,20 +401,6 @@ fn nodePrecedence(node: ast.Node) u8 {
         .float => |value| if (value < 0.0) 30 else 50,
         .constant,
         .symbol,
-        .sin,
-        .cos,
-        .tan,
-        .asin,
-        .acos,
-        .atan,
-        .sinh,
-        .cosh,
-        .tanh,
-        .abs,
-        .exp,
-        .ln,
-        .log2,
-        .log10,
         .atan2,
         .hypot,
         => 50,

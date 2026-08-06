@@ -38,11 +38,6 @@ const Context = struct {
             .symbol => |name| self.builder.integer(
                 if (std.mem.eql(u8, name, self.variable)) 1 else 0,
             ),
-            .negate => |child| self.builder.negate(self.derivative(child)),
-            .add => |binary| self.builder.add(
-                self.derivative(binary.left),
-                self.derivative(binary.right),
-            ),
             .add_nary => |operands| blk: {
                 var derivatives: [ast.construction_node_limit]ast.NodeId = undefined;
                 for (operands, 0..) |child, operand_index| {
@@ -54,15 +49,6 @@ const Context = struct {
                 self.derivative(binary.left),
                 self.derivative(binary.right),
             ),
-            .mul => |binary| blk: {
-                const left_derivative = self.derivative(binary.left);
-                const right_copy = self.clone(binary.right);
-                const left_copy = self.clone(binary.left);
-                const right_derivative = self.derivative(binary.right);
-                const first = self.builder.mul(left_derivative, right_copy);
-                const second = self.builder.mul(left_copy, right_derivative);
-                break :blk self.builder.add(first, second);
-            },
             .mul_nary => |operands| blk: {
                 var terms: [ast.construction_node_limit]ast.NodeId = undefined;
                 for (operands, 0..) |_, derivative_index| {
@@ -110,131 +96,137 @@ const Context = struct {
                     base_derivative,
                 );
             },
-            .sin => |child| blk: {
-                const child_copy = self.clone(child);
-                const cosine = self.builder.cosine(child_copy);
-                break :blk self.builder.mul(cosine, self.derivative(child));
-            },
-            .cos => |child| blk: {
-                const child_copy = self.clone(child);
-                const sine = self.builder.sine(child_copy);
-                const negative_sine = self.builder.negate(sine);
-                break :blk self.builder.mul(negative_sine, self.derivative(child));
-            },
-            .tan => |child| blk: {
-                const cosine = self.builder.cosine(self.clone(child));
-                const denominator = self.builder.power(cosine, 2);
-                break :blk self.builder.div(self.derivative(child), denominator);
-            },
-            .asin => |child| blk: {
-                const child_copy = self.clone(child);
-                const square = self.builder.power(child_copy, 2);
-                const radicand = self.builder.sub(
-                    self.builder.integer(1),
-                    square,
-                );
-                const denominator = self.builder.power(
-                    radicand,
-                    exact.Rational{ .numerator = 1, .denominator = 2 },
-                );
-                break :blk self.builder.div(
-                    self.derivative(child),
-                    denominator,
-                );
-            },
-            .acos => |child| blk: {
-                const child_copy = self.clone(child);
-                const square = self.builder.power(child_copy, 2);
-                const radicand = self.builder.sub(
-                    self.builder.integer(1),
-                    square,
-                );
-                const denominator = self.builder.power(
-                    radicand,
-                    exact.Rational{ .numerator = 1, .denominator = 2 },
-                );
-                break :blk self.builder.div(
-                    self.builder.negate(self.derivative(child)),
-                    denominator,
-                );
-            },
-            .atan => |child| blk: {
-                const child_copy = self.clone(child);
-                const square = self.builder.power(child_copy, 2);
-                const denominator = self.builder.add(self.builder.integer(1), square);
-                break :blk self.builder.div(self.derivative(child), denominator);
-            },
-            .sinh => |child| blk: {
-                const hyperbolic_cosine = self.builder.hyperbolicCosine(
-                    self.clone(child),
-                );
-                break :blk self.builder.mul(
-                    hyperbolic_cosine,
-                    self.derivative(child),
-                );
-            },
-            .cosh => |child| blk: {
-                const hyperbolic_sine = self.builder.hyperbolicSine(
-                    self.clone(child),
-                );
-                break :blk self.builder.mul(
-                    hyperbolic_sine,
-                    self.derivative(child),
-                );
-            },
-            .tanh => |child| blk: {
-                const hyperbolic_cosine = self.builder.hyperbolicCosine(
-                    self.clone(child),
-                );
-                const denominator = self.builder.power(
-                    hyperbolic_cosine,
-                    2,
-                );
-                break :blk self.builder.div(
-                    self.derivative(child),
-                    denominator,
-                );
-            },
-            .abs => |child| blk: {
-                const child_copy = self.clone(child);
-                const absolute = self.builder.absolute(child_copy);
-                const slope = self.builder.div(child_copy, absolute);
-                break :blk self.builder.mul(slope, self.derivative(child));
-            },
-            .exp => |child| blk: {
-                const child_copy = self.clone(child);
-                const exponential = self.builder.exponential(child_copy);
-                break :blk self.builder.mul(exponential, self.derivative(child));
-            },
-            .ln => |child| self.builder.div(
-                self.derivative(child),
-                self.clone(child),
-            ),
-            .log2 => |child| blk: {
-                const logarithm_of_base = self.builder.logarithm(
-                    self.builder.integer(2),
-                );
-                const denominator = self.builder.mul(
-                    self.clone(child),
-                    logarithm_of_base,
-                );
-                break :blk self.builder.div(
-                    self.derivative(child),
-                    denominator,
-                );
-            },
-            .log10 => |child| blk: {
-                const logarithm_of_base = self.builder.logarithm(
-                    self.builder.integer(10),
-                );
-                const denominator = self.builder.mul(
-                    self.clone(child),
-                    logarithm_of_base,
-                );
-                break :blk self.builder.div(
-                    self.derivative(child),
-                    denominator,
-                );
+            .unary => |unary| unary_block: {
+                const child = unary.child;
+                break :unary_block switch (unary.op) {
+                    .negate => self.builder.negate(self.derivative(child)),
+                    .sin => blk: {
+                        const child_copy = self.clone(child);
+                        const cosine = self.builder.cosine(child_copy);
+                        break :blk self.builder.mul(cosine, self.derivative(child));
+                    },
+                    .cos => blk: {
+                        const child_copy = self.clone(child);
+                        const sine = self.builder.sine(child_copy);
+                        const negative_sine = self.builder.negate(sine);
+                        break :blk self.builder.mul(negative_sine, self.derivative(child));
+                    },
+                    .tan => blk: {
+                        const cosine = self.builder.cosine(self.clone(child));
+                        const denominator = self.builder.power(cosine, 2);
+                        break :blk self.builder.div(self.derivative(child), denominator);
+                    },
+                    .asin => blk: {
+                        const child_copy = self.clone(child);
+                        const square = self.builder.power(child_copy, 2);
+                        const radicand = self.builder.sub(
+                            self.builder.integer(1),
+                            square,
+                        );
+                        const denominator = self.builder.power(
+                            radicand,
+                            exact.Rational{ .numerator = 1, .denominator = 2 },
+                        );
+                        break :blk self.builder.div(
+                            self.derivative(child),
+                            denominator,
+                        );
+                    },
+                    .acos => blk: {
+                        const child_copy = self.clone(child);
+                        const square = self.builder.power(child_copy, 2);
+                        const radicand = self.builder.sub(
+                            self.builder.integer(1),
+                            square,
+                        );
+                        const denominator = self.builder.power(
+                            radicand,
+                            exact.Rational{ .numerator = 1, .denominator = 2 },
+                        );
+                        break :blk self.builder.div(
+                            self.builder.negate(self.derivative(child)),
+                            denominator,
+                        );
+                    },
+                    .atan => blk: {
+                        const child_copy = self.clone(child);
+                        const square = self.builder.power(child_copy, 2);
+                        const denominator = self.builder.add(self.builder.integer(1), square);
+                        break :blk self.builder.div(self.derivative(child), denominator);
+                    },
+                    .sinh => blk: {
+                        const hyperbolic_cosine = self.builder.hyperbolicCosine(
+                            self.clone(child),
+                        );
+                        break :blk self.builder.mul(
+                            hyperbolic_cosine,
+                            self.derivative(child),
+                        );
+                    },
+                    .cosh => blk: {
+                        const hyperbolic_sine = self.builder.hyperbolicSine(
+                            self.clone(child),
+                        );
+                        break :blk self.builder.mul(
+                            hyperbolic_sine,
+                            self.derivative(child),
+                        );
+                    },
+                    .tanh => blk: {
+                        const hyperbolic_cosine = self.builder.hyperbolicCosine(
+                            self.clone(child),
+                        );
+                        const denominator = self.builder.power(
+                            hyperbolic_cosine,
+                            2,
+                        );
+                        break :blk self.builder.div(
+                            self.derivative(child),
+                            denominator,
+                        );
+                    },
+                    .abs => blk: {
+                        const child_copy = self.clone(child);
+                        const absolute = self.builder.absolute(child_copy);
+                        const slope = self.builder.div(child_copy, absolute);
+                        break :blk self.builder.mul(slope, self.derivative(child));
+                    },
+                    .exp => blk: {
+                        const child_copy = self.clone(child);
+                        const exponential = self.builder.exponential(child_copy);
+                        break :blk self.builder.mul(exponential, self.derivative(child));
+                    },
+                    .ln => self.builder.div(
+                        self.derivative(child),
+                        self.clone(child),
+                    ),
+                    .log2 => blk: {
+                        const logarithm_of_base = self.builder.logarithm(
+                            self.builder.integer(2),
+                        );
+                        const denominator = self.builder.mul(
+                            self.clone(child),
+                            logarithm_of_base,
+                        );
+                        break :blk self.builder.div(
+                            self.derivative(child),
+                            denominator,
+                        );
+                    },
+                    .log10 => blk: {
+                        const logarithm_of_base = self.builder.logarithm(
+                            self.builder.integer(10),
+                        );
+                        const denominator = self.builder.mul(
+                            self.clone(child),
+                            logarithm_of_base,
+                        );
+                        break :blk self.builder.div(
+                            self.derivative(child),
+                            denominator,
+                        );
+                    },
+                };
             },
             .atan2 => |binary| blk: {
                 const y = self.clone(binary.left);
@@ -291,10 +283,6 @@ const Context = struct {
             .float => |value| self.builder.float(value),
             .constant => |value| self.builder.constant(value),
             .symbol => |name| self.builder.symbol(name),
-            .add => |binary| self.builder.add(
-                self.clone(binary.left),
-                self.clone(binary.right),
-            ),
             .add_nary => |operands| blk: {
                 var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
                 for (operands, 0..) |child, operand_index| {
@@ -303,10 +291,6 @@ const Context = struct {
                 break :blk self.builder.addNary(cloned[0..operands.len]);
             },
             .sub => |binary| self.builder.sub(
-                self.clone(binary.left),
-                self.clone(binary.right),
-            ),
-            .mul => |binary| self.builder.mul(
                 self.clone(binary.left),
                 self.clone(binary.right),
             ),
@@ -325,21 +309,10 @@ const Context = struct {
                 self.clone(power.base),
                 power.exponent,
             ),
-            .negate => |child| self.builder.negate(self.clone(child)),
-            .sin => |child| self.builder.sine(self.clone(child)),
-            .cos => |child| self.builder.cosine(self.clone(child)),
-            .tan => |child| self.builder.tangent(self.clone(child)),
-            .asin => |child| self.builder.arcsine(self.clone(child)),
-            .acos => |child| self.builder.arccosine(self.clone(child)),
-            .atan => |child| self.builder.arctangent(self.clone(child)),
-            .sinh => |child| self.builder.hyperbolicSine(self.clone(child)),
-            .cosh => |child| self.builder.hyperbolicCosine(self.clone(child)),
-            .tanh => |child| self.builder.hyperbolicTangent(self.clone(child)),
-            .abs => |child| self.builder.absolute(self.clone(child)),
-            .exp => |child| self.builder.exponential(self.clone(child)),
-            .ln => |child| self.builder.logarithm(self.clone(child)),
-            .log2 => |child| self.builder.logarithm2(self.clone(child)),
-            .log10 => |child| self.builder.logarithm10(self.clone(child)),
+            .unary => |unary| self.builder.unary(
+                unary.op,
+                self.clone(unary.child),
+            ),
             .atan2 => |binary| self.builder.arctangent2(
                 self.clone(binary.left),
                 self.clone(binary.right),

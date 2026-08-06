@@ -13,7 +13,7 @@ pub fn markReachable(
 
     switch (nodes[index]) {
         .integer, .rational, .float, .constant, .symbol => {},
-        .add, .sub, .mul, .div, .atan2, .hypot => |binary| {
+        .sub, .div, .atan2, .hypot => |binary| {
             markReachable(nodes, binary.left, reachable);
             markReachable(nodes, binary.right, reachable);
         },
@@ -21,23 +21,6 @@ pub fn markReachable(
             for (operands) |child| markReachable(nodes, child, reachable);
         },
         .pow => |power| markReachable(nodes, power.base, reachable),
-        .negate,
-        .sin,
-        .cos,
-        .tan,
-        .asin,
-        .acos,
-        .atan,
-        .sinh,
-        .cosh,
-        .tanh,
-        .abs,
-        .exp,
-        .ln,
-        .log2,
-        .log10,
-        => |child| {
-            markReachable(nodes, child, reachable);
-        },
+        .unary => |unary| markReachable(nodes, unary.child, reachable),
     }
 }

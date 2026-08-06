@@ -4,6 +4,5 @@ const bombelli = @import("bombelli");
 comptime {
     _ = bombelli.expr("x").emit(.{
         .target = .rust,
-        .mode = .out_of_place,
     });
 }

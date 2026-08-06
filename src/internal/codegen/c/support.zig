@@ -1,14 +1,20 @@
 const std = @import("std");
 const ast = @import("../../../expression.zig");
+const shared = @import("../support.zig");
 const scalar_options = @import("../scalar.zig");
 
 pub const Scalar = scalar_options.Scalar;
 pub const scalarOption = scalar_options.scalarOption;
 
-pub const Binding = struct {
-    symbol: []const u8,
-    source: []const u8,
-};
+pub const Binding = shared.Binding;
+pub const append = shared.append;
+pub const fill = shared.fill;
+pub const variableBindings = shared.variableBindings;
+
+const binarySource = shared.binarySource;
+const binaryFunctionSource = shared.binaryFunctionSource;
+const narySource = shared.narySource;
+const unarySource = shared.unarySource;
 
 /// The C templates are written against placeholders rather than a fixed
 /// scalar type, so a template stays readable C instead of a format string
@@ -45,33 +51,6 @@ fn helperSuffix(comptime scalar: Scalar) []const u8 {
         .f64 => "f64",
         .f32 => "f32",
     };
-}
-
-/// Fills a template's `@placeholder@` slots from a tuple of pairs.
-pub fn fill(comptime template: []const u8, comptime pairs: anytype) []const u8 {
-    var filled: []const u8 = template;
-    inline for (pairs) |pair| {
-        filled = replace(filled, pair[0], pair[1]);
-    }
-    return filled;
-}
-
-fn replace(
-    comptime source: []const u8,
-    comptime needle: []const u8,
-    comptime replacement: []const u8,
-) []const u8 {
-    var rewritten: []const u8 = "";
-    var index: usize = 0;
-    while (std.mem.indexOfPos(u8, source, index, needle)) |found| {
-        rewritten = rewritten ++ source[index..found] ++ replacement;
-        index = found + needle.len;
-    }
-    return rewritten ++ source[index..];
-}
-
-pub fn append(comptime left: []const u8, comptime right: []const u8) []const u8 {
-    return std.fmt.comptimePrint("{s}{s}", .{ left, right });
 }
 
 pub fn emitNodes(
@@ -115,9 +94,7 @@ fn nodeSource(
         .float => |value| floatSource(value),
         .constant => |value| constantSource(value),
         .symbol => |name| symbolSource(name, bindings),
-        .add => |binary| binarySource(binary, prefix, "+"),
         .sub => |binary| binarySource(binary, prefix, "-"),
-        .mul => |binary| binarySource(binary, prefix, "*"),
         .div => |binary| binarySource(binary, prefix, "/"),
         .add_nary => |operands| narySource(operands, prefix, "+", "0"),
         .mul_nary => |operands| narySource(operands, prefix, "*", "1"),
@@ -130,21 +107,7 @@ fn nodeSource(
                 unsignedLongLong(power.exponent.denominator),
             },
         ),
-        .negate => |child| std.fmt.comptimePrint("-{s}{d}", .{ prefix, child }),
-        .sin => |child| unarySource(prefix, child, "sin@suffix@"),
-        .cos => |child| unarySource(prefix, child, "cos@suffix@"),
-        .tan => |child| unarySource(prefix, child, "tan@suffix@"),
-        .asin => |child| unarySource(prefix, child, "asin@suffix@"),
-        .acos => |child| unarySource(prefix, child, "acos@suffix@"),
-        .atan => |child| unarySource(prefix, child, "atan@suffix@"),
-        .sinh => |child| unarySource(prefix, child, "sinh@suffix@"),
-        .cosh => |child| unarySource(prefix, child, "cosh@suffix@"),
-        .tanh => |child| unarySource(prefix, child, "tanh@suffix@"),
-        .abs => |child| unarySource(prefix, child, "fabs@suffix@"),
-        .exp => |child| unarySource(prefix, child, "exp@suffix@"),
-        .ln => |child| unarySource(prefix, child, "log@suffix@"),
-        .log2 => |child| unarySource(prefix, child, "log2@suffix@"),
-        .log10 => |child| unarySource(prefix, child, "log10@suffix@"),
+        .unary => |unary| unaryNodeSource(unary, prefix),
         .atan2 => |binary| binaryFunctionSource(
             binary,
             prefix,
@@ -156,6 +119,32 @@ fn nodeSource(
             "hypot@suffix@",
         ),
     };
+}
+
+fn unaryNodeSource(
+    comptime unary: ast.Unary,
+    comptime prefix: []const u8,
+) []const u8 {
+    if (unary.op == .negate) {
+        return std.fmt.comptimePrint("-{s}{d}", .{ prefix, unary.child });
+    }
+    return unarySource(prefix, unary.child, switch (unary.op) {
+        .negate => unreachable,
+        .sin => "sin@suffix@",
+        .cos => "cos@suffix@",
+        .tan => "tan@suffix@",
+        .asin => "asin@suffix@",
+        .acos => "acos@suffix@",
+        .atan => "atan@suffix@",
+        .sinh => "sinh@suffix@",
+        .cosh => "cosh@suffix@",
+        .tanh => "tanh@suffix@",
+        .abs => "fabs@suffix@",
+        .exp => "exp@suffix@",
+        .ln => "log@suffix@",
+        .log2 => "log2@suffix@",
+        .log10 => "log10@suffix@",
+    });
 }
 
 fn constantSource(comptime value: ast.Constant) []const u8 {
@@ -177,80 +166,8 @@ fn symbolSource(
     return std.fmt.comptimePrint("inputs->{s}", .{name});
 }
 
-fn binarySource(
-    comptime binary: ast.Binary,
-    comptime prefix: []const u8,
-    comptime operator: []const u8,
-) []const u8 {
-    return std.fmt.comptimePrint(
-        "{s}{d} {s} {s}{d}",
-        .{ prefix, binary.left, operator, prefix, binary.right },
-    );
-}
-
-fn binaryFunctionSource(
-    comptime binary: ast.Binary,
-    comptime prefix: []const u8,
-    comptime function: []const u8,
-) []const u8 {
-    return std.fmt.comptimePrint(
-        "{s}({s}{d}, {s}{d})",
-        .{
-            function,
-            prefix,
-            binary.left,
-            prefix,
-            binary.right,
-        },
-    );
-}
-
-fn narySource(
-    comptime operands: []const ast.NodeId,
-    comptime prefix: []const u8,
-    comptime operator: []const u8,
-    comptime identity: []const u8,
-) []const u8 {
-    if (operands.len == 0) return identity;
-    var source: []const u8 = std.fmt.comptimePrint(
-        "{s}{d}",
-        .{ prefix, operands[0] },
-    );
-    inline for (operands[1..]) |operand| {
-        source = append(source, std.fmt.comptimePrint(
-            " {s} {s}{d}",
-            .{ operator, prefix, operand },
-        ));
-    }
-    return source;
-}
-
-fn unarySource(
-    comptime prefix: []const u8,
-    comptime child: ast.NodeId,
-    comptime function: []const u8,
-) []const u8 {
-    return std.fmt.comptimePrint(
-        "{s}({s}{d})",
-        .{ function, prefix, child },
-    );
-}
-
 pub fn floatSource(comptime value: f64) []const u8 {
-    if (!std.math.isFinite(value)) {
-        @compileError("Bombelli cannot emit a non-finite constant");
-    }
-    const decimal = std.fmt.comptimePrint("{d}", .{value});
-    const typed_decimal = if (std.mem.indexOfAny(u8, decimal, ".eE") == null)
-        std.fmt.comptimePrint("{s}.0", .{decimal})
-    else
-        decimal;
-    const scientific = std.fmt.comptimePrint("{e}", .{value});
-    const shortest = if (scientific.len < typed_decimal.len)
-        scientific
-    else
-        typed_decimal;
-    return append(shortest, "@suffix@");
+    return append(shared.floatSource(value), "@suffix@");
 }
 
 /// Preserves the exact source integer and makes the conversion to the emitted
@@ -322,20 +239,6 @@ pub fn freeSymbolsOfAll(
     }
 }
 
-/// Binds each solved unknown to its slot in the iterate vector.
-pub fn variableBindings(
-    comptime unknowns: []const []const u8,
-) [unknowns.len]Binding {
-    var bindings: [unknowns.len]Binding = undefined;
-    inline for (unknowns, 0..) |unknown, index| {
-        bindings[index] = .{
-            .symbol = unknown,
-            .source = std.fmt.comptimePrint("values[{d}]", .{index}),
-        };
-    }
-    return bindings;
-}
-
 fn contains(
     comptime names: []const []const u8,
     comptime name: []const u8,
@@ -381,7 +284,7 @@ pub fn unusedInputs(comptime symbols: []const []const u8) []const u8 {
 }
 
 /// Validates the C-specific options and returns the emitted function name.
-/// The target and mode are already validated by the emission dispatcher.
+/// The target is already validated by the emission dispatcher.
 pub fn validateOptions(comptime options: anytype) []const u8 {
     const name = if (@hasField(@TypeOf(options), "name"))
         @as([]const u8, options.name)
@@ -395,13 +298,13 @@ pub fn validateIdentifier(
     comptime name: []const u8,
     comptime role: []const u8,
 ) void {
-    if (name.len == 0 or !identifierStart(name[0])) {
+    if (name.len == 0 or !shared.identifierStart(name[0])) {
         @compileError(
             "Bombelli emitted C " ++ role ++ " must be an identifier",
         );
     }
     for (name[1..]) |character| {
-        if (!identifierStart(character) and
+        if (!shared.identifierStart(character) and
             !(character >= '0' and character <= '9'))
         {
             @compileError(
@@ -416,12 +319,6 @@ pub fn validateIdentifier(
             );
         }
     }
-}
-
-fn identifierStart(comptime character: u8) bool {
-    return (character >= 'a' and character <= 'z') or
-        (character >= 'A' and character <= 'Z') or
-        character == '_';
 }
 
 const keywords = [_][]const u8{

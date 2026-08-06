@@ -8,11 +8,9 @@
 const std = @import("std");
 const ast = @import("expression.zig");
 const domain = @import("internal/core/domain.zig");
-const evaluation = @import("internal/runtime/evaluation.zig");
 const linearization = @import("internal/model/linearization.zig");
 const limits = @import("internal/core/limits.zig");
-const multi = @import("internal/transform/multi.zig");
-const parser = @import("internal/parse/parser.zig");
+const program = @import("internal/model/program.zig");
 
 /// Resolves the model type produced by a source tuple and option struct.
 pub fn ModelType(comptime Sources: type, comptime Options: type) type {
@@ -67,7 +65,6 @@ pub fn Model(
         ///
         /// An empty slice means inputs are inferred from free symbols.
         inputs: [P][]const u8,
-        explicit_inputs: bool,
         domain: domain.Domain,
 
         pub const output_count = M;
@@ -86,14 +83,13 @@ pub fn Model(
         /// contract by accepting declared variables even when simplification
         /// has eliminated them from the output DAG.
         pub inline fn eval(comptime self: Self, inputs: anytype) [M]f64 {
-            comptime evaluation.validateInputFields(
-                @TypeOf(inputs),
-                &.{self.outputs.nodes},
+            return program.evaluate(
+                M,
+                self.outputs,
                 self.variables[0..] ++ self.inputs[0..],
-                &.{},
+                inputs,
                 "model eval",
             );
-            return self.outputs.eval(inputs);
         }
 
         /// Evaluates every output into caller-owned fixed-size storage.
@@ -102,32 +98,27 @@ pub fn Model(
             output: *[M]f64,
             inputs: anytype,
         ) void {
-            comptime evaluation.validateInputFields(
-                @TypeOf(inputs),
-                &.{self.outputs.nodes},
+            program.evaluateInto(
+                M,
+                self.outputs,
                 self.variables[0..] ++ self.inputs[0..],
-                &.{},
+                output,
+                inputs,
                 "model eval",
             );
-            self.outputs.evalInto(output, inputs);
         }
 
         /// Builds the symbolic Jacobian with columns in declared variable
         /// order.
         pub fn jacobian(comptime self: Self) ast.ExprMatrix(M, N) {
-            return self.outputs.jacobian(self.variable_tags);
+            return program.jacobian(M, N, self.outputs, self.variable_tags);
         }
 
         /// Compiles values and first derivatives into one shared DAG.
         pub fn linearize(
             comptime self: Self,
         ) linearization.Program(M, N) {
-            return linearization.make(
-                M,
-                N,
-                self.outputs,
-                self.jacobian(),
-            );
+            return program.linearize(M, N, self.outputs, self.variable_tags);
         }
 
         /// Evaluates values and their Jacobian in one shared DAG pass.
@@ -135,15 +126,15 @@ pub fn Model(
             comptime self: Self,
             inputs: anytype,
         ) linearization.Result(M, N, f64) {
-            const program = comptime self.linearize();
-            comptime evaluation.validateInputFields(
-                @TypeOf(inputs),
-                &.{program.combined.nodes},
+            return program.valueAndJacobian(
+                M,
+                N,
+                self.outputs,
+                self.variable_tags,
                 self.variables[0..] ++ self.inputs[0..],
-                &.{},
+                inputs,
                 "model valueAndJacobian",
             );
-            return program.eval(inputs);
         }
 
         /// Differentiates every output with respect to one named symbol.
@@ -153,7 +144,6 @@ pub fn Model(
                 .variable_tags = self.variable_tags,
                 .variables = self.variables,
                 .inputs = self.inputs,
-                .explicit_inputs = self.explicit_inputs,
                 .domain = self.domain,
             };
         }
@@ -165,7 +155,6 @@ pub fn Model(
                 .variable_tags = self.variable_tags,
                 .variables = self.variables,
                 .inputs = self.inputs,
-                .explicit_inputs = self.explicit_inputs,
                 .domain = self.domain,
             };
         }
@@ -185,7 +174,6 @@ pub fn Model(
                 .variable_tags = self.variable_tags,
                 .variables = self.variables,
                 .inputs = self.inputs,
-                .explicit_inputs = self.explicit_inputs,
                 .domain = self.domain,
             };
         }
@@ -244,11 +232,7 @@ pub fn make(
             }
         }
     }
-    var expressions: [M]ast.Expr = undefined;
-    inline for (sources, 0..) |source, index| {
-        expressions[index] = parser.parse(source);
-    }
-    const outputs = comptime multi.vector(M, expressions);
+    const outputs = comptime program.parseVector(M, sources);
     const explicit_inputs = @hasField(@TypeOf(options), "inputs");
     const P = if (explicit_inputs)
         ast.tupleLength(@TypeOf(options.inputs))
@@ -267,7 +251,6 @@ pub fn make(
         .variable_tags = options.variables,
         .variables = names,
         .inputs = inputs,
-        .explicit_inputs = explicit_inputs,
         .domain = if (@hasField(@TypeOf(options), "domain"))
             @as(domain.Domain, options.domain)
         else
@@ -322,23 +305,12 @@ fn validateDeclaredSymbols(
     comptime explicit_inputs: bool,
 ) void {
     if (!explicit_inputs) return;
-    for (outputs.nodes) |node| {
-        if (node != .symbol) continue;
-        const symbol = node.symbol;
-        var declared = false;
-        for (variables) |variable| {
-            if (std.mem.eql(u8, symbol, variable)) declared = true;
-        }
-        for (inputs) |input| {
-            if (std.mem.eql(u8, symbol, input)) declared = true;
-        }
-        if (!declared) {
-            @compileError(std.fmt.comptimePrint(
-                "Bombelli model symbol '{s}' is neither a declared variable nor input",
-                .{symbol},
-            ));
-        }
-    }
+    program.validateSymbols(
+        outputs,
+        variables,
+        inputs,
+        "Bombelli model symbol '{s}' is neither a declared variable nor input",
+    );
 }
 
 fn rejectVariableReplacements(

@@ -28,7 +28,6 @@ test "smooth elementary functions emit native Zig and C math calls" {
     );
     const zig_source = comptime expression.emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "evaluate_unary",
     });
     inline for (.{
@@ -49,7 +48,6 @@ test "smooth elementary functions emit native Zig and C math calls" {
 
     const c_source = comptime expression.emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "evaluate_unary",
     });
     inline for (.{
@@ -70,7 +68,6 @@ test "smooth elementary functions emit native Zig and C math calls" {
 
     const c_f32_source = comptime expression.emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "evaluate_unary_f32",
         .scalar = .f32,
     });
@@ -95,7 +92,6 @@ test "Zig emission computes shared DAG nodes once" {
     const expression = comptime expr("sin(x*y) + sin(x*y) + x^3").simplify();
     const source = comptime expression.emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "evaluate_expression",
     });
     try std.testing.expect(std.mem.indexOf(
@@ -116,7 +112,6 @@ test "Zig emission computes shared DAG nodes once" {
     }).simplify();
     const vector_source = comptime vector.emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "evaluate_vector",
     });
     try std.testing.expectEqual(
@@ -131,7 +126,6 @@ test "Zig emission computes shared DAG nodes once" {
 
     const exact_literal_source = comptime expr("9007199254740993").emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "evaluate_exact_literal",
     });
     try std.testing.expect(std.mem.indexOf(
@@ -149,7 +143,6 @@ test "Zig emission computes shared DAG nodes once" {
         "9007199254740993 / 7",
     ).simplify().emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "evaluate_exact_rational",
     });
     try std.testing.expect(std.mem.indexOf(
@@ -160,7 +153,6 @@ test "Zig emission computes shared DAG nodes once" {
 
     const huge_float_source = comptime expr("1e300").emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "evaluate_huge_float",
     });
     try std.testing.expect(std.mem.indexOf(
@@ -175,7 +167,6 @@ test "C emission computes shared DAG nodes once" {
     const expression = comptime expr("sin(x*y) + sin(x*y) + x^3").simplify();
     const source = comptime expression.emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "evaluate_expression",
     });
     try std.testing.expect(std.mem.indexOf(
@@ -195,7 +186,6 @@ test "C emission computes shared DAG nodes once" {
         "sin(x*y) + y",
     }).simplify().emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "evaluate_vector",
     });
     try std.testing.expectEqual(
@@ -215,7 +205,6 @@ test "C emission writes matrices through a sized output parameter" {
         .{ "y", "1" },
     }).simplify().emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "evaluate_matrix",
     });
     try std.testing.expect(std.mem.indexOf(
@@ -236,7 +225,6 @@ test "C emission names its inputs instead of ordering them" {
     // rather than in the order the DAG happens to visit them.
     const source = comptime expr("y * b + a * x").simplify().emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "evaluate_named",
     });
     try std.testing.expect(std.mem.indexOf(
@@ -257,7 +245,6 @@ test "C emission gives an input-free callable a usable struct" {
     // callable that reads nothing still has to emit something compilable.
     const source = comptime expr("2 * x").diff(.x).simplify().emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "evaluate_constant",
     });
     try std.testing.expect(std.mem.indexOf(
@@ -271,7 +258,6 @@ test "C emission gives an input-free callable a usable struct" {
 test "C emission spells pi as a literal rather than a math.h extension" {
     const source = comptime expr("pi * r^2").emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "evaluate_area",
     });
     try std.testing.expect(std.mem.indexOf(u8, source, "M_PI") == null);
@@ -287,7 +273,6 @@ test "C emission spells pi as a literal rather than a math.h extension" {
 test "C emission can retarget the scalar type to f32" {
     const source = comptime expr("sin(x) + x^(1/2)").emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "evaluate_single",
         .scalar = .f32,
     });
@@ -302,7 +287,6 @@ test "C emission can retarget the scalar type to f32" {
 
     const default_source = comptime expr("sin(x)").emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "evaluate_single",
     });
     try std.testing.expect(std.mem.indexOf(u8, default_source, "float") == null);
@@ -317,7 +301,6 @@ test "fixed quadrature C emission contains only the selected table" {
     });
     const source = comptime rule.emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "evaluate_integral",
     });
     try std.testing.expectEqual(
@@ -352,7 +335,6 @@ test "Newton C emission is standalone fixed-size numerical code" {
     });
     const source = comptime solver.emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "solve_system",
     });
     try std.testing.expect(std.mem.indexOf(
@@ -385,12 +367,10 @@ test "the two targets emit the same callable without sharing spellings" {
     const expression = comptime expr("sin(x) + x^3").simplify();
     const zig_source = comptime expression.emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "evaluate_shared",
     });
     const c_source = comptime expression.emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "evaluate_shared",
     });
     try std.testing.expect(std.mem.indexOf(u8, zig_source, "@sin(") != null);
@@ -407,7 +387,6 @@ test "fixed quadrature Zig emission contains only the selected table" {
     });
     const source = comptime rule.emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "evaluate_integral",
     });
     try std.testing.expectEqual(
@@ -436,7 +415,6 @@ test "Newton Zig emission is standalone fixed-size numerical code" {
     });
     const source = comptime solver.emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "solve_system",
     });
     try std.testing.expect(std.mem.indexOf(
@@ -470,7 +448,6 @@ test "runtime-observation least-squares Zig emission preserves the solver ABI" {
     });
     const source = comptime fitter.emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "fit_line",
     });
     try std.testing.expect(std.mem.indexOf(
@@ -500,7 +477,6 @@ test "runtime-observation least-squares C emission uses named runtime-row types"
     });
     const source = comptime fitter.emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "fit_line",
     });
     try std.testing.expect(std.mem.indexOf(
@@ -525,7 +501,6 @@ test "runtime-observation least-squares C emission uses named runtime-row types"
 test "Zig emission spells pi as an explicit std constant" {
     const source = comptime expr("pi * r^2").emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "evaluate_area",
     });
     try std.testing.expect(std.mem.indexOf(u8, source, "std.math.pi") != null);
@@ -536,7 +511,6 @@ test "Zig emission spells pi as an explicit std constant" {
 test "Zig emission can retarget the scalar type to f32" {
     const source = comptime expr("sin(x) + x^2").emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "evaluate_single",
         .scalar = .f32,
     });
@@ -549,7 +523,6 @@ test "Zig emission can retarget the scalar type to f32" {
 
     const default_source = comptime expr("sin(x) + x^2").emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "evaluate_single",
     });
     try std.testing.expect(std.mem.indexOf(u8, default_source, "f32") == null);
@@ -560,7 +533,6 @@ test "Zig emission can retarget the scalar type to f32" {
         .order = 4,
     }).emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "integrate_single",
         .scalar = .f32,
     });

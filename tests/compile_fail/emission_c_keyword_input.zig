@@ -6,7 +6,6 @@ comptime {
     // field, so the collision is reported rather than emitted.
     _ = bombelli.expr("register * 2").emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "evaluate",
     });
 }

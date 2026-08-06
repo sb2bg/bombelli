@@ -195,45 +195,23 @@ def measure_emission(
     zig: str,
     repo: Path,
 ) -> list[dict[str, int | str]]:
-    generators = (
-        (
-            "expression",
-            "generate_expression_zig.zig",
-            "generate_expression_c.zig",
-        ),
-        (
-            "smooth_expression",
-            "generate_smooth_expression_zig.zig",
-            "generate_smooth_expression_c.zig",
-        ),
-        (
-            "gradient",
-            "generate_gradient_zig.zig",
-            "generate_gradient_c.zig",
-        ),
-        (
-            "quadrature",
-            "generate_quadrature_zig.zig",
-            "generate_quadrature_c.zig",
-        ),
-        (
-            "newton",
-            "generate_newton_zig.zig",
-            "generate_newton_c.zig",
-        ),
-    )
+    codegen = repo / "tests" / "codegen"
+    cases = (codegen / "case_names.txt").read_text().splitlines()
     results = []
-    for name, zig_generator, c_generator in generators:
+    for name in cases:
         sources = {}
-        for target, generator in (("zig", zig_generator), ("c", c_generator)):
+        for target in ("zig", "c"):
             sources[target] = run(
                 [
                     zig,
                     "run",
                     "--dep",
                     "bombelli",
-                    f"-Mroot={repo / 'tests' / 'codegen' / generator}",
+                    f"-Mroot={codegen / 'generate.zig'}",
                     f"-Mbombelli={repo / 'src' / 'root.zig'}",
+                    "--",
+                    name,
+                    target,
                 ],
                 cwd=repo,
             ).stdout

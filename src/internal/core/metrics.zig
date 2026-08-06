@@ -119,7 +119,7 @@ fn validateChildren(
 ) void {
     switch (node_value) {
         .integer, .rational, .float, .constant, .symbol => {},
-        .add, .sub, .mul, .div, .atan2, .hypot => |binary| {
+        .sub, .div, .atan2, .hypot => |binary| {
             validateChild(binary.left, parent_index);
             validateChild(binary.right, parent_index);
         },
@@ -127,24 +127,7 @@ fn validateChildren(
             for (operands) |child| validateChild(child, parent_index);
         },
         .pow => |power| validateChild(power.base, parent_index),
-        .negate,
-        .sin,
-        .cos,
-        .tan,
-        .asin,
-        .acos,
-        .atan,
-        .sinh,
-        .cosh,
-        .tanh,
-        .abs,
-        .exp,
-        .ln,
-        .log2,
-        .log10,
-        => |child| {
-            validateChild(child, parent_index);
-        },
+        .unary => |unary| validateChild(unary.child, parent_index),
     }
 }
 

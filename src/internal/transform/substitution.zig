@@ -12,12 +12,15 @@ pub fn substitute(
     validateReplacementNames(@TypeOf(replacements), expression.nodes);
     var builder = build.Builder{};
     var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
+    const resolver = ReplacementResolver(@TypeOf(replacements)){
+        .replacements = replacements,
+    };
     const root = rebuild(
         &builder,
         expression.nodes,
         expression.root,
         &cache,
-        replacements,
+        resolver,
     );
     return builder.finish(root, expression.source);
 }
@@ -28,17 +31,13 @@ pub fn substituteName(
     comptime replacement: ast.Expr,
 ) ast.Expr {
     var builder = build.Builder{};
-    var rebuild_cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
-    var replacement_cache =
-        [_]ast.NodeId{ast.invalid_node} ** replacement.nodes.len;
-    const root = rebuildName(
+    var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
+    const root = rebuild(
         &builder,
         expression.nodes,
         expression.root,
-        &rebuild_cache,
-        name,
-        replacement,
-        &replacement_cache,
+        &cache,
+        NameResolver(name, replacement){},
     );
     return builder.finish(root, expression.source);
 }
@@ -52,6 +51,9 @@ pub fn substituteVector(
     validateReplacementNames(@TypeOf(replacements), expression.nodes);
     var builder = build.Builder{};
     var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
+    const resolver = ReplacementResolver(@TypeOf(replacements)){
+        .replacements = replacements,
+    };
     var roots: [N]ast.NodeId = undefined;
     inline for (expression.roots, 0..) |root, index| {
         roots[index] = rebuild(
@@ -59,7 +61,7 @@ pub fn substituteVector(
             expression.nodes,
             root,
             &cache,
-            replacements,
+            resolver,
         );
     }
     return builder.finishVector(N, roots, expression.sources);
@@ -75,6 +77,9 @@ pub fn substituteMatrix(
     validateReplacementNames(@TypeOf(replacements), expression.nodes);
     var builder = build.Builder{};
     var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
+    const resolver = ReplacementResolver(@TypeOf(replacements)){
+        .replacements = replacements,
+    };
     var roots: [R][C]ast.NodeId = undefined;
     inline for (expression.roots, 0..) |row, row_index| {
         inline for (row, 0..) |root, column_index| {
@@ -83,11 +88,42 @@ pub fn substituteMatrix(
                 expression.nodes,
                 root,
                 &cache,
-                replacements,
+                resolver,
             );
         }
     }
     return builder.finishMatrix(R, C, roots, expression.sources);
+}
+
+fn ReplacementResolver(comptime Replacements: type) type {
+    return struct {
+        replacements: Replacements,
+
+        fn resolve(
+            comptime self: @This(),
+            builder: *build.Builder,
+            comptime name: []const u8,
+        ) ?ast.NodeId {
+            if (!@hasField(Replacements, name)) return null;
+            return materializeReplacement(builder, @field(self.replacements, name));
+        }
+    };
+}
+
+fn NameResolver(
+    comptime target_name: []const u8,
+    comptime replacement: ast.Expr,
+) type {
+    return struct {
+        fn resolve(
+            comptime _: @This(),
+            builder: *build.Builder,
+            comptime name: []const u8,
+        ) ?ast.NodeId {
+            if (!std.mem.eql(u8, name, target_name)) return null;
+            return builder.cloneExpression(replacement);
+        }
+    };
 }
 
 fn rebuild(
@@ -95,24 +131,17 @@ fn rebuild(
     comptime nodes: []const ast.Node,
     id: ast.NodeId,
     cache: []ast.NodeId,
-    comptime replacements: anytype,
+    comptime resolver: anytype,
 ) ast.NodeId {
     const index: usize = @intCast(id);
     if (cache[index] != ast.invalid_node) return cache[index];
 
     const result = switch (nodes[index]) {
-        .symbol => |name| if (@hasField(@TypeOf(replacements), name))
-            materializeReplacement(builder, @field(replacements, name))
-        else
-            builder.symbol(name),
+        .symbol => |name| resolver.resolve(builder, name) orelse builder.symbol(name),
         .integer => |value| builder.integer(value),
         .rational => |value| builder.rational(value),
         .float => |value| builder.float(value),
         .constant => |value| builder.constant(value),
-        .add => |binary| builder.add(
-            rebuild(builder, nodes, binary.left, cache, replacements),
-            rebuild(builder, nodes, binary.right, cache, replacements),
-        ),
         .add_nary => |operands| blk: {
             var rebuilt: [ast.construction_node_limit]ast.NodeId = undefined;
             for (operands, 0..) |child, operand_index| {
@@ -121,18 +150,14 @@ fn rebuild(
                     nodes,
                     child,
                     cache,
-                    replacements,
+                    resolver,
                 );
             }
             break :blk builder.addNary(rebuilt[0..operands.len]);
         },
         .sub => |binary| builder.sub(
-            rebuild(builder, nodes, binary.left, cache, replacements),
-            rebuild(builder, nodes, binary.right, cache, replacements),
-        ),
-        .mul => |binary| builder.mul(
-            rebuild(builder, nodes, binary.left, cache, replacements),
-            rebuild(builder, nodes, binary.right, cache, replacements),
+            rebuild(builder, nodes, binary.left, cache, resolver),
+            rebuild(builder, nodes, binary.right, cache, resolver),
         ),
         .mul_nary => |operands| blk: {
             var rebuilt: [ast.construction_node_limit]ast.NodeId = undefined;
@@ -142,399 +167,30 @@ fn rebuild(
                     nodes,
                     child,
                     cache,
-                    replacements,
+                    resolver,
                 );
             }
             break :blk builder.mulNary(rebuilt[0..operands.len]);
         },
         .div => |binary| builder.div(
-            rebuild(builder, nodes, binary.left, cache, replacements),
-            rebuild(builder, nodes, binary.right, cache, replacements),
+            rebuild(builder, nodes, binary.left, cache, resolver),
+            rebuild(builder, nodes, binary.right, cache, resolver),
         ),
         .pow => |power| builder.power(
-            rebuild(builder, nodes, power.base, cache, replacements),
+            rebuild(builder, nodes, power.base, cache, resolver),
             power.exponent,
         ),
-        .negate => |child| builder.negate(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .sin => |child| builder.sine(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .cos => |child| builder.cosine(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .tan => |child| builder.tangent(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .asin => |child| builder.arcsine(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .acos => |child| builder.arccosine(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .atan => |child| builder.arctangent(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .sinh => |child| builder.hyperbolicSine(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .cosh => |child| builder.hyperbolicCosine(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .tanh => |child| builder.hyperbolicTangent(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .abs => |child| builder.absolute(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .exp => |child| builder.exponential(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .ln => |child| builder.logarithm(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .log2 => |child| builder.logarithm2(
-            rebuild(builder, nodes, child, cache, replacements),
-        ),
-        .log10 => |child| builder.logarithm10(
-            rebuild(builder, nodes, child, cache, replacements),
+        .unary => |unary| builder.unary(
+            unary.op,
+            rebuild(builder, nodes, unary.child, cache, resolver),
         ),
         .atan2 => |binary| builder.arctangent2(
-            rebuild(builder, nodes, binary.left, cache, replacements),
-            rebuild(builder, nodes, binary.right, cache, replacements),
+            rebuild(builder, nodes, binary.left, cache, resolver),
+            rebuild(builder, nodes, binary.right, cache, resolver),
         ),
         .hypot => |binary| builder.hypotenuse(
-            rebuild(builder, nodes, binary.left, cache, replacements),
-            rebuild(builder, nodes, binary.right, cache, replacements),
-        ),
-    };
-    cache[index] = result;
-    return result;
-}
-
-fn rebuildName(
-    builder: *build.Builder,
-    comptime nodes: []const ast.Node,
-    id: ast.NodeId,
-    cache: []ast.NodeId,
-    comptime name: []const u8,
-    comptime replacement: ast.Expr,
-    replacement_cache: []ast.NodeId,
-) ast.NodeId {
-    const index: usize = @intCast(id);
-    if (cache[index] != ast.invalid_node) return cache[index];
-
-    const result = switch (nodes[index]) {
-        .symbol => |symbol_name| if (std.mem.eql(u8, symbol_name, name))
-            cloneNode(
-                builder,
-                replacement.nodes,
-                replacement.root,
-                replacement_cache,
-            )
-        else
-            builder.symbol(symbol_name),
-        .integer => |value| builder.integer(value),
-        .rational => |value| builder.rational(value),
-        .float => |value| builder.float(value),
-        .constant => |value| builder.constant(value),
-        .add => |binary| builder.add(
-            rebuildName(
-                builder,
-                nodes,
-                binary.left,
-                cache,
-                name,
-                replacement,
-                replacement_cache,
-            ),
-            rebuildName(
-                builder,
-                nodes,
-                binary.right,
-                cache,
-                name,
-                replacement,
-                replacement_cache,
-            ),
-        ),
-        .add_nary => |operands| blk: {
-            var rebuilt: [ast.construction_node_limit]ast.NodeId = undefined;
-            for (operands, 0..) |child, operand_index| {
-                rebuilt[operand_index] = rebuildName(
-                    builder,
-                    nodes,
-                    child,
-                    cache,
-                    name,
-                    replacement,
-                    replacement_cache,
-                );
-            }
-            break :blk builder.addNary(rebuilt[0..operands.len]);
-        },
-        .sub => |binary| builder.sub(
-            rebuildName(
-                builder,
-                nodes,
-                binary.left,
-                cache,
-                name,
-                replacement,
-                replacement_cache,
-            ),
-            rebuildName(
-                builder,
-                nodes,
-                binary.right,
-                cache,
-                name,
-                replacement,
-                replacement_cache,
-            ),
-        ),
-        .mul => |binary| builder.mul(
-            rebuildName(
-                builder,
-                nodes,
-                binary.left,
-                cache,
-                name,
-                replacement,
-                replacement_cache,
-            ),
-            rebuildName(
-                builder,
-                nodes,
-                binary.right,
-                cache,
-                name,
-                replacement,
-                replacement_cache,
-            ),
-        ),
-        .mul_nary => |operands| blk: {
-            var rebuilt: [ast.construction_node_limit]ast.NodeId = undefined;
-            for (operands, 0..) |child, operand_index| {
-                rebuilt[operand_index] = rebuildName(
-                    builder,
-                    nodes,
-                    child,
-                    cache,
-                    name,
-                    replacement,
-                    replacement_cache,
-                );
-            }
-            break :blk builder.mulNary(rebuilt[0..operands.len]);
-        },
-        .div => |binary| builder.div(
-            rebuildName(
-                builder,
-                nodes,
-                binary.left,
-                cache,
-                name,
-                replacement,
-                replacement_cache,
-            ),
-            rebuildName(
-                builder,
-                nodes,
-                binary.right,
-                cache,
-                name,
-                replacement,
-                replacement_cache,
-            ),
-        ),
-        .pow => |power| builder.power(
-            rebuildName(
-                builder,
-                nodes,
-                power.base,
-                cache,
-                name,
-                replacement,
-                replacement_cache,
-            ),
-            power.exponent,
-        ),
-        .negate => |child| builder.negate(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .sin => |child| builder.sine(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .cos => |child| builder.cosine(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .tan => |child| builder.tangent(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .asin => |child| builder.arcsine(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .acos => |child| builder.arccosine(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .atan => |child| builder.arctangent(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .sinh => |child| builder.hyperbolicSine(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .cosh => |child| builder.hyperbolicCosine(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .tanh => |child| builder.hyperbolicTangent(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .abs => |child| builder.absolute(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .exp => |child| builder.exponential(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .ln => |child| builder.logarithm(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .log2 => |child| builder.logarithm2(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .log10 => |child| builder.logarithm10(rebuildName(
-            builder,
-            nodes,
-            child,
-            cache,
-            name,
-            replacement,
-            replacement_cache,
-        )),
-        .atan2 => |binary| builder.arctangent2(
-            rebuildName(
-                builder,
-                nodes,
-                binary.left,
-                cache,
-                name,
-                replacement,
-                replacement_cache,
-            ),
-            rebuildName(
-                builder,
-                nodes,
-                binary.right,
-                cache,
-                name,
-                replacement,
-                replacement_cache,
-            ),
-        ),
-        .hypot => |binary| builder.hypotenuse(
-            rebuildName(
-                builder,
-                nodes,
-                binary.left,
-                cache,
-                name,
-                replacement,
-                replacement_cache,
-            ),
-            rebuildName(
-                builder,
-                nodes,
-                binary.right,
-                cache,
-                name,
-                replacement,
-                replacement_cache,
-            ),
+            rebuild(builder, nodes, binary.left, cache, resolver),
+            rebuild(builder, nodes, binary.right, cache, resolver),
         ),
     };
     cache[index] = result;
@@ -547,7 +203,7 @@ fn materializeReplacement(
 ) ast.NodeId {
     const Replacement = @TypeOf(replacement);
     if (Replacement == ast.Expr) {
-        return cloneExpression(builder, replacement);
+        return builder.cloneExpression(replacement);
     }
     if (Replacement == exact.Rational) {
         return builder.rational(replacement);
@@ -566,93 +222,11 @@ fn materializeReplacement(
             break :blk builder.float(value);
         },
         .pointer => |pointer| if (isStringPointer(pointer))
-            cloneExpression(builder, parser.parse(replacement))
+            builder.cloneExpression(parser.parse(replacement))
         else
             unsupportedReplacement(Replacement),
         else => unsupportedReplacement(Replacement),
     };
-}
-
-fn cloneExpression(builder: *build.Builder, comptime expression: ast.Expr) ast.NodeId {
-    var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
-    return cloneNode(builder, expression.nodes, expression.root, &cache);
-}
-
-fn cloneNode(
-    builder: *build.Builder,
-    comptime nodes: []const ast.Node,
-    id: ast.NodeId,
-    cache: []ast.NodeId,
-) ast.NodeId {
-    const index: usize = @intCast(id);
-    if (cache[index] != ast.invalid_node) return cache[index];
-
-    const result = switch (nodes[index]) {
-        .integer => |value| builder.integer(value),
-        .rational => |value| builder.rational(value),
-        .float => |value| builder.float(value),
-        .constant => |value| builder.constant(value),
-        .symbol => |name| builder.symbol(name),
-        .add => |binary| builder.add(
-            cloneNode(builder, nodes, binary.left, cache),
-            cloneNode(builder, nodes, binary.right, cache),
-        ),
-        .add_nary => |operands| blk: {
-            var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
-            for (operands, 0..) |child, operand_index| {
-                cloned[operand_index] = cloneNode(builder, nodes, child, cache);
-            }
-            break :blk builder.addNary(cloned[0..operands.len]);
-        },
-        .sub => |binary| builder.sub(
-            cloneNode(builder, nodes, binary.left, cache),
-            cloneNode(builder, nodes, binary.right, cache),
-        ),
-        .mul => |binary| builder.mul(
-            cloneNode(builder, nodes, binary.left, cache),
-            cloneNode(builder, nodes, binary.right, cache),
-        ),
-        .mul_nary => |operands| blk: {
-            var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
-            for (operands, 0..) |child, operand_index| {
-                cloned[operand_index] = cloneNode(builder, nodes, child, cache);
-            }
-            break :blk builder.mulNary(cloned[0..operands.len]);
-        },
-        .div => |binary| builder.div(
-            cloneNode(builder, nodes, binary.left, cache),
-            cloneNode(builder, nodes, binary.right, cache),
-        ),
-        .pow => |power| builder.power(
-            cloneNode(builder, nodes, power.base, cache),
-            power.exponent,
-        ),
-        .negate => |child| builder.negate(cloneNode(builder, nodes, child, cache)),
-        .sin => |child| builder.sine(cloneNode(builder, nodes, child, cache)),
-        .cos => |child| builder.cosine(cloneNode(builder, nodes, child, cache)),
-        .tan => |child| builder.tangent(cloneNode(builder, nodes, child, cache)),
-        .asin => |child| builder.arcsine(cloneNode(builder, nodes, child, cache)),
-        .acos => |child| builder.arccosine(cloneNode(builder, nodes, child, cache)),
-        .atan => |child| builder.arctangent(cloneNode(builder, nodes, child, cache)),
-        .sinh => |child| builder.hyperbolicSine(cloneNode(builder, nodes, child, cache)),
-        .cosh => |child| builder.hyperbolicCosine(cloneNode(builder, nodes, child, cache)),
-        .tanh => |child| builder.hyperbolicTangent(cloneNode(builder, nodes, child, cache)),
-        .abs => |child| builder.absolute(cloneNode(builder, nodes, child, cache)),
-        .exp => |child| builder.exponential(cloneNode(builder, nodes, child, cache)),
-        .ln => |child| builder.logarithm(cloneNode(builder, nodes, child, cache)),
-        .log2 => |child| builder.logarithm2(cloneNode(builder, nodes, child, cache)),
-        .log10 => |child| builder.logarithm10(cloneNode(builder, nodes, child, cache)),
-        .atan2 => |binary| builder.arctangent2(
-            cloneNode(builder, nodes, binary.left, cache),
-            cloneNode(builder, nodes, binary.right, cache),
-        ),
-        .hypot => |binary| builder.hypotenuse(
-            cloneNode(builder, nodes, binary.left, cache),
-            cloneNode(builder, nodes, binary.right, cache),
-        ),
-    };
-    cache[index] = result;
-    return result;
 }
 
 fn validateReplacements(comptime T: type) void {

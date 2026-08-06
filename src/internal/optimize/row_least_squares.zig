@@ -7,11 +7,28 @@
 
 const std = @import("std");
 const ast = @import("../../expression.zig");
+const common = @import("common.zig");
 const evaluation = @import("../runtime/evaluation.zig");
 const loss_functions = @import("loss.zig");
 const model_linearization = @import("../model/linearization.zig");
 const streaming_qr = @import("streaming_qr.zig");
 const types = @import("types.zig");
+
+const config = common.Config(.row);
+const Bounds = common.Bounds;
+const increaseDamping = common.increaseDamping;
+const integerOption = config.integerOption;
+const numeric = config.numeric;
+const option = config.option;
+const parseBounds = config.parseBounds;
+const parseLoss = config.parseLoss;
+const parseScales = config.parseScales;
+const project = common.project;
+const projectedGradientDirection = common.projectedGradientDirection;
+const projectedOptimality = common.projectedOptimality;
+const validateNonnegativeFinite = config.validateNonnegativeFinite;
+const validatePositiveFinite = config.validatePositiveFinite;
+const withinBounds = common.withinBounds;
 
 /// Completion reason from a runtime-observation least-squares solve.
 pub const Status = enum {
@@ -46,7 +63,6 @@ pub fn Problem(
 ) type {
     return struct {
         residuals: ast.ExprVector(R),
-        jacobian_program: ast.ExprMatrix(R, N),
         linearization_program: model_linearization.Program(R, N),
         variables: [N][]const u8,
         data: [P][]const u8,
@@ -73,7 +89,6 @@ pub fn makeProblem(
     const jacobian = comptime model.jacobian().simplify();
     return .{
         .residuals = residuals,
-        .jacobian_program = jacobian,
         .linearization_program = model_linearization.make(
             R,
             N,
@@ -121,13 +136,6 @@ pub fn Result(comptime N: usize) type {
     };
 }
 
-fn Bounds(comptime N: usize) type {
-    return struct {
-        lower: [N]f64,
-        upper: [N]f64,
-    };
-}
-
 /// A compiled runtime-row nonlinear least-squares solver.
 pub fn Solver(
     comptime R: usize,
@@ -163,7 +171,6 @@ pub fn Solver(
 
         pub const maximum_iterations = max_iterations;
         pub const residuals_per_observation = R;
-        pub const parameter_count = N;
         const Self = @This();
 
         /// Returns a fitted parameter by its declared name.
@@ -1396,141 +1403,6 @@ fn requireOptionalTag(
     }
 }
 
-fn parseLoss(comptime options: anytype) types.Loss {
-    if (!@hasField(@TypeOf(options), "loss")) {
-        if (@hasField(@TypeOf(options), "loss_scale")) {
-            @compileError("Bombelli row least-squares loss_scale requires an enum loss");
-        }
-        return types.loss.linear();
-    }
-    if (@TypeOf(options.loss) == types.Loss) {
-        if (@hasField(@TypeOf(options), "loss_scale")) {
-            @compileError("Bombelli typed row least-squares losses already contain their scale");
-        }
-        return options.loss;
-    }
-    const name = @tagName(options.loss);
-    if (std.mem.eql(u8, name, "linear")) {
-        if (@hasField(@TypeOf(options), "loss_scale")) {
-            @compileError("Bombelli linear row least-squares loss does not use loss_scale");
-        }
-        return types.loss.linear();
-    }
-    const scale = option(options, "loss_scale", 1.0);
-    if (std.mem.eql(u8, name, "huber")) return types.loss.huber(scale);
-    if (std.mem.eql(u8, name, "soft_l1")) return types.loss.softL1(scale);
-    if (std.mem.eql(u8, name, "cauchy")) return types.loss.cauchy(scale);
-    @compileError("Bombelli row least-squares loss must be linear, huber, soft_l1, or cauchy");
-}
-
-fn ScaleConfiguration(comptime N: usize) type {
-    return struct {
-        kind: types.LeastSquaresScaling,
-        values: [N]f64,
-    };
-}
-
-fn parseScales(
-    comptime N: usize,
-    comptime variables: [N][]const u8,
-    comptime options: anytype,
-) ScaleConfiguration(N) {
-    var result = ScaleConfiguration(N){
-        .kind = if (@hasField(@TypeOf(options), "scaling"))
-            @as(types.LeastSquaresScaling, options.scaling)
-        else
-            .jacobian,
-        .values = [_]f64{1.0} ** N,
-    };
-    if (!@hasField(@TypeOf(options), "scales")) return result;
-    if (result.kind != .user and @hasField(@TypeOf(options), "scaling")) {
-        @compileError("Bombelli explicit row least-squares scales require '.scaling = .user'");
-    }
-    result.kind = .user;
-    validateNamedFields(N, variables, @TypeOf(options.scales), "scale");
-    inline for (variables, 0..) |variable, index| {
-        if (!@hasField(@TypeOf(options.scales), variable)) continue;
-        const characteristic =
-            numeric(@field(options.scales, variable), "scale");
-        if (!std.math.isFinite(characteristic) or characteristic <= 0.0) {
-            @compileError("Bombelli row least-squares scales must be positive and finite");
-        }
-        result.values[index] = 1.0 / characteristic;
-        if (!std.math.isFinite(result.values[index]) or
-            result.values[index] <= 0.0)
-        {
-            @compileError("Bombelli row least-squares scales are outside the representable range");
-        }
-    }
-    return result;
-}
-
-fn parseBounds(
-    comptime N: usize,
-    comptime variables: [N][]const u8,
-    comptime options: anytype,
-) Bounds(N) {
-    var result = Bounds(N){
-        .lower = [_]f64{-std.math.inf(f64)} ** N,
-        .upper = [_]f64{std.math.inf(f64)} ** N,
-    };
-    if (!@hasField(@TypeOf(options), "bounds")) return result;
-    validateNamedFields(N, variables, @TypeOf(options.bounds), "bound");
-    inline for (variables, 0..) |variable, index| {
-        if (!@hasField(@TypeOf(options.bounds), variable)) continue;
-        const bound = @field(options.bounds, variable);
-        const Bound = @TypeOf(bound);
-        if (@typeInfo(Bound) != .@"struct") {
-            @compileError("Bombelli row least-squares bounds must be structs");
-        }
-        for (@typeInfo(Bound).@"struct".fields) |field| {
-            if (!std.mem.eql(u8, field.name, "lower") and
-                !std.mem.eql(u8, field.name, "upper"))
-            {
-                @compileError("Bombelli row least-squares bounds accept only lower and upper");
-            }
-        }
-        if (@hasField(Bound, "lower")) {
-            result.lower[index] = numeric(bound.lower, "lower bound");
-        }
-        if (@hasField(Bound, "upper")) {
-            result.upper[index] = numeric(bound.upper, "upper bound");
-        }
-        if (std.math.isNan(result.lower[index]) or
-            std.math.isNan(result.upper[index]) or
-            result.lower[index] == std.math.inf(f64) or
-            result.upper[index] == -std.math.inf(f64) or
-            result.lower[index] > result.upper[index])
-        {
-            @compileError("Bombelli row least-squares bounds must contain a finite point");
-        }
-    }
-    return result;
-}
-
-fn validateNamedFields(
-    comptime N: usize,
-    comptime variables: [N][]const u8,
-    comptime Named: type,
-    comptime description: []const u8,
-) void {
-    if (@typeInfo(Named) != .@"struct") {
-        @compileError("Bombelli named row least-squares options must be structs");
-    }
-    for (@typeInfo(Named).@"struct".fields) |field| {
-        var found = false;
-        for (variables) |variable| {
-            if (std.mem.eql(u8, field.name, variable)) found = true;
-        }
-        if (!found) {
-            @compileError(std.fmt.comptimePrint(
-                "Bombelli row least-squares {s} '.{s}' does not name a variable",
-                .{ description, field.name },
-            ));
-        }
-    }
-}
-
 fn validateEvalInput(
     comptime N: usize,
     comptime P: usize,
@@ -1660,62 +1532,6 @@ fn runtimeNumeric(value: anytype) f64 {
     };
 }
 
-fn option(
-    comptime options: anytype,
-    comptime name: []const u8,
-    comptime default: f64,
-) f64 {
-    return if (@hasField(@TypeOf(options), name))
-        numeric(@field(options, name), name)
-    else
-        default;
-}
-
-fn integerOption(
-    comptime options: anytype,
-    comptime name: []const u8,
-    comptime default: usize,
-) usize {
-    if (!@hasField(@TypeOf(options), name)) return default;
-    const value = @field(options, name);
-    return switch (@typeInfo(@TypeOf(value))) {
-        .int, .comptime_int => if (value < 0)
-            @compileError("Bombelli row least-squares limits must be non-negative")
-        else
-            @intCast(value),
-        else => @compileError("Bombelli row least-squares limits must be integers"),
-    };
-}
-
-fn numeric(value: anytype, comptime description: []const u8) f64 {
-    return switch (@typeInfo(@TypeOf(value))) {
-        .int, .comptime_int => @floatFromInt(value),
-        .float, .comptime_float => @floatCast(value),
-        else => @compileError(std.fmt.comptimePrint(
-            "Bombelli row least-squares {s} must be numeric",
-            .{description},
-        )),
-    };
-}
-
-fn validatePositiveFinite(value: f64, comptime name: []const u8) void {
-    if (!std.math.isFinite(value) or value <= 0.0) {
-        @compileError(std.fmt.comptimePrint(
-            "Bombelli row least-squares {s} must be positive and finite",
-            .{name},
-        ));
-    }
-}
-
-fn validateNonnegativeFinite(value: f64, comptime name: []const u8) void {
-    if (!std.math.isFinite(value) or value < 0.0) {
-        @compileError(std.fmt.comptimePrint(
-            "Bombelli row least-squares {s} must be non-negative and finite",
-            .{name},
-        ));
-    }
-}
-
 fn updateScales(
     comptime N: usize,
     scaling: types.LeastSquaresScaling,
@@ -1752,56 +1568,6 @@ fn initialDamping(
     return std.math.clamp(raw, minimum, maximum);
 }
 
-fn projectedGradientDirection(
-    comptime N: usize,
-    values: [N]f64,
-    gradient: [N]f64,
-    scales: [N]f64,
-    bounds: Bounds(N),
-) [N]f64 {
-    var result: [N]f64 = undefined;
-    for (0..N) |index| {
-        const candidate = std.math.clamp(
-            values[index] -
-                gradient[index] / scales[index] / scales[index],
-            bounds.lower[index],
-            bounds.upper[index],
-        );
-        result[index] = candidate - values[index];
-    }
-    return result;
-}
-
-fn projectedOptimality(
-    comptime N: usize,
-    values: [N]f64,
-    gradient: [N]f64,
-    scales: [N]f64,
-    bounds: Bounds(N),
-) f64 {
-    var maximum: f64 = 0.0;
-    for (0..N) |index| {
-        const scaled_gradient = @abs(gradient[index] / scales[index]);
-        if (bounds.lower[index] == -std.math.inf(f64) and
-            bounds.upper[index] == std.math.inf(f64))
-        {
-            maximum = @max(maximum, scaled_gradient);
-            continue;
-        }
-        const feasible_distance = if (gradient[index] > 0.0)
-            values[index] - bounds.lower[index]
-        else if (gradient[index] < 0.0)
-            bounds.upper[index] - values[index]
-        else
-            0.0;
-        maximum = @max(
-            maximum,
-            @min(scaled_gradient, feasible_distance * scales[index]),
-        );
-    }
-    return maximum;
-}
-
 fn activeBounds(
     comptime N: usize,
     values: [N]f64,
@@ -1822,46 +1588,6 @@ fn activeBounds(
             .free;
     }
     return result;
-}
-
-fn withinBounds(
-    comptime N: usize,
-    values: [N]f64,
-    bounds: Bounds(N),
-) bool {
-    for (0..N) |index| {
-        if (values[index] < bounds.lower[index] or
-            values[index] > bounds.upper[index])
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-fn project(
-    comptime N: usize,
-    values: [N]f64,
-    bounds: Bounds(N),
-) [N]f64 {
-    var result: [N]f64 = undefined;
-    for (0..N) |index| {
-        result[index] = std.math.clamp(
-            values[index],
-            bounds.lower[index],
-            bounds.upper[index],
-        );
-    }
-    return result;
-}
-
-fn increaseDamping(
-    damping: *f64,
-    nu: *f64,
-    maximum: f64,
-) void {
-    damping.* = @min(damping.* * nu.*, maximum);
-    nu.* = @min(nu.* * 2.0, @sqrt(std.math.floatMax(f64)));
 }
 
 fn scaledNorm(

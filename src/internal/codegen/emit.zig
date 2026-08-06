@@ -15,11 +15,6 @@ pub const EmitTarget = enum {
     c,
 };
 
-/// Calling conventions supported by Bombelli emission.
-pub const EmitMode = enum {
-    out_of_place,
-};
-
 pub fn emitExpr(
     comptime expression: ast.Expr,
     comptime options: anytype,
@@ -91,13 +86,6 @@ fn selectTarget(comptime options: anytype) EmitTarget {
         "target",
         "Bombelli source emission requires '.target = .zig' or '.target = .c'",
     );
-    options_validation.requireTag(
-        options,
-        "mode",
-        "out_of_place",
-        "Bombelli source emission currently requires '.mode = .out_of_place'",
-    );
-
     const requested = @tagName(options.target);
     inline for (@typeInfo(EmitTarget).@"enum".fields) |field| {
         if (std.mem.eql(u8, requested, field.name)) {

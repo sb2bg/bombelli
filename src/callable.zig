@@ -29,14 +29,3 @@ pub inline fn evalIntoAs(
 ) void {
     value.evalIntoAs(T, output, inputs);
 }
-
-pub fn emit(
-    comptime value: anytype,
-    comptime options: anytype,
-) []const u8 {
-    return value.emit(options);
-}
-
-pub fn supports(comptime T: type, comptime operation: []const u8) bool {
-    return @hasDecl(T, operation);
-}

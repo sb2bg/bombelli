@@ -161,10 +161,8 @@ pub const RowLeastSquaresResult = row_least_squares.Result;
 pub const RenderMode = rendering.RenderMode;
 /// Source languages supported by Bombelli emission.
 pub const EmitTarget = emit_codegen.EmitTarget;
-/// Calling conventions supported by Bombelli emission.
-pub const EmitMode = emit_codegen.EmitMode;
 /// Structural helpers for evaluating and emitting compiled Bombelli values.
-pub const callable = @import("callable.zig");
+const callable = @import("callable.zig");
 /// Evaluates a possibly temporary compiled value.
 ///
 /// This free-function form also works around a Zig 0.16 compiler bug affecting

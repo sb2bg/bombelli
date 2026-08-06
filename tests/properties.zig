@@ -161,7 +161,7 @@ test "multi-root programs retain sharing and evalInto matches eval" {
     const metrics = comptime outputs.metrics();
     var sin_nodes: usize = 0;
     for (outputs.nodes) |node| {
-        if (node == .sin) sin_nodes += 1;
+        if (node == .unary and node.unary.op == .sin) sin_nodes += 1;
     }
     try std.testing.expectEqual(@as(usize, 1), sin_nodes);
     try std.testing.expect(metrics.node_count < 16);

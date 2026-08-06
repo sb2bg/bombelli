@@ -178,7 +178,7 @@ fn integrateIndefinite(comptime problem: IntegralProblem) IntegrationResult {
     }
 
     const root = expression.node(expression.root);
-    if (root != .add_nary and root != .add) {
+    if (root != .add_nary) {
         return unsupportedResult(expression);
     }
 
@@ -240,48 +240,31 @@ fn integrateClosed(
     }
 
     return switch (simplified.node(simplified.root)) {
-        .add, .add_nary => integrateAllTerms(simplified, problem),
+        .add_nary => integrateAllTerms(simplified, problem),
         .sub => |binary| integrateDifference(simplified, binary, problem),
-        .negate => |child| if (integrateClosed(
-            multi.extractRoot(simplified.nodes, child, simplified.source),
-            problem,
-        )) |closed|
-            negateExpression(closed).simplify()
-        else
-            null,
+        .unary => |unary| switch (unary.op) {
+            .negate => if (integrateClosed(
+                multi.extractRoot(
+                    simplified.nodes,
+                    unary.child,
+                    simplified.source,
+                ),
+                problem,
+            )) |closed|
+                negateExpression(closed).simplify()
+            else
+                null,
+            .sin, .cos, .sinh, .cosh, .exp => integrateAffineFunction(
+                simplified,
+                unary.child,
+                functionKind(unary.op).?,
+                problem,
+            ),
+            else => null,
+        },
         .pow => |power| integratePower(simplified, power, problem),
         .div => |binary| integrateDivision(simplified, binary, problem),
-        .sin => |child| integrateAffineFunction(
-            simplified,
-            child,
-            .sin,
-            problem,
-        ),
-        .cos => |child| integrateAffineFunction(
-            simplified,
-            child,
-            .cos,
-            problem,
-        ),
-        .sinh => |child| integrateAffineFunction(
-            simplified,
-            child,
-            .sinh,
-            problem,
-        ),
-        .cosh => |child| integrateAffineFunction(
-            simplified,
-            child,
-            .cosh,
-            problem,
-        ),
-        .exp => |child| integrateAffineFunction(
-            simplified,
-            child,
-            .exp,
-            problem,
-        ),
-        .mul, .mul_nary => integrateProduct(simplified, problem),
+        .mul_nary => integrateProduct(simplified, problem),
         else => null,
     };
 }
@@ -389,6 +372,17 @@ const FunctionKind = enum {
     exp,
 };
 
+fn functionKind(comptime operation: ast.UnaryOp) ?FunctionKind {
+    return switch (operation) {
+        .sin => .sin,
+        .cos => .cos,
+        .sinh => .sinh,
+        .cosh => .cosh,
+        .exp => .exp,
+        else => null,
+    };
+}
+
 const AffineArgument = struct {
     argument: ast.Expr,
     slope: ast.Expr,
@@ -445,35 +439,11 @@ fn integrateProduct(
     var function_child: ast.NodeId = undefined;
     for (factors, 0..) |factor, index| {
         switch (expression.node(factor)) {
-            .sin => |child| {
+            .unary => |unary| if (functionKind(unary.op)) |kind| {
                 if (function_index != null) return null;
                 function_index = index;
-                function_kind = .sin;
-                function_child = child;
-            },
-            .cos => |child| {
-                if (function_index != null) return null;
-                function_index = index;
-                function_kind = .cos;
-                function_child = child;
-            },
-            .sinh => |child| {
-                if (function_index != null) return null;
-                function_index = index;
-                function_kind = .sinh;
-                function_child = child;
-            },
-            .cosh => |child| {
-                if (function_index != null) return null;
-                function_index = index;
-                function_kind = .cosh;
-                function_child = child;
-            },
-            .exp => |child| {
-                if (function_index != null) return null;
-                function_index = index;
-                function_kind = .exp;
-                function_child = child;
+                function_kind = kind;
+                function_child = unary.child;
             },
             else => {},
         }
@@ -661,7 +631,6 @@ fn expressionValue(comptime value: anytype) ast.Expr {
 fn additiveOperands(comptime expression: ast.Expr) []const ast.NodeId {
     return switch (expression.node(expression.root)) {
         .add_nary => |operands| operands,
-        .add => |binary| &.{ binary.left, binary.right },
         else => &.{expression.root},
     };
 }
@@ -669,7 +638,6 @@ fn additiveOperands(comptime expression: ast.Expr) []const ast.NodeId {
 fn multiplicativeOperands(comptime expression: ast.Expr) []const ast.NodeId {
     return switch (expression.node(expression.root)) {
         .mul_nary => |operands| operands,
-        .mul => |binary| &.{ binary.left, binary.right },
         else => &.{expression.root},
     };
 }
@@ -715,27 +683,8 @@ fn polynomialConvertible(comptime expression: ast.Expr) bool {
     inline for (expression.nodes, 0..) |node, index| {
         convertible[index] = switch (node) {
             .integer, .rational, .symbol => true,
-            .float,
-            .constant,
-            .div,
-            .sin,
-            .cos,
-            .tan,
-            .asin,
-            .acos,
-            .atan,
-            .sinh,
-            .cosh,
-            .tanh,
-            .abs,
-            .exp,
-            .ln,
-            .log2,
-            .log10,
-            .atan2,
-            .hypot,
-            => false,
-            .add, .sub, .mul => |binary| convertible[@intCast(binary.left)] and
+            .float, .constant, .div, .atan2, .hypot => false,
+            .sub => |binary| convertible[@intCast(binary.left)] and
                 convertible[@intCast(binary.right)],
             .add_nary, .mul_nary => |operands| blk: {
                 var all = true;
@@ -747,7 +696,8 @@ fn polynomialConvertible(comptime expression: ast.Expr) bool {
                 power.exponent.isInteger() and
                 power.exponent.numerator >= 0 and
                 power.exponent.numerator <= std.math.maxInt(u32),
-            .negate => |child| convertible[@intCast(child)],
+            .unary => |unary| unary.op == .negate and
+                convertible[@intCast(unary.child)],
         };
     }
     return convertible[@intCast(expression.root)];
@@ -765,8 +715,6 @@ fn provablyNonzero(
             .float => |value| value != 0.0,
             .constant => true,
             .symbol => |name| symbolNonzero(name, assumptions),
-            .mul => |binary| nonzero_nodes[@intCast(binary.left)] and
-                nonzero_nodes[@intCast(binary.right)],
             .mul_nary => |operands| blk: {
                 var all = true;
                 for (operands) |child| all =
@@ -777,8 +725,11 @@ fn provablyNonzero(
                 nonzero_nodes[@intCast(binary.right)],
             .pow => |power| power.exponent.isZero() or
                 nonzero_nodes[@intCast(power.base)],
-            .negate, .abs => |child| nonzero_nodes[@intCast(child)],
-            .exp, .cosh => true,
+            .unary => |unary| switch (unary.op) {
+                .negate, .abs => nonzero_nodes[@intCast(unary.child)],
+                .exp, .cosh => true,
+                else => false,
+            },
             else => false,
         };
     }

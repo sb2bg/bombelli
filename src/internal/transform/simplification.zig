@@ -6,22 +6,7 @@ const exact = @import("../core/exact.zig");
 
 const BinaryOperation = enum { add, sub, mul, div };
 const BinaryFunction = enum { atan2, hypot };
-const Function = enum {
-    sin,
-    cos,
-    tan,
-    asin,
-    acos,
-    atan,
-    sinh,
-    cosh,
-    tanh,
-    abs,
-    exp,
-    ln,
-    log2,
-    log10,
-};
+const Function = ast.UnaryOp;
 
 pub fn simplify(comptime expression: ast.Expr) ast.Expr {
     var current = expression;
@@ -194,12 +179,6 @@ const Context = struct {
             .float => |value| self.builder.float(value),
             .constant => |value| self.builder.constant(value),
             .symbol => |name| self.builder.symbol(name),
-            .add => |binary| simplifyAdd(
-                self.builder,
-                self.simplifyNode(binary.left),
-                self.simplifyNode(binary.right),
-                self.source,
-            ),
             .add_nary => |operands| blk: {
                 var simplified: [ast.construction_node_limit]ast.NodeId = undefined;
                 for (operands, 0..) |child, operand_index| {
@@ -215,14 +194,6 @@ const Context = struct {
                 self.builder,
                 self.simplifyNode(binary.left),
                 self.simplifyNode(binary.right),
-                self.source,
-            ),
-            .mul => |binary| canonicalMul(
-                self.builder,
-                &.{
-                    self.simplifyNode(binary.left),
-                    self.simplifyNode(binary.right),
-                },
                 self.source,
             ),
             .mul_nary => |operands| blk: {
@@ -248,95 +219,19 @@ const Context = struct {
                 power.exponent,
                 self.source,
             ),
-            .negate => |child| simplifyNegate(
-                self.builder,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .sin => |child| simplifyFunction(
-                self.builder,
-                .sin,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .cos => |child| simplifyFunction(
-                self.builder,
-                .cos,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .tan => |child| simplifyFunction(
-                self.builder,
-                .tan,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .asin => |child| simplifyFunction(
-                self.builder,
-                .asin,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .acos => |child| simplifyFunction(
-                self.builder,
-                .acos,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .atan => |child| simplifyFunction(
-                self.builder,
-                .atan,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .sinh => |child| simplifyFunction(
-                self.builder,
-                .sinh,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .cosh => |child| simplifyFunction(
-                self.builder,
-                .cosh,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .tanh => |child| simplifyFunction(
-                self.builder,
-                .tanh,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .abs => |child| simplifyFunction(
-                self.builder,
-                .abs,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .exp => |child| simplifyFunction(
-                self.builder,
-                .exp,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .ln => |child| simplifyFunction(
-                self.builder,
-                .ln,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .log2 => |child| simplifyFunction(
-                self.builder,
-                .log2,
-                self.simplifyNode(child),
-                self.source,
-            ),
-            .log10 => |child| simplifyFunction(
-                self.builder,
-                .log10,
-                self.simplifyNode(child),
-                self.source,
-            ),
+            .unary => |unary| if (unary.op == .negate)
+                simplifyNegate(
+                    self.builder,
+                    self.simplifyNode(unary.child),
+                    self.source,
+                )
+            else
+                simplifyFunction(
+                    self.builder,
+                    unary.op,
+                    self.simplifyNode(unary.child),
+                    self.source,
+                ),
             .atan2 => |binary| simplifyBinaryFunction(
                 self.builder,
                 .atan2,
@@ -357,15 +252,6 @@ const Context = struct {
         return result;
     }
 };
-
-fn simplifyAdd(
-    builder: *build.Builder,
-    left: ast.NodeId,
-    right: ast.NodeId,
-    comptime source: []const u8,
-) ast.NodeId {
-    return canonicalAdd(builder, &.{ left, right }, source);
-}
 
 fn simplifySub(
     builder: *build.Builder,
@@ -701,9 +587,12 @@ fn decomposeTerm(
         return .{ .coefficient = value, .basis = ast.invalid_node };
     }
     return switch (builder.node(operand)) {
-        .negate => |child| .{
+        .unary => |unary| if (unary.op == .negate) .{
             .coefficient = exact.Rational.fromInteger(-1),
-            .basis = child,
+            .basis = unary.child,
+        } else .{
+            .coefficient = exact.Rational.fromInteger(1),
+            .basis = operand,
         },
         .mul_nary => |factors| blk: {
             const leading = exactValue(builder, factors[0]) orelse break :blk .{
@@ -747,10 +636,6 @@ fn collectAddOperands(
     len: *usize,
 ) void {
     switch (builder.node(id)) {
-        .add => |binary| {
-            collectAddOperands(builder, binary.left, workspace, len);
-            collectAddOperands(builder, binary.right, workspace, len);
-        },
         .add_nary => |operands| {
             for (operands) |child| collectAddOperands(builder, child, workspace, len);
         },
@@ -771,10 +656,6 @@ fn collectMulOperands(
     len: *usize,
 ) void {
     switch (builder.node(id)) {
-        .mul => |binary| {
-            collectMulOperands(builder, binary.left, workspace, len);
-            collectMulOperands(builder, binary.right, workspace, len);
-        },
         .mul_nary => |operands| {
             for (operands) |child| collectMulOperands(builder, child, workspace, len);
         },
@@ -874,7 +755,10 @@ fn simplifyNegate(
             source,
             operatorPosition(source, '-'),
         ),
-        .negate => |grandchild| grandchild,
+        .unary => |unary| if (unary.op == .negate)
+            unary.child
+        else
+            builder.negate(child),
         else => builder.negate(child),
     };
 }
@@ -930,6 +814,7 @@ fn simplifyFunction(
                 ),
                 .ln, .log2, .log10 => unreachable,
                 .abs => builder.integer(0),
+                .negate => unreachable,
             };
         }
         if (function == .ln and value.isOne()) return builder.integer(0);
@@ -1013,6 +898,7 @@ fn simplifyFunction(
             .ln => @log(value),
             .log2 => @log2(value),
             .log10 => @log10(value),
+            .negate => unreachable,
         }, source, position);
     }
 
@@ -1024,22 +910,7 @@ fn makeFunction(
     comptime function: Function,
     child: ast.NodeId,
 ) ast.NodeId {
-    return switch (function) {
-        .sin => builder.sine(child),
-        .cos => builder.cosine(child),
-        .tan => builder.tangent(child),
-        .asin => builder.arcsine(child),
-        .acos => builder.arccosine(child),
-        .atan => builder.arctangent(child),
-        .sinh => builder.hyperbolicSine(child),
-        .cosh => builder.hyperbolicCosine(child),
-        .tanh => builder.hyperbolicTangent(child),
-        .abs => builder.absolute(child),
-        .exp => builder.exponential(child),
-        .ln => builder.logarithm(child),
-        .log2 => builder.logarithm2(child),
-        .log10 => builder.logarithm10(child),
-    };
+    return builder.unary(function, child);
 }
 
 fn simplifyBinaryFunction(
@@ -1338,25 +1209,12 @@ fn less(builder: *const build.Builder, left: ast.NodeId, right: ast.NodeId) bool
                 power.exponent.denominator < right_node.pow.exponent.denominator
         else
             less(builder, power.base, right_node.pow.base),
-        .mul => |binary| lessBinary(builder, binary, right_node.mul),
-        .sin => |child| less(builder, child, right_node.sin),
-        .cos => |child| less(builder, child, right_node.cos),
-        .tan => |child| less(builder, child, right_node.tan),
-        .asin => |child| less(builder, child, right_node.asin),
-        .acos => |child| less(builder, child, right_node.acos),
-        .atan => |child| less(builder, child, right_node.atan),
-        .sinh => |child| less(builder, child, right_node.sinh),
-        .cosh => |child| less(builder, child, right_node.cosh),
-        .tanh => |child| less(builder, child, right_node.tanh),
-        .abs => |child| less(builder, child, right_node.abs),
-        .exp => |child| less(builder, child, right_node.exp),
-        .ln => |child| less(builder, child, right_node.ln),
-        .log2 => |child| less(builder, child, right_node.log2),
-        .log10 => |child| less(builder, child, right_node.log10),
+        .unary => |unary| if (unary.op != right_node.unary.op)
+            @intFromEnum(unary.op) < @intFromEnum(right_node.unary.op)
+        else
+            less(builder, unary.child, right_node.unary.child),
         .atan2 => |binary| lessBinary(builder, binary, right_node.atan2),
         .hypot => |binary| lessBinary(builder, binary, right_node.hypot),
-        .negate => |child| less(builder, child, right_node.negate),
-        .add => |binary| lessBinary(builder, binary, right_node.add),
         .add_nary => |operands| lessOperands(
             builder,
             operands,
@@ -1398,25 +1256,13 @@ fn rank(node: ast.Node) u8 {
         .constant => 2,
         .symbol => 3,
         .pow => 4,
-        .mul => 5,
-        .sin => 6,
-        .cos => 7,
-        .tan => 8,
-        .asin => 9,
-        .acos => 10,
-        .atan => 11,
-        .sinh => 12,
-        .cosh => 13,
-        .tanh => 14,
-        .abs => 15,
-        .exp => 16,
-        .ln => 17,
-        .log2 => 18,
-        .log10 => 19,
+        .unary => |unary| if (unary.op == .negate)
+            22
+        else
+            5 + @as(u8, @intCast(@intFromEnum(unary.op))),
         .atan2 => 20,
         .hypot => 21,
-        .negate => 22,
-        .add, .add_nary => 23,
+        .add_nary => 23,
         .sub => 24,
         .mul_nary => 5,
         .div => 25,

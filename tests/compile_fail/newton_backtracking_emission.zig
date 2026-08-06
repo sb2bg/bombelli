@@ -14,7 +14,6 @@ comptime {
     });
     _ = solver.emit(.{
         .target = .zig,
-        .mode = .out_of_place,
         .name = "solve",
     });
 }

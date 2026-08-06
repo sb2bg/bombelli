@@ -10,7 +10,6 @@ test {
     }).leastSquares().compile(.{});
     _ = comptime fitter.emit(.{
         .target = .c,
-        .mode = .out_of_place,
         .name = "fit_line",
         .scalar = .f32,
     });

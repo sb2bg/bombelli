@@ -35,7 +35,6 @@ const compiled_integral = partial_integral.compile(.{
 
 const emitted_evaluator = response_gradient.emit(.{
     .target = .zig,
-    .mode = .out_of_place,
     .name = "response_gradient",
 });
 

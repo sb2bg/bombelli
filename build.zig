@@ -9,73 +9,26 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const context = Context{
+        .b = b,
+        .bombelli = bombelli,
+        .target = target,
+        .optimize = optimize,
+    };
 
-    const tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/root.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "bombelli", .module = bombelli },
-            },
-        }),
+    const test_step = context.addTestSuite(.{
+        .name = "test",
+        .description = "Run the Bombelli test suite",
+        .source = "tests/root.zig",
     });
-    const run_tests = b.addRunArtifact(tests);
-    const test_step = b.step("test", "Run the Bombelli test suite");
-    test_step.dependOn(&run_tests.step);
 
     addCompileFailTests(b, test_step);
 
-    const stress_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/stress.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "bombelli", .module = bombelli },
-            },
-        }),
-    });
-    const run_stress_tests = b.addRunArtifact(stress_tests);
-    const stress_step = b.step("stress", "Run compile-time expression stress tests");
-    stress_step.dependOn(&run_stress_tests.step);
-    test_step.dependOn(stress_step);
-
-    const property_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/properties.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "bombelli", .module = bombelli },
-            },
-        }),
-    });
-    const run_property_tests = b.addRunArtifact(property_tests);
-    const property_step = b.step(
-        "properties",
-        "Run deterministic mathematical and DAG property tests",
-    );
-    property_step.dependOn(&run_property_tests.step);
-    test_step.dependOn(property_step);
-
-    const hardening_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/hardening.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "bombelli", .module = bombelli },
-            },
-        }),
-    });
-    const run_hardening_tests = b.addRunArtifact(hardening_tests);
-    const hardening_step = b.step(
-        "hardening",
-        "Run domain, singularity, and numerical-status hardening tests",
-    );
-    hardening_step.dependOn(&run_hardening_tests.step);
-    test_step.dependOn(hardening_step);
+    inline for ([_]Suite{
+        .{ .name = "stress", .description = "Run compile-time expression stress tests", .source = "tests/stress.zig" },
+        .{ .name = "properties", .description = "Run deterministic mathematical and DAG property tests", .source = "tests/properties.zig" },
+        .{ .name = "hardening", .description = "Run domain, singularity, and numerical-status hardening tests", .source = "tests/hardening.zig" },
+    }) |suite| test_step.dependOn(context.addTestSuite(suite));
 
     const differential = b.addSystemCommand(&.{
         "python3",
@@ -135,66 +88,67 @@ pub fn build(b: *std.Build) void {
     check_step.dependOn(emission_step);
     check_step.dependOn(docs_step);
 
-    const example = b.addExecutable(.{
-        .name = "bombelli-example",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("examples/flagship.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "bombelli", .module = bombelli },
-            },
-        }),
-    });
-    b.installArtifact(example);
-
-    const run_example = b.addRunArtifact(example);
-    run_example.step.dependOn(b.getInstallStep());
-    const run_step = b.step("run", "Run the Bombelli example");
-    run_step.dependOn(&run_example.step);
-
-    const curve_fit = b.addExecutable(.{
-        .name = "bombelli-curve-fit",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("examples/curve_fit.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "bombelli", .module = bombelli },
-            },
-        }),
-    });
-    b.installArtifact(curve_fit);
-    const run_curve_fit = b.addRunArtifact(curve_fit);
-    run_curve_fit.step.dependOn(b.getInstallStep());
-    const curve_fit_step = b.step(
-        "run-curve-fit",
-        "Fit an exponential curve to runtime observations",
-    );
-    curve_fit_step.dependOn(&run_curve_fit.step);
-
-    const jacobian = b.addExecutable(.{
-        .name = "bombelli-jacobian-counterexample",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("examples/jacobian_counterexample.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "bombelli", .module = bombelli },
-            },
-        }),
-    });
-    // Installed so a plain `zig build` compiles it: the README and a blog
-    // post both link this example, so silent rot would be public.
-    b.installArtifact(jacobian);
-    const run_jacobian = b.addRunArtifact(jacobian);
-    run_jacobian.step.dependOn(b.getInstallStep());
-    const jacobian_step = b.step(
-        "run-jacobian",
-        "Check the Jacobian conjecture counterexample at compile time",
-    );
-    jacobian_step.dependOn(&run_jacobian.step);
+    const examples_step = b.step("examples", "Compile all examples");
+    inline for ([_]Example{
+        .{ .name = "bombelli-example", .source = "examples/flagship.zig", .run_name = "run", .description = "Run the Bombelli example", .install = true },
+        .{ .name = "bombelli-curve-fit", .source = "examples/curve_fit.zig", .run_name = "run-curve-fit", .description = "Fit an exponential curve to runtime observations" },
+        .{ .name = "bombelli-jacobian-counterexample", .source = "examples/jacobian_counterexample.zig", .run_name = "run-jacobian", .description = "Check the Jacobian conjecture counterexample at compile time" },
+    }) |example| context.addExample(examples_step, example);
+    check_step.dependOn(examples_step);
 }
+
+const Suite = struct {
+    name: []const u8,
+    description: []const u8,
+    source: []const u8,
+};
+
+const Example = struct {
+    name: []const u8,
+    source: []const u8,
+    run_name: []const u8,
+    description: []const u8,
+    install: bool = false,
+};
+
+const Context = struct {
+    b: *std.Build,
+    bombelli: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+
+    fn addTestSuite(self: Context, suite: Suite) *std.Build.Step {
+        const tests = self.b.addTest(.{
+            .root_module = self.module(suite.source),
+        });
+        const run = self.b.addRunArtifact(tests);
+        const step = self.b.step(suite.name, suite.description);
+        step.dependOn(&run.step);
+        return step;
+    }
+
+    fn addExample(self: Context, examples_step: *std.Build.Step, options: Example) void {
+        const example = self.b.addExecutable(.{
+            .name = options.name,
+            .root_module = self.module(options.source),
+        });
+        if (options.install) self.b.installArtifact(example);
+        examples_step.dependOn(&example.step);
+
+        const run = self.b.addRunArtifact(example);
+        const run_step = self.b.step(options.run_name, options.description);
+        run_step.dependOn(&run.step);
+    }
+
+    fn module(self: Context, source: []const u8) *std.Build.Module {
+        return self.b.createModule(.{
+            .root_source_file = self.b.path(source),
+            .target = self.target,
+            .optimize = self.optimize,
+            .imports = &.{.{ .name = "bombelli", .module = self.bombelli }},
+        });
+    }
+};
 
 fn addCompileFailTests(b: *std.Build, test_step: *std.Build.Step) void {
     const directory_path = "tests/compile_fail";

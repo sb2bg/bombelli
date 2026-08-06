@@ -740,7 +740,7 @@ fn validateHolomorphic(
 ) void {
     inline for (residuals.nodes) |node| {
         switch (node) {
-            .abs => @compileError(
+            .unary => |unary| if (unary.op == .abs) @compileError(
                 "Bombelli complex Newton requires holomorphic residuals; abs is not holomorphic",
             ),
             .atan2 => @compileError(

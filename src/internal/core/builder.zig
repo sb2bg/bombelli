@@ -41,8 +41,74 @@ pub const Builder = struct {
         return self.intern(.{ .symbol = name });
     }
 
+    pub fn cloneExpression(
+        self: *Builder,
+        comptime expression: ast.Expr,
+    ) ast.NodeId {
+        var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
+        return self.cloneNode(expression.nodes, expression.root, &cache);
+    }
+
+    pub fn cloneNode(
+        self: *Builder,
+        comptime nodes: []const ast.Node,
+        id: ast.NodeId,
+        cache: []ast.NodeId,
+    ) ast.NodeId {
+        const index: usize = @intCast(id);
+        if (cache[index] != ast.invalid_node) return cache[index];
+
+        const result = switch (nodes[index]) {
+            .integer => |value| self.integer(value),
+            .rational => |value| self.rational(value),
+            .float => |value| self.float(value),
+            .constant => |value| self.constant(value),
+            .symbol => |name| self.symbol(name),
+            .add_nary => |operands| blk: {
+                var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
+                for (operands, 0..) |child, operand_index| {
+                    cloned[operand_index] = self.cloneNode(nodes, child, cache);
+                }
+                break :blk self.addNary(cloned[0..operands.len]);
+            },
+            .sub => |binary| self.sub(
+                self.cloneNode(nodes, binary.left, cache),
+                self.cloneNode(nodes, binary.right, cache),
+            ),
+            .mul_nary => |operands| blk: {
+                var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
+                for (operands, 0..) |child, operand_index| {
+                    cloned[operand_index] = self.cloneNode(nodes, child, cache);
+                }
+                break :blk self.mulNary(cloned[0..operands.len]);
+            },
+            .div => |binary| self.div(
+                self.cloneNode(nodes, binary.left, cache),
+                self.cloneNode(nodes, binary.right, cache),
+            ),
+            .pow => |power_value| self.power(
+                self.cloneNode(nodes, power_value.base, cache),
+                power_value.exponent,
+            ),
+            .unary => |unary_value| self.unary(
+                unary_value.op,
+                self.cloneNode(nodes, unary_value.child, cache),
+            ),
+            .atan2 => |binary| self.arctangent2(
+                self.cloneNode(nodes, binary.left, cache),
+                self.cloneNode(nodes, binary.right, cache),
+            ),
+            .hypot => |binary| self.hypotenuse(
+                self.cloneNode(nodes, binary.left, cache),
+                self.cloneNode(nodes, binary.right, cache),
+            ),
+        };
+        cache[index] = result;
+        return result;
+    }
+
     pub fn add(self: *Builder, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .add = .{ .left = left, .right = right } });
+        return self.addNary(&.{ left, right });
     }
 
     pub fn addNary(self: *Builder, operands: []const ast.NodeId) ast.NodeId {
@@ -61,7 +127,7 @@ pub const Builder = struct {
     }
 
     pub fn mul(self: *Builder, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .mul = .{ .left = left, .right = right } });
+        return self.mulNary(&.{ left, right });
     }
 
     pub fn mulNary(self: *Builder, operands: []const ast.NodeId) ast.NodeId {
@@ -84,64 +150,68 @@ pub const Builder = struct {
         return self.intern(.{ .pow = .{ .base = base, .exponent = canonical } });
     }
 
+    pub fn unary(self: *Builder, op: ast.UnaryOp, child: ast.NodeId) ast.NodeId {
+        return self.intern(.{ .unary = .{ .op = op, .child = child } });
+    }
+
     pub fn negate(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .negate = child });
+        return self.unary(.negate, child);
     }
 
     pub fn sine(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .sin = child });
+        return self.unary(.sin, child);
     }
 
     pub fn cosine(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .cos = child });
+        return self.unary(.cos, child);
     }
 
     pub fn tangent(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .tan = child });
+        return self.unary(.tan, child);
     }
 
     pub fn arcsine(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .asin = child });
+        return self.unary(.asin, child);
     }
 
     pub fn arccosine(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .acos = child });
+        return self.unary(.acos, child);
     }
 
     pub fn arctangent(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .atan = child });
+        return self.unary(.atan, child);
     }
 
     pub fn hyperbolicSine(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .sinh = child });
+        return self.unary(.sinh, child);
     }
 
     pub fn hyperbolicCosine(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .cosh = child });
+        return self.unary(.cosh, child);
     }
 
     pub fn hyperbolicTangent(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .tanh = child });
+        return self.unary(.tanh, child);
     }
 
     pub fn absolute(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .abs = child });
+        return self.unary(.abs, child);
     }
 
     pub fn exponential(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .exp = child });
+        return self.unary(.exp, child);
     }
 
     pub fn logarithm(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .ln = child });
+        return self.unary(.ln, child);
     }
 
     pub fn logarithm2(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .log2 = child });
+        return self.unary(.log2, child);
     }
 
     pub fn logarithm10(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .log10 = child });
+        return self.unary(.log10, child);
     }
 
     pub fn arctangent2(
@@ -296,31 +366,18 @@ fn remapNode(
         .float => |value| .{ .float = value },
         .constant => |value| .{ .constant = value },
         .symbol => |name| .{ .symbol = name },
-        .add => |binary| .{ .add = remapBinary(binary, remap) },
         .add_nary => |operands| .{ .add_nary = remapOperands(operands, remap) },
         .sub => |binary| .{ .sub = remapBinary(binary, remap) },
-        .mul => |binary| .{ .mul = remapBinary(binary, remap) },
         .mul_nary => |operands| .{ .mul_nary = remapOperands(operands, remap) },
         .div => |binary| .{ .div = remapBinary(binary, remap) },
         .pow => |power| .{ .pow = .{
             .base = remap[@intCast(power.base)],
             .exponent = power.exponent,
         } },
-        .negate => |child| .{ .negate = remap[@intCast(child)] },
-        .sin => |child| .{ .sin = remap[@intCast(child)] },
-        .cos => |child| .{ .cos = remap[@intCast(child)] },
-        .tan => |child| .{ .tan = remap[@intCast(child)] },
-        .asin => |child| .{ .asin = remap[@intCast(child)] },
-        .acos => |child| .{ .acos = remap[@intCast(child)] },
-        .atan => |child| .{ .atan = remap[@intCast(child)] },
-        .sinh => |child| .{ .sinh = remap[@intCast(child)] },
-        .cosh => |child| .{ .cosh = remap[@intCast(child)] },
-        .tanh => |child| .{ .tanh = remap[@intCast(child)] },
-        .abs => |child| .{ .abs = remap[@intCast(child)] },
-        .exp => |child| .{ .exp = remap[@intCast(child)] },
-        .ln => |child| .{ .ln = remap[@intCast(child)] },
-        .log2 => |child| .{ .log2 = remap[@intCast(child)] },
-        .log10 => |child| .{ .log10 = remap[@intCast(child)] },
+        .unary => |unary_value| .{ .unary = .{
+            .op = unary_value.op,
+            .child = remap[@intCast(unary_value.child)],
+        } },
         .atan2 => |binary| .{ .atan2 = remapBinary(binary, remap) },
         .hypot => |binary| .{ .hypot = remapBinary(binary, remap) },
     };
@@ -362,10 +419,8 @@ fn hashNode(node_value: ast.Node) u64 {
             for (name) |byte| hash = mix(hash, byte);
             break :blk hash;
         },
-        .add => |binary| hashBinary(hash, binary),
         .add_nary => |operands| hashOperands(hash, operands),
         .sub => |binary| hashBinary(hash, binary),
-        .mul => |binary| hashBinary(hash, binary),
         .mul_nary => |operands| hashOperands(hash, operands),
         .div => |binary| hashBinary(hash, binary),
         .pow => |power| mix(
@@ -375,21 +430,10 @@ fn hashNode(node_value: ast.Node) u64 {
             ),
             power.exponent.denominator,
         ),
-        .negate => |child| mix(hash, child),
-        .sin => |child| mix(hash, child),
-        .cos => |child| mix(hash, child),
-        .tan => |child| mix(hash, child),
-        .asin => |child| mix(hash, child),
-        .acos => |child| mix(hash, child),
-        .atan => |child| mix(hash, child),
-        .sinh => |child| mix(hash, child),
-        .cosh => |child| mix(hash, child),
-        .tanh => |child| mix(hash, child),
-        .abs => |child| mix(hash, child),
-        .exp => |child| mix(hash, child),
-        .ln => |child| mix(hash, child),
-        .log2 => |child| mix(hash, child),
-        .log10 => |child| mix(hash, child),
+        .unary => |unary_value| mix(
+            mix(hash, @intFromEnum(unary_value.op)),
+            unary_value.child,
+        ),
         .atan2 => |binary| hashBinary(hash, binary),
         .hypot => |binary| hashBinary(hash, binary),
     };

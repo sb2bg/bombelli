@@ -2,7 +2,5 @@
 const bombelli = @import("bombelli");
 
 comptime {
-    _ = bombelli.expr("x").emit(.{
-        .mode = .out_of_place,
-    });
+    _ = bombelli.expr("x").emit(.{});
 }
