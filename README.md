@@ -89,6 +89,27 @@ and C kernel independently of Bombelli. Current compile, size, and runtime
 measurements are recorded in the
 [validation baseline](docs/validation/release-baseline.md).
 
+## Compiled derivative products
+
+When you need `Jv` or `Jᵀv`, compile the product directly:
+
+```zig
+const model = comptime bombelli.model(.{
+    "x*sin(x+y)", "y*sin(x+y)",
+}, .{ .variables = .{ .x, .y } });
+const product = comptime model.compileVjp(.{});
+const result = product.eval(.{ .x = 0.2, .y = 0.3 }, .{ 1.0, -2.0 });
+const plan = comptime product.inspect();
+```
+
+A structural cost heuristic chooses symbolic entry contraction or direct
+propagation through the shared DAG. Direct JVP uses forward tangents; direct
+VJP accumulates reverse adjoints. Neither product evaluator stores the full
+Jacobian. Inspection reports the selected method, structural sparsity,
+operation estimates, and the finished program's size and sharing. See the
+[derivative-product guide](docs/guides/derivative-products.md) for controls,
+emission, and reproducible benchmarks.
+
 ## Install
 
 ```sh

@@ -1,0 +1,90 @@
+{
+  "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+  "zig": "0.16.0",
+  "shape": "sparse",
+  "iterations": 1000000,
+  "samples": 3,
+  "complete": true,
+  "records": [
+    {
+      "size": 16,
+      "kind": "jvp",
+      "strategy": "explicit",
+      "status": "ok",
+      "selected": "explicit",
+      "nodes": 114,
+      "construction_peak": 323,
+      "compile_seconds": 6.119,
+      "ns_per_eval": 155.77,
+      "binary_bytes": 395072,
+      "checksum": 240184568.84995726
+    },
+    {
+      "size": 16,
+      "kind": "jvp",
+      "strategy": "direct",
+      "status": "ok",
+      "selected": "forward",
+      "nodes": 177,
+      "construction_peak": 178,
+      "compile_seconds": 5.219,
+      "ns_per_eval": 58.29,
+      "binary_bytes": 394832,
+      "checksum": 240184568.8499573
+    },
+    {
+      "size": 16,
+      "kind": "jvp",
+      "strategy": "auto",
+      "status": "ok",
+      "selected": "forward",
+      "nodes": 177,
+      "construction_peak": 178,
+      "compile_seconds": 5.221,
+      "ns_per_eval": 58.46,
+      "binary_bytes": 394824,
+      "checksum": 240184568.8499573
+    },
+    {
+      "size": 16,
+      "kind": "vjp",
+      "strategy": "explicit",
+      "status": "ok",
+      "selected": "explicit",
+      "nodes": 114,
+      "construction_peak": 323,
+      "compile_seconds": 6.103,
+      "ns_per_eval": 98.08,
+      "binary_bytes": 395072,
+      "checksum": 239666674.61077887
+    },
+    {
+      "size": 16,
+      "kind": "vjp",
+      "strategy": "direct",
+      "status": "ok",
+      "selected": "reverse",
+      "nodes": 177,
+      "construction_peak": 178,
+      "compile_seconds": 5.202,
+      "ns_per_eval": 65.82,
+      "binary_bytes": 394832,
+      "checksum": 239666674.61077887
+    },
+    {
+      "size": 16,
+      "kind": "vjp",
+      "strategy": "auto",
+      "status": "ok",
+      "selected": "reverse",
+      "nodes": 177,
+      "construction_peak": 178,
+      "compile_seconds": 5.256,
+      "ns_per_eval": 64.89,
+      "binary_bytes": 394824,
+      "checksum": 239666674.61077887
+    }
+  ],
+  "cpu": "Apple M1 Pro",
+  "measured": "2026-09-07"
+}

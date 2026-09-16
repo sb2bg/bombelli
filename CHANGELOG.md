@@ -4,6 +4,9 @@
 
 ### Added
 
+- Compiled model JVP/VJP programs with forward/reverse propagation, structural
+  dependency pruning, optional symbolic contraction, an inspectable strategy
+  heuristic, and standalone Zig/C emission.
 - Complex expression evaluation, exact `i`, complex quadratic branches, and
   `.complex` Newton systems using `std.math.Complex(f64)`.
 - Named Newton value, residual, and sensitivity accessors.

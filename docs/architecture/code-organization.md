@@ -20,6 +20,12 @@ Implementation modules are grouped by capability:
 Language backends share target-neutral DAG, binding, literal, and option
 logic. Each backend owns only its syntax and public calling convention.
 
+`internal/model/product.zig` compiles Jacobian products into ordinary
+expression vectors. Local slopes reuse the symbolic differentiation rules;
+forward tangents and reverse adjoints become seed-dependent DAG nodes.
+The runtime evaluator and emission backends therefore need no derivative
+interpreter or product-specific runtime implementation.
+
 ## Dependency rule
 
 Internal modules do not import `root.zig`. Features depend on
