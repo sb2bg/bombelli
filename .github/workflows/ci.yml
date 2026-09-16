@@ -21,4 +21,5 @@ jobs:
       - name: Install SymPy oracle
         run: python3 -m pip install sympy==1.12
       - name: Run all checks
-        run: zig build check --summary all
+        # Bound concurrent compiler memory use for the large comptime tests.
+        run: zig build check -j2 --summary all
