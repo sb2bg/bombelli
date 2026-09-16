@@ -1,6 +1,8 @@
 //! Bombelli's documented public package façade.
 
 const std = @import("std");
+/// Root-module compiler options (`pub const bombelli_options: bombelli.Options`).
+pub const Options = @import("options.zig").Options;
 const expression = @import("expression.zig");
 const adaptive_quadrature = @import("internal/integrate/adaptive.zig");
 const domain = @import("internal/core/domain.zig");

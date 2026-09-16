@@ -23,6 +23,14 @@ pub fn build(b: *std.Build) void {
     });
 
     addCompileFailTests(b, test_step);
+    const configured_test = b.addExecutable(.{
+        .name = "test-configured",
+        .root_module = context.module("tests/configured.zig"),
+    });
+    const run_configured = b.addRunArtifact(configured_test);
+    const configured_step = b.step("test-configured", "Verify configurable construction capacity");
+    configured_step.dependOn(&run_configured.step);
+    test_step.dependOn(configured_step);
 
     inline for ([_]Suite{
         .{ .name = "stress", .description = "Run compile-time expression stress tests", .source = "tests/stress.zig" },
@@ -224,7 +232,8 @@ fn addCompileFailTests(b: *std.Build, test_step: *std.Build.Step) void {
         );
         const check = b.addSystemCommand(&.{
             b.graph.zig_exe,
-            "test",
+            if (std.mem.indexOf(u8, contents, "// command: build-exe") != null) "build-exe" else "test",
+            "-fno-emit-bin",
             "--dep",
             "bombelli",
         });

@@ -3,351 +3,356 @@ const ast = @import("../../expression.zig");
 const exact = @import("exact.zig");
 const graph = @import("graph.zig");
 
-const hash_table_size = ast.construction_node_limit * 2;
-const hash_mask = hash_table_size - 1;
+pub const Builder = BuilderWithCapacity(ast.construction_node_limit);
 
-comptime {
-    std.debug.assert(std.math.isPowerOfTwo(hash_table_size));
+/// Bounded construction storage; persisted graphs are compacted independently.
+pub fn BuilderWithCapacity(comptime capacity: usize) type {
+    if (capacity == 0 or capacity > 0x7fff_ffff)
+        @compileError("Bombelli builder capacity is outside the supported range");
+    const hash_table_size = std.math.ceilPowerOfTwo(usize, capacity * 2) catch
+        @compileError("Bombelli builder hash capacity overflow");
+    const hash_mask = hash_table_size - 1;
+    return struct {
+        const Self = @This();
+        nodes: [capacity]ast.Node = undefined,
+        len: usize = 0,
+        hash_table: [hash_table_size]ast.NodeId =
+            [_]ast.NodeId{ast.invalid_node} ** hash_table_size,
+
+        pub fn node(self: *const Self, id: ast.NodeId) ast.Node {
+            return self.nodes[@intCast(id)];
+        }
+
+        pub fn integer(self: *Self, value: i64) ast.NodeId {
+            return self.intern(.{ .integer = value });
+        }
+
+        pub fn rational(self: *Self, value: exact.Rational) ast.NodeId {
+            if (value.denominator == 1) return self.integer(value.numerator);
+            return self.intern(.{ .rational = value });
+        }
+
+        pub fn float(self: *Self, value: f64) ast.NodeId {
+            return self.intern(.{ .float = value });
+        }
+
+        pub fn constant(self: *Self, value: ast.Constant) ast.NodeId {
+            return self.intern(.{ .constant = value });
+        }
+
+        pub fn symbol(self: *Self, name: []const u8) ast.NodeId {
+            return self.intern(.{ .symbol = name });
+        }
+
+        pub fn cloneExpression(
+            self: *Self,
+            comptime expression: ast.Expr,
+        ) ast.NodeId {
+            var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
+            return self.cloneNode(expression.nodes, expression.root, &cache);
+        }
+
+        pub fn cloneNode(
+            self: *Self,
+            comptime nodes: []const ast.Node,
+            id: ast.NodeId,
+            cache: []ast.NodeId,
+        ) ast.NodeId {
+            const index: usize = @intCast(id);
+            if (cache[index] != ast.invalid_node) return cache[index];
+
+            const result = switch (nodes[index]) {
+                .integer => |value| self.integer(value),
+                .rational => |value| self.rational(value),
+                .float => |value| self.float(value),
+                .constant => |value| self.constant(value),
+                .symbol => |name| self.symbol(name),
+                .add_nary => |operands| blk: {
+                    var cloned: [operands.len]ast.NodeId = undefined;
+                    for (operands, 0..) |child, operand_index| {
+                        cloned[operand_index] = self.cloneNode(nodes, child, cache);
+                    }
+                    break :blk self.addNary(cloned[0..operands.len]);
+                },
+                .sub => |binary| self.sub(
+                    self.cloneNode(nodes, binary.left, cache),
+                    self.cloneNode(nodes, binary.right, cache),
+                ),
+                .mul_nary => |operands| blk: {
+                    var cloned: [operands.len]ast.NodeId = undefined;
+                    for (operands, 0..) |child, operand_index| {
+                        cloned[operand_index] = self.cloneNode(nodes, child, cache);
+                    }
+                    break :blk self.mulNary(cloned[0..operands.len]);
+                },
+                .div => |binary| self.div(
+                    self.cloneNode(nodes, binary.left, cache),
+                    self.cloneNode(nodes, binary.right, cache),
+                ),
+                .pow => |power_value| self.power(
+                    self.cloneNode(nodes, power_value.base, cache),
+                    power_value.exponent,
+                ),
+                .unary => |unary_value| self.unary(
+                    unary_value.op,
+                    self.cloneNode(nodes, unary_value.child, cache),
+                ),
+                .atan2 => |binary| self.arctangent2(
+                    self.cloneNode(nodes, binary.left, cache),
+                    self.cloneNode(nodes, binary.right, cache),
+                ),
+                .hypot => |binary| self.hypotenuse(
+                    self.cloneNode(nodes, binary.left, cache),
+                    self.cloneNode(nodes, binary.right, cache),
+                ),
+            };
+            cache[index] = result;
+            return result;
+        }
+
+        pub fn add(self: *Self, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
+            return self.addNary(&.{ left, right });
+        }
+
+        pub fn addNary(self: *Self, operands: []const ast.NodeId) ast.NodeId {
+            if (operands.len < 2) @compileError("Bombelli n-ary addition requires at least two operands");
+            if (operands.len > capacity) {
+                @compileError("Bombelli n-ary addition exceeds construction workspace");
+            }
+            var storage: [operands.len]ast.NodeId = undefined;
+            @memcpy(storage[0..operands.len], operands);
+            const exact_operands = storage[0..operands.len].*;
+            return self.intern(.{ .add_nary = &exact_operands });
+        }
+
+        pub fn sub(self: *Self, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
+            return self.intern(.{ .sub = .{ .left = left, .right = right } });
+        }
+
+        pub fn mul(self: *Self, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
+            return self.mulNary(&.{ left, right });
+        }
+
+        pub fn mulNary(self: *Self, operands: []const ast.NodeId) ast.NodeId {
+            if (operands.len < 2) @compileError("Bombelli n-ary multiplication requires at least two operands");
+            if (operands.len > capacity) {
+                @compileError("Bombelli n-ary multiplication exceeds construction workspace");
+            }
+            var storage: [operands.len]ast.NodeId = undefined;
+            @memcpy(storage[0..operands.len], operands);
+            const exact_operands = storage[0..operands.len].*;
+            return self.intern(.{ .mul_nary = &exact_operands });
+        }
+
+        pub fn div(self: *Self, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
+            return self.intern(.{ .div = .{ .left = left, .right = right } });
+        }
+
+        pub fn power(self: *Self, base: ast.NodeId, exponent: anytype) ast.NodeId {
+            const canonical = canonicalExponent(exponent);
+            return self.intern(.{ .pow = .{ .base = base, .exponent = canonical } });
+        }
+
+        pub fn unary(self: *Self, op: ast.UnaryOp, child: ast.NodeId) ast.NodeId {
+            return self.intern(.{ .unary = .{ .op = op, .child = child } });
+        }
+
+        pub fn negate(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.negate, child);
+        }
+
+        pub fn sine(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.sin, child);
+        }
+
+        pub fn cosine(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.cos, child);
+        }
+
+        pub fn tangent(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.tan, child);
+        }
+
+        pub fn arcsine(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.asin, child);
+        }
+
+        pub fn arccosine(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.acos, child);
+        }
+
+        pub fn arctangent(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.atan, child);
+        }
+
+        pub fn hyperbolicSine(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.sinh, child);
+        }
+
+        pub fn hyperbolicCosine(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.cosh, child);
+        }
+
+        pub fn hyperbolicTangent(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.tanh, child);
+        }
+
+        pub fn absolute(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.abs, child);
+        }
+
+        pub fn exponential(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.exp, child);
+        }
+
+        pub fn logarithm(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.ln, child);
+        }
+
+        pub fn logarithm2(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.log2, child);
+        }
+
+        pub fn logarithm10(self: *Self, child: ast.NodeId) ast.NodeId {
+            return self.unary(.log10, child);
+        }
+
+        pub fn arctangent2(
+            self: *Self,
+            y: ast.NodeId,
+            x: ast.NodeId,
+        ) ast.NodeId {
+            return self.intern(.{ .atan2 = .{ .left = y, .right = x } });
+        }
+
+        pub fn hypotenuse(
+            self: *Self,
+            x: ast.NodeId,
+            y: ast.NodeId,
+        ) ast.NodeId {
+            return self.intern(.{ .hypot = .{ .left = x, .right = y } });
+        }
+
+        pub fn intern(self: *Self, new_node: ast.Node) ast.NodeId {
+            // Child nodes are interned before their parents, and structural identity
+            // is defined entirely by the tag, payload, and canonical child ids. Thus
+            // every finished expression is a topologically ordered DAG containing
+            // exactly one reachable instance of each structural node.
+            var slot: usize = @intCast(hashNode(new_node) & hash_mask);
+            for (0..hash_table_size) |_| {
+                const existing_id = self.hash_table[slot];
+                if (existing_id == ast.invalid_node) {
+                    if (self.len == capacity) {
+                        @compileError(std.fmt.comptimePrint(
+                            "Bombelli construction exceeds the temporary arena limit of {d} nodes",
+                            .{capacity},
+                        ));
+                    }
+
+                    const id: ast.NodeId = @intCast(self.len);
+                    self.nodes[self.len] = new_node;
+                    self.len += 1;
+                    self.hash_table[slot] = id;
+                    return id;
+                }
+
+                if (ast.nodeEqual(self.node(existing_id), new_node)) return existing_id;
+                slot = (slot + 1) & hash_mask;
+            }
+
+            @compileError("Bombelli node interning table is full");
+        }
+
+        pub fn finish(
+            comptime self: *Self,
+            root: ast.NodeId,
+            source: []const u8,
+        ) ast.Expr {
+            const finished = self.finishRoots(1, .{root});
+            return .{
+                .nodes = finished.nodes,
+                .root = finished.roots[0],
+                .source = source,
+                .construction_peak_nodes = self.len,
+            };
+        }
+
+        pub fn finishVector(
+            comptime self: *Self,
+            comptime N: usize,
+            roots: [N]ast.NodeId,
+            sources: [N][]const u8,
+        ) ast.ExprVector(N) {
+            const finished = self.finishRoots(N, roots);
+            return .{
+                .nodes = finished.nodes,
+                .roots = finished.roots,
+                .sources = sources,
+                .construction_peak_nodes = self.len,
+            };
+        }
+
+        pub fn finishMatrix(
+            comptime self: *Self,
+            comptime R: usize,
+            comptime C: usize,
+            roots: [R][C]ast.NodeId,
+            sources: [R][C][]const u8,
+        ) ast.ExprMatrix(R, C) {
+            var flat_roots: [R * C]ast.NodeId = undefined;
+            inline for (0..R) |row| {
+                inline for (0..C) |column| {
+                    flat_roots[row * C + column] = roots[row][column];
+                }
+            }
+            const finished = self.finishRoots(R * C, flat_roots);
+            var compact_roots: [R][C]ast.NodeId = undefined;
+            inline for (0..R) |row| {
+                inline for (0..C) |column| {
+                    compact_roots[row][column] = finished.roots[row * C + column];
+                }
+            }
+            return .{
+                .nodes = finished.nodes,
+                .roots = compact_roots,
+                .sources = sources,
+                .construction_peak_nodes = self.len,
+            };
+        }
+
+        fn finishRoots(
+            comptime self: *Self,
+            comptime N: usize,
+            roots: [N]ast.NodeId,
+        ) FinishedRoots(N) {
+            @setEvalBranchQuota(@import("limits.zig").eval_branch.transform);
+            var reachable = [_]bool{false} ** self.len;
+            for (roots) |root| {
+                graph.markReachable(self.nodes[0..self.len], root, &reachable);
+            }
+
+            var remap = [_]ast.NodeId{ast.invalid_node} ** self.len;
+            var compact: [self.len]ast.Node = undefined;
+            var compact_len: usize = 0;
+
+            for (self.nodes[0..self.len], 0..) |node_value, old_index| {
+                if (!reachable[old_index]) continue;
+
+                const new_id: ast.NodeId = @intCast(compact_len);
+                remap[old_index] = new_id;
+                compact[compact_len] = remapNode(node_value, &remap);
+                compact_len += 1;
+            }
+
+            const exact_nodes = compact[0..compact_len].*;
+            var compact_roots: [N]ast.NodeId = undefined;
+            for (roots, 0..) |root, index| {
+                compact_roots[index] = remap[@intCast(root)];
+            }
+            return .{ .nodes = &exact_nodes, .roots = compact_roots };
+        }
+    };
 }
-
-pub const Builder = struct {
-    nodes: [ast.construction_node_limit]ast.Node = undefined,
-    len: usize = 0,
-    hash_table: [hash_table_size]ast.NodeId =
-        [_]ast.NodeId{ast.invalid_node} ** hash_table_size,
-
-    pub fn node(self: *const Builder, id: ast.NodeId) ast.Node {
-        return self.nodes[@intCast(id)];
-    }
-
-    pub fn integer(self: *Builder, value: i64) ast.NodeId {
-        return self.intern(.{ .integer = value });
-    }
-
-    pub fn rational(self: *Builder, value: exact.Rational) ast.NodeId {
-        if (value.denominator == 1) return self.integer(value.numerator);
-        return self.intern(.{ .rational = value });
-    }
-
-    pub fn float(self: *Builder, value: f64) ast.NodeId {
-        return self.intern(.{ .float = value });
-    }
-
-    pub fn constant(self: *Builder, value: ast.Constant) ast.NodeId {
-        return self.intern(.{ .constant = value });
-    }
-
-    pub fn symbol(self: *Builder, name: []const u8) ast.NodeId {
-        return self.intern(.{ .symbol = name });
-    }
-
-    pub fn cloneExpression(
-        self: *Builder,
-        comptime expression: ast.Expr,
-    ) ast.NodeId {
-        var cache = [_]ast.NodeId{ast.invalid_node} ** expression.nodes.len;
-        return self.cloneNode(expression.nodes, expression.root, &cache);
-    }
-
-    pub fn cloneNode(
-        self: *Builder,
-        comptime nodes: []const ast.Node,
-        id: ast.NodeId,
-        cache: []ast.NodeId,
-    ) ast.NodeId {
-        const index: usize = @intCast(id);
-        if (cache[index] != ast.invalid_node) return cache[index];
-
-        const result = switch (nodes[index]) {
-            .integer => |value| self.integer(value),
-            .rational => |value| self.rational(value),
-            .float => |value| self.float(value),
-            .constant => |value| self.constant(value),
-            .symbol => |name| self.symbol(name),
-            .add_nary => |operands| blk: {
-                var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
-                for (operands, 0..) |child, operand_index| {
-                    cloned[operand_index] = self.cloneNode(nodes, child, cache);
-                }
-                break :blk self.addNary(cloned[0..operands.len]);
-            },
-            .sub => |binary| self.sub(
-                self.cloneNode(nodes, binary.left, cache),
-                self.cloneNode(nodes, binary.right, cache),
-            ),
-            .mul_nary => |operands| blk: {
-                var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
-                for (operands, 0..) |child, operand_index| {
-                    cloned[operand_index] = self.cloneNode(nodes, child, cache);
-                }
-                break :blk self.mulNary(cloned[0..operands.len]);
-            },
-            .div => |binary| self.div(
-                self.cloneNode(nodes, binary.left, cache),
-                self.cloneNode(nodes, binary.right, cache),
-            ),
-            .pow => |power_value| self.power(
-                self.cloneNode(nodes, power_value.base, cache),
-                power_value.exponent,
-            ),
-            .unary => |unary_value| self.unary(
-                unary_value.op,
-                self.cloneNode(nodes, unary_value.child, cache),
-            ),
-            .atan2 => |binary| self.arctangent2(
-                self.cloneNode(nodes, binary.left, cache),
-                self.cloneNode(nodes, binary.right, cache),
-            ),
-            .hypot => |binary| self.hypotenuse(
-                self.cloneNode(nodes, binary.left, cache),
-                self.cloneNode(nodes, binary.right, cache),
-            ),
-        };
-        cache[index] = result;
-        return result;
-    }
-
-    pub fn add(self: *Builder, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
-        return self.addNary(&.{ left, right });
-    }
-
-    pub fn addNary(self: *Builder, operands: []const ast.NodeId) ast.NodeId {
-        if (operands.len < 2) @compileError("Bombelli n-ary addition requires at least two operands");
-        if (operands.len > ast.construction_node_limit) {
-            @compileError("Bombelli n-ary addition exceeds construction workspace");
-        }
-        var storage: [ast.construction_node_limit]ast.NodeId = undefined;
-        @memcpy(storage[0..operands.len], operands);
-        const exact_operands = storage[0..operands.len].*;
-        return self.intern(.{ .add_nary = &exact_operands });
-    }
-
-    pub fn sub(self: *Builder, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .sub = .{ .left = left, .right = right } });
-    }
-
-    pub fn mul(self: *Builder, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
-        return self.mulNary(&.{ left, right });
-    }
-
-    pub fn mulNary(self: *Builder, operands: []const ast.NodeId) ast.NodeId {
-        if (operands.len < 2) @compileError("Bombelli n-ary multiplication requires at least two operands");
-        if (operands.len > ast.construction_node_limit) {
-            @compileError("Bombelli n-ary multiplication exceeds construction workspace");
-        }
-        var storage: [ast.construction_node_limit]ast.NodeId = undefined;
-        @memcpy(storage[0..operands.len], operands);
-        const exact_operands = storage[0..operands.len].*;
-        return self.intern(.{ .mul_nary = &exact_operands });
-    }
-
-    pub fn div(self: *Builder, left: ast.NodeId, right: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .div = .{ .left = left, .right = right } });
-    }
-
-    pub fn power(self: *Builder, base: ast.NodeId, exponent: anytype) ast.NodeId {
-        const canonical = canonicalExponent(exponent);
-        return self.intern(.{ .pow = .{ .base = base, .exponent = canonical } });
-    }
-
-    pub fn unary(self: *Builder, op: ast.UnaryOp, child: ast.NodeId) ast.NodeId {
-        return self.intern(.{ .unary = .{ .op = op, .child = child } });
-    }
-
-    pub fn negate(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.negate, child);
-    }
-
-    pub fn sine(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.sin, child);
-    }
-
-    pub fn cosine(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.cos, child);
-    }
-
-    pub fn tangent(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.tan, child);
-    }
-
-    pub fn arcsine(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.asin, child);
-    }
-
-    pub fn arccosine(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.acos, child);
-    }
-
-    pub fn arctangent(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.atan, child);
-    }
-
-    pub fn hyperbolicSine(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.sinh, child);
-    }
-
-    pub fn hyperbolicCosine(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.cosh, child);
-    }
-
-    pub fn hyperbolicTangent(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.tanh, child);
-    }
-
-    pub fn absolute(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.abs, child);
-    }
-
-    pub fn exponential(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.exp, child);
-    }
-
-    pub fn logarithm(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.ln, child);
-    }
-
-    pub fn logarithm2(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.log2, child);
-    }
-
-    pub fn logarithm10(self: *Builder, child: ast.NodeId) ast.NodeId {
-        return self.unary(.log10, child);
-    }
-
-    pub fn arctangent2(
-        self: *Builder,
-        y: ast.NodeId,
-        x: ast.NodeId,
-    ) ast.NodeId {
-        return self.intern(.{ .atan2 = .{ .left = y, .right = x } });
-    }
-
-    pub fn hypotenuse(
-        self: *Builder,
-        x: ast.NodeId,
-        y: ast.NodeId,
-    ) ast.NodeId {
-        return self.intern(.{ .hypot = .{ .left = x, .right = y } });
-    }
-
-    pub fn intern(self: *Builder, new_node: ast.Node) ast.NodeId {
-        // Child nodes are interned before their parents, and structural identity
-        // is defined entirely by the tag, payload, and canonical child ids. Thus
-        // every finished expression is a topologically ordered DAG containing
-        // exactly one reachable instance of each structural node.
-        var slot: usize = @intCast(hashNode(new_node) & hash_mask);
-        for (0..hash_table_size) |_| {
-            const existing_id = self.hash_table[slot];
-            if (existing_id == ast.invalid_node) {
-                if (self.len == ast.construction_node_limit) {
-                    @compileError(std.fmt.comptimePrint(
-                        "Bombelli construction exceeds the temporary arena limit of {d} nodes",
-                        .{ast.construction_node_limit},
-                    ));
-                }
-
-                const id: ast.NodeId = @intCast(self.len);
-                self.nodes[self.len] = new_node;
-                self.len += 1;
-                self.hash_table[slot] = id;
-                return id;
-            }
-
-            if (ast.nodeEqual(self.node(existing_id), new_node)) return existing_id;
-            slot = (slot + 1) & hash_mask;
-        }
-
-        @compileError("Bombelli node interning table is full");
-    }
-
-    pub fn finish(
-        comptime self: *Builder,
-        root: ast.NodeId,
-        source: []const u8,
-    ) ast.Expr {
-        const finished = self.finishRoots(1, .{root});
-        return .{
-            .nodes = finished.nodes,
-            .root = finished.roots[0],
-            .source = source,
-            .construction_peak_nodes = self.len,
-        };
-    }
-
-    pub fn finishVector(
-        comptime self: *Builder,
-        comptime N: usize,
-        roots: [N]ast.NodeId,
-        sources: [N][]const u8,
-    ) ast.ExprVector(N) {
-        const finished = self.finishRoots(N, roots);
-        return .{
-            .nodes = finished.nodes,
-            .roots = finished.roots,
-            .sources = sources,
-            .construction_peak_nodes = self.len,
-        };
-    }
-
-    pub fn finishMatrix(
-        comptime self: *Builder,
-        comptime R: usize,
-        comptime C: usize,
-        roots: [R][C]ast.NodeId,
-        sources: [R][C][]const u8,
-    ) ast.ExprMatrix(R, C) {
-        var flat_roots: [R * C]ast.NodeId = undefined;
-        inline for (0..R) |row| {
-            inline for (0..C) |column| {
-                flat_roots[row * C + column] = roots[row][column];
-            }
-        }
-        const finished = self.finishRoots(R * C, flat_roots);
-        var compact_roots: [R][C]ast.NodeId = undefined;
-        inline for (0..R) |row| {
-            inline for (0..C) |column| {
-                compact_roots[row][column] = finished.roots[row * C + column];
-            }
-        }
-        return .{
-            .nodes = finished.nodes,
-            .roots = compact_roots,
-            .sources = sources,
-            .construction_peak_nodes = self.len,
-        };
-    }
-
-    fn finishRoots(
-        comptime self: *Builder,
-        comptime N: usize,
-        roots: [N]ast.NodeId,
-    ) FinishedRoots(N) {
-        var reachable = [_]bool{false} ** ast.construction_node_limit;
-        for (roots) |root| {
-            graph.markReachable(self.nodes[0..self.len], root, &reachable);
-        }
-
-        var remap = [_]ast.NodeId{ast.invalid_node} ** ast.construction_node_limit;
-        var compact: [ast.construction_node_limit]ast.Node = undefined;
-        var compact_len: usize = 0;
-
-        for (self.nodes[0..self.len], 0..) |node_value, old_index| {
-            if (!reachable[old_index]) continue;
-
-            const new_id: ast.NodeId = @intCast(compact_len);
-            remap[old_index] = new_id;
-            compact[compact_len] = remapNode(node_value, &remap);
-            compact_len += 1;
-        }
-
-        const exact_nodes = compact[0..compact_len].*;
-        var compact_roots: [N]ast.NodeId = undefined;
-        for (roots, 0..) |root, index| {
-            compact_roots[index] = remap[@intCast(root)];
-        }
-        return .{ .nodes = &exact_nodes, .roots = compact_roots };
-    }
-};
 
 fn FinishedRoots(comptime N: usize) type {
     return struct {
@@ -358,7 +363,7 @@ fn FinishedRoots(comptime N: usize) type {
 
 fn remapNode(
     node_value: ast.Node,
-    remap: *const [ast.construction_node_limit]ast.NodeId,
+    remap: []const ast.NodeId,
 ) ast.Node {
     return switch (node_value) {
         .integer => |value| .{ .integer = value },
@@ -385,9 +390,9 @@ fn remapNode(
 
 fn remapOperands(
     operands: []const ast.NodeId,
-    remap: *const [ast.construction_node_limit]ast.NodeId,
+    remap: []const ast.NodeId,
 ) []const ast.NodeId {
-    var remapped: [ast.construction_node_limit]ast.NodeId = undefined;
+    var remapped: [operands.len]ast.NodeId = undefined;
     for (operands, 0..) |child, index| {
         remapped[index] = remap[@intCast(child)];
     }
@@ -397,7 +402,7 @@ fn remapOperands(
 
 fn remapBinary(
     binary: ast.Binary,
-    remap: *const [ast.construction_node_limit]ast.NodeId,
+    remap: []const ast.NodeId,
 ) ast.Binary {
     return .{
         .left = remap[@intCast(binary.left)],

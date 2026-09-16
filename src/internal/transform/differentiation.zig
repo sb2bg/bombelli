@@ -39,7 +39,7 @@ const Context = struct {
                 if (std.mem.eql(u8, name, self.variable)) 1 else 0,
             ),
             .add_nary => |operands| blk: {
-                var derivatives: [ast.construction_node_limit]ast.NodeId = undefined;
+                var derivatives: [operands.len]ast.NodeId = undefined;
                 for (operands, 0..) |child, operand_index| {
                     derivatives[operand_index] = self.derivative(child);
                 }
@@ -50,9 +50,9 @@ const Context = struct {
                 self.derivative(binary.right),
             ),
             .mul_nary => |operands| blk: {
-                var terms: [ast.construction_node_limit]ast.NodeId = undefined;
+                var terms: [operands.len]ast.NodeId = undefined;
                 for (operands, 0..) |_, derivative_index| {
-                    var factors: [ast.construction_node_limit]ast.NodeId = undefined;
+                    var factors: [operands.len]ast.NodeId = undefined;
                     for (operands, 0..) |child, factor_index| {
                         factors[factor_index] = if (factor_index == derivative_index)
                             self.derivative(child)
@@ -284,7 +284,7 @@ const Context = struct {
             .constant => |value| self.builder.constant(value),
             .symbol => |name| self.builder.symbol(name),
             .add_nary => |operands| blk: {
-                var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
+                var cloned: [operands.len]ast.NodeId = undefined;
                 for (operands, 0..) |child, operand_index| {
                     cloned[operand_index] = self.clone(child);
                 }
@@ -295,7 +295,7 @@ const Context = struct {
                 self.clone(binary.right),
             ),
             .mul_nary => |operands| blk: {
-                var cloned: [ast.construction_node_limit]ast.NodeId = undefined;
+                var cloned: [operands.len]ast.NodeId = undefined;
                 for (operands, 0..) |child, operand_index| {
                     cloned[operand_index] = self.clone(child);
                 }

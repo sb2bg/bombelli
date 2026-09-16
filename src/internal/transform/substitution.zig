@@ -143,7 +143,7 @@ fn rebuild(
         .float => |value| builder.float(value),
         .constant => |value| builder.constant(value),
         .add_nary => |operands| blk: {
-            var rebuilt: [ast.construction_node_limit]ast.NodeId = undefined;
+            var rebuilt: [operands.len]ast.NodeId = undefined;
             for (operands, 0..) |child, operand_index| {
                 rebuilt[operand_index] = rebuild(
                     builder,
@@ -160,7 +160,7 @@ fn rebuild(
             rebuild(builder, nodes, binary.right, cache, resolver),
         ),
         .mul_nary => |operands| blk: {
-            var rebuilt: [ast.construction_node_limit]ast.NodeId = undefined;
+            var rebuilt: [operands.len]ast.NodeId = undefined;
             for (operands, 0..) |child, operand_index| {
                 rebuilt[operand_index] = rebuild(
                     builder,

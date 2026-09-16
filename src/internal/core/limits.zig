@@ -1,6 +1,6 @@
 //! Central resource limits for compile-time construction and evaluation.
 
-pub const construction_nodes = 1024;
+pub const construction_nodes = @import("../../options.zig").selected.construction_nodes;
 pub const polynomial_variables = 128;
 pub const symbolic_conditions = 128;
 

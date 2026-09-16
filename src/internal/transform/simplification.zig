@@ -180,7 +180,7 @@ const Context = struct {
             .constant => |value| self.builder.constant(value),
             .symbol => |name| self.builder.symbol(name),
             .add_nary => |operands| blk: {
-                var simplified: [ast.construction_node_limit]ast.NodeId = undefined;
+                var simplified: [operands.len]ast.NodeId = undefined;
                 for (operands, 0..) |child, operand_index| {
                     simplified[operand_index] = self.simplifyNode(child);
                 }
@@ -197,7 +197,7 @@ const Context = struct {
                 self.source,
             ),
             .mul_nary => |operands| blk: {
-                var simplified: [ast.construction_node_limit]ast.NodeId = undefined;
+                var simplified: [operands.len]ast.NodeId = undefined;
                 for (operands, 0..) |child, operand_index| {
                     simplified[operand_index] = self.simplifyNode(child);
                 }
