@@ -137,6 +137,11 @@ zig build run           # run the flagship example
 
 `zig build check` requires Python 3 with SymPy 1.12.
 
+Larger symbolic programs can configure the construction workspace through
+root-module `bombelli_options`. Expression metrics and derivative-product
+inspection also report peak live values. See the
+[compiler resources guide](docs/guides/compiler-resources.md).
+
 ## Examples and notes
 
 - [Flagship symbolic workflows](examples/flagship.zig)

@@ -4,6 +4,10 @@
 
 ### Added
 
+- Configurable root-module construction capacity, shared graph validation at
+  evaluation/emission boundaries, and logical peak-live-value inspection.
+- Compile-time source fragment collection with exact-sized final assembly.
+- Compiler cost benchmarks and a configured 32-variable Jacobian regression.
 - Compiled model JVP/VJP programs with forward/reverse propagation, structural
   dependency pruning, optional symbolic contraction, an inspectable strategy
   heuristic, and standalone Zig/C emission.

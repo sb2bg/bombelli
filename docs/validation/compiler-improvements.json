@@ -1,0 +1,183 @@
+{
+  "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+  "zig": "0.16.0",
+  "samples": 3,
+  "records": [
+    {
+      "kind": "jacobian",
+      "size": 8,
+      "target": "c",
+      "version": "before",
+      "seconds": 8.309,
+      "peak_rss_bytes": 538181632,
+      "seconds_samples": [
+        8.489646833389997,
+        8.30897012539208,
+        8.298619708046317
+      ],
+      "peak_rss_samples": [
+        538181632,
+        486244352,
+        647856128
+      ],
+      "source_bytes": 4183,
+      "source_sha256": "91a6dce6fa11648ddfe3ec7d7b4820cb9433c34585ca46b171271d28dab71f84"
+    },
+    {
+      "kind": "jacobian",
+      "size": 8,
+      "target": "c",
+      "version": "after",
+      "seconds": 6.983,
+      "peak_rss_bytes": 275349504,
+      "seconds_samples": [
+        7.472107083071023,
+        6.98287891689688,
+        6.731006709393114
+      ],
+      "peak_rss_samples": [
+        226934784,
+        275349504,
+        293568512
+      ],
+      "source_bytes": 4183,
+      "source_sha256": "91a6dce6fa11648ddfe3ec7d7b4820cb9433c34585ca46b171271d28dab71f84"
+    },
+    {
+      "kind": "jacobian",
+      "size": 16,
+      "target": "c",
+      "version": "before",
+      "seconds": 33.998,
+      "peak_rss_bytes": 773963776,
+      "seconds_samples": [
+        34.01034866599366,
+        33.997877083253115,
+        33.941811041906476
+      ],
+      "peak_rss_samples": [
+        773963776,
+        889864192,
+        720388096
+      ],
+      "source_bytes": 9997,
+      "source_sha256": "1ddbb2f878049bc9422e1f4f526096c4aa5fdef5e388fc2f868251580a085b59"
+    },
+    {
+      "kind": "jacobian",
+      "size": 16,
+      "target": "c",
+      "version": "after",
+      "seconds": 11.224,
+      "peak_rss_bytes": 394018816,
+      "seconds_samples": [
+        10.634507207665592,
+        11.268027333077043,
+        11.223866874817759
+      ],
+      "peak_rss_samples": [
+        540180480,
+        394018816,
+        339492864
+      ],
+      "source_bytes": 9997,
+      "source_sha256": "1ddbb2f878049bc9422e1f4f526096c4aa5fdef5e388fc2f868251580a085b59"
+    },
+    {
+      "kind": "fitter",
+      "size": 12,
+      "target": "c",
+      "version": "before",
+      "seconds": 22.716,
+      "peak_rss_bytes": 429817856,
+      "seconds_samples": [
+        22.887837457936257,
+        22.716240959241986,
+        22.692106458824128
+      ],
+      "peak_rss_samples": [
+        410255360,
+        429817856,
+        459571200
+      ],
+      "source_bytes": 52267,
+      "source_sha256": "f123eb577c4012ba7862b439e9cd1e60c9cdce9dff5cc2e44c1b7a523e8c54f4"
+    },
+    {
+      "kind": "fitter",
+      "size": 12,
+      "target": "c",
+      "version": "after",
+      "seconds": 10.053,
+      "peak_rss_bytes": 434782208,
+      "seconds_samples": [
+        10.226274957880378,
+        10.025194041896611,
+        10.052821207791567
+      ],
+      "peak_rss_samples": [
+        422461440,
+        434782208,
+        487030784
+      ],
+      "source_bytes": 52267,
+      "source_sha256": "f123eb577c4012ba7862b439e9cd1e60c9cdce9dff5cc2e44c1b7a523e8c54f4"
+    },
+    {
+      "kind": "jacobian",
+      "size": 16,
+      "target": "zig",
+      "version": "before",
+      "seconds": 29.247,
+      "peak_rss_bytes": 785989632,
+      "seconds_samples": [
+        29.55241083400324,
+        29.246990500018,
+        29.10305795772001
+      ],
+      "peak_rss_samples": [
+        824377344,
+        696090624,
+        785989632
+      ],
+      "source_bytes": 9737,
+      "source_sha256": "6cea51c22f5492c2cbd4c8fa95fb920348b2f0f4ab3e79426884b17c4e9e20eb"
+    },
+    {
+      "kind": "jacobian",
+      "size": 16,
+      "target": "zig",
+      "version": "after",
+      "seconds": 9.477,
+      "peak_rss_bytes": 594952192,
+      "seconds_samples": [
+        9.451995665673167,
+        9.527117833960801,
+        9.476722541730851
+      ],
+      "peak_rss_samples": [
+        594952192,
+        636043264,
+        536690688
+      ],
+      "source_bytes": 9737,
+      "source_sha256": "6cea51c22f5492c2cbd4c8fa95fb920348b2f0f4ab3e79426884b17c4e9e20eb"
+    }
+  ],
+  "slot_reuse": [
+    {
+      "size": 8,
+      "logical_nodes": 27,
+      "scratch_slots": 18,
+      "identical_optimized_kernel": true
+    },
+    {
+      "size": 16,
+      "logical_nodes": 51,
+      "scratch_slots": 34,
+      "identical_optimized_kernel": true
+    }
+  ],
+  "complete": true,
+  "cc": "Apple clang version 17.0.0 (clang-1700.6.4.2)"
+}

@@ -20,6 +20,18 @@ Implementation modules are grouped by capability:
 Language backends share target-neutral DAG, binding, literal, and option
 logic. Each backend owns only its syntax and public calling convention.
 
+`internal/core/validation.zig` validates programs before evaluation and
+emission; builder compaction also checks references before traversal.
+`internal/core/lifetime.zig` computes last uses and the logical live-value
+peak in the existing execution order. `metrics.zig` exposes these counts
+without estimating physical stack usage. Construction storage is configured
+through root-module `bombelli_options`; validation uses a builder sized to
+the actual finished graph for its uniqueness check.
+
+`internal/codegen/text.zig` collects compile-time fragments and their total
+length, then materializes one exact-sized buffer. Both emitters use it for
+program assembly and template substitution.
+
 `internal/model/product.zig` compiles Jacobian products into ordinary
 expression vectors. Local slopes reuse the symbolic differentiation rules;
 forward tangents and reverse adjoints become seed-dependent DAG nodes.
@@ -45,6 +57,11 @@ diagnostic on the first line and are discovered automatically:
 ```zig
 // expect-error: error: expected diagnostic substring
 ```
+
+Fixtures that exercise application-root configuration add
+`// command: build-exe` and define `main`; other compile-fail fixtures use
+`zig test`. The configured-capacity success fixture is also an executable,
+because Zig's default test runner supplies its own root module.
 
 `zig build check` runs formatting, examples, unit/property/stress/hardening
 and compile-fail tests, SymPy differential checks, standalone Zig/C emission,
