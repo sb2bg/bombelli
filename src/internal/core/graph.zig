@@ -2,12 +2,24 @@
 
 const ast = @import("../../expression.zig");
 
+/// Structural edges, including operands whose derivative may be inactive.
+pub fn children(comptime node: ast.Node) []const ast.NodeId {
+    return switch (node) {
+        .sub, .div, .atan2, .hypot => |binary| &.{ binary.left, binary.right },
+        .add_nary, .mul_nary => |operands| operands,
+        .pow => |power| &.{power.base},
+        .unary => |unary| &.{unary.child},
+        else => &.{},
+    };
+}
+
 pub fn markReachable(
     comptime nodes: []const ast.Node,
     id: ast.NodeId,
     reachable: anytype,
 ) void {
     const index: usize = @intCast(id);
+    if (index >= nodes.len) @compileError("Bombelli invariant failure: root or child node is out of bounds");
     if (reachable[index]) return;
     reachable[index] = true;
 

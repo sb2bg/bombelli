@@ -1,6 +1,5 @@
 const ast = @import("../../expression.zig");
-const build = @import("builder.zig");
-const graph = @import("graph.zig");
+const validation = @import("validation.zig");
 
 pub const Metrics = struct {
     node_count: usize,
@@ -14,7 +13,7 @@ pub const Metrics = struct {
 };
 
 pub fn measure(comptime expression: ast.Expr) Metrics {
-    validateProgram(
+    validation.validate(
         expression.nodes,
         &[_]ast.NodeId{expression.root},
         expression.construction_peak_nodes,
@@ -33,7 +32,7 @@ pub fn measureVector(
     comptime N: usize,
     comptime expression: ast.ExprVector(N),
 ) Metrics {
-    validateProgram(
+    validation.validate(
         expression.nodes,
         &expression.roots,
         expression.construction_peak_nodes,
@@ -59,7 +58,7 @@ pub fn measureMatrix(
             roots[row * C + column] = expression.roots[row][column];
         }
     }
-    validateProgram(
+    validation.validate(
         expression.nodes,
         &roots,
         expression.construction_peak_nodes,
@@ -72,72 +71,6 @@ pub fn measureMatrix(
             expression.nodes.len * @sizeOf(ast.Node) +
             operandBytes(expression.nodes),
     };
-}
-
-fn validateProgram(
-    comptime nodes: []const ast.Node,
-    comptime roots: []const ast.NodeId,
-    comptime construction_peak_nodes: usize,
-) void {
-    comptime {
-        if (nodes.len == 0) {
-            @compileError("Bombelli invariant failure: expression has no nodes");
-        }
-        if (roots.len == 0) {
-            @compileError("Bombelli invariant failure: expression has no roots");
-        }
-        for (roots) |root| {
-            if (root >= nodes.len) {
-                @compileError("Bombelli invariant failure: root node is out of bounds");
-            }
-        }
-        if (construction_peak_nodes < nodes.len or
-            construction_peak_nodes > ast.construction_node_limit)
-        {
-            @compileError("Bombelli invariant failure: invalid construction peak");
-        }
-
-        var reachable = [_]bool{false} ** nodes.len;
-        for (roots) |root| graph.markReachable(nodes, root, &reachable);
-
-        var uniqueness = build.Builder{};
-        for (nodes, 0..) |node_value, index| {
-            validateChildren(node_value, index);
-            if (!reachable[index]) {
-                @compileError("Bombelli invariant failure: expression contains an unreachable node");
-            }
-            if (uniqueness.intern(node_value) != index) {
-                @compileError("Bombelli invariant failure: expression contains duplicate nodes");
-            }
-        }
-    }
-}
-
-fn validateChildren(
-    comptime node_value: ast.Node,
-    comptime parent_index: usize,
-) void {
-    switch (node_value) {
-        .integer, .rational, .float, .constant, .symbol => {},
-        .sub, .div, .atan2, .hypot => |binary| {
-            validateChild(binary.left, parent_index);
-            validateChild(binary.right, parent_index);
-        },
-        .add_nary, .mul_nary => |operands| {
-            for (operands) |child| validateChild(child, parent_index);
-        },
-        .pow => |power| validateChild(power.base, parent_index),
-        .unary => |unary| validateChild(unary.child, parent_index),
-    }
-}
-
-fn validateChild(
-    comptime child: ast.NodeId,
-    comptime parent_index: usize,
-) void {
-    if (child >= parent_index) {
-        @compileError("Bombelli invariant failure: expression is not topologically ordered");
-    }
 }
 
 fn operandBytes(comptime nodes: []const ast.Node) usize {

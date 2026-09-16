@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const ast = @import("../../expression.zig");
 const limits = @import("../core/limits.zig");
+const validation = @import("../core/validation.zig");
 const number = @import("number.zig");
 
 pub const BatchInputError = error{
@@ -33,6 +34,7 @@ pub inline fn evaluateAs(
     comptime expression: ast.Expr,
     values: anytype,
 ) T {
+    comptime validation.program(expression);
     validateEvaluationScalar(T);
     const results = evaluateNodesAs(T, expression.nodes, values);
     return results[@intCast(expression.root)];
@@ -109,6 +111,7 @@ pub inline fn evaluateBatchInto(
     output: []f64,
     values: anytype,
 ) BatchInputError!void {
+    comptime validation.program(expression);
     try validateBatchInputs(expression.nodes, values, output.len);
     evaluateBatchRange(expression, output, &values, 0, output.len);
 }
@@ -119,6 +122,7 @@ pub fn evaluateBatchParallelInto(
     values: anytype,
     options: BatchOptions,
 ) BatchInputError!void {
+    comptime validation.program(expression);
     try validateBatchInputs(expression.nodes, values, output.len);
     if (output.len == 0) return;
 
@@ -202,6 +206,7 @@ pub inline fn evaluateWithBoundVariable(
     comptime variable: []const u8,
     variable_value: f64,
 ) f64 {
+    comptime validation.program(expression);
     const results = evaluateNodesWithBoundVariable(
         expression.nodes,
         values,
@@ -218,6 +223,7 @@ pub inline fn evaluateWithBoundVariableLanes(
     comptime variable: []const u8,
     variable_values: @Vector(lane_count, f64),
 ) @Vector(lane_count, f64) {
+    comptime validation.program(expression);
     const Number = @Vector(lane_count, f64);
     const Context = BoundContext(
         @TypeOf(values),
@@ -272,6 +278,7 @@ pub inline fn evaluateVectorIntoAs(
     output: anytype,
     values: anytype,
 ) void {
+    comptime validation.program(expression);
     validateEvaluationScalar(T);
     validateOutputAs(T, N, output);
     const results = evaluateNodesAs(T, expression.nodes, values);
@@ -320,6 +327,7 @@ pub inline fn evaluateMatrixIntoAs(
     output: anytype,
     values: anytype,
 ) void {
+    comptime validation.program(expression);
     validateEvaluationScalar(T);
     validateMatrixOutputAs(T, R, C, output);
     const results = evaluateNodesAs(T, expression.nodes, values);
@@ -358,6 +366,7 @@ pub inline fn evaluateVectorWithVariablesAs(
     comptime variable_names: [N][]const u8,
     variable_values: [N]T,
 ) [R]T {
+    comptime validation.program(expression);
     validateEvaluationScalar(T);
     const results = evaluateNodesWithVariablesAs(
         T,
@@ -405,6 +414,7 @@ pub inline fn evaluateMatrixWithVariablesAs(
     comptime variable_names: [N][]const u8,
     variable_values: [N]T,
 ) [R][C]T {
+    comptime validation.program(expression);
     validateEvaluationScalar(T);
     const results = evaluateNodesWithVariablesAs(
         T,

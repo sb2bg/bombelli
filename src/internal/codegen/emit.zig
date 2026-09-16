@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const ast = @import("../../expression.zig");
+const validation = @import("../core/validation.zig");
 const c_backend = @import("c.zig");
 const options_validation = @import("../core/options.zig");
 const zig_backend = @import("zig.zig");
@@ -19,6 +20,7 @@ pub fn emitExpr(
     comptime expression: ast.Expr,
     comptime options: anytype,
 ) []const u8 {
+    validation.program(expression);
     return switch (selectTarget(options)) {
         .zig => zig_backend.emitExpr(expression, options),
         .c => c_backend.emitExpr(expression, options),
@@ -30,6 +32,7 @@ pub fn emitVector(
     comptime expression: ast.ExprVector(N),
     comptime options: anytype,
 ) []const u8 {
+    validation.program(expression);
     return switch (selectTarget(options)) {
         .zig => zig_backend.emitVector(N, expression, options),
         .c => c_backend.emitVector(N, expression, options),
@@ -42,6 +45,7 @@ pub fn emitMatrix(
     comptime expression: ast.ExprMatrix(R, C),
     comptime options: anytype,
 ) []const u8 {
+    validation.program(expression);
     return switch (selectTarget(options)) {
         .zig => zig_backend.emitMatrix(R, C, expression, options),
         .c => c_backend.emitMatrix(R, C, expression, options),
@@ -52,6 +56,7 @@ pub fn emitFixedQuadrature(
     comptime rule: anytype,
     comptime options: anytype,
 ) []const u8 {
+    validation.program(rule.integrand);
     return switch (selectTarget(options)) {
         .zig => zig_backend.emitFixedQuadrature(rule, options),
         .c => c_backend.emitFixedQuadrature(rule, options),
@@ -62,6 +67,8 @@ pub fn emitNewton(
     comptime solver: anytype,
     comptime options: anytype,
 ) []const u8 {
+    validation.program(solver.residuals);
+    validation.program(solver.jacobian_program);
     return switch (selectTarget(options)) {
         .zig => zig_backend.emitNewton(solver, options),
         .c => c_backend.emitNewton(solver, options),
@@ -72,6 +79,8 @@ pub fn emitRowLeastSquares(
     comptime solver: anytype,
     comptime options: anytype,
 ) []const u8 {
+    validation.program(solver.residuals);
+    validation.program(solver.linearization_program.combined);
     return switch (selectTarget(options)) {
         .zig => zig_backend.emitRowLeastSquares(solver, options),
         .c => c_backend.emitRowLeastSquares(solver, options),

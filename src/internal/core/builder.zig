@@ -326,6 +326,7 @@ pub fn BuilderWithCapacity(comptime capacity: usize) type {
             roots: [N]ast.NodeId,
         ) FinishedRoots(N) {
             @setEvalBranchQuota(@import("limits.zig").eval_branch.transform);
+            @import("validation.zig").references(self.nodes[0..self.len]);
             var reachable = [_]bool{false} ** self.len;
             for (roots) |root| {
                 graph.markReachable(self.nodes[0..self.len], root, &reachable);
