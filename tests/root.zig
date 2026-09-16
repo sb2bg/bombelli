@@ -1,4 +1,5 @@
 test {
+    _ = @import("compiler.zig");
     _ = @import("expression.zig");
     _ = @import("algebra.zig");
     _ = @import("solving.zig");

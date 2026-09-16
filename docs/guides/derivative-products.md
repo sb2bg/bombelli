@@ -62,6 +62,7 @@ Inspection distinguishes estimates from measurements of the constructed DAG:
 | `structural_nonzeros`, `jacobian_entries` | Dependency upper bound versus `M*N`; algebraic cancellation may remove more entries |
 | `operations` | Finished DAG operations; an n-ary operation counts `arity-1`, each other operation counts one |
 | `node_count`, `temporary_scalars` | Finished nodes and logical evaluator scalar slots |
+| `peak_live_values` | Peak simultaneous logical values, including retained output roots; not measured stack usage |
 | `shared_nodes` | Nodes used more than once, including output-root uses |
 | `construction_peak_nodes` | Construction peak reported by the selected expression's `metrics()` |
 

@@ -20,13 +20,13 @@ pub fn main() void {
     inline for (.{ forward, reverse }) |compiled| {
         const info = comptime compiled.inspect();
         std.debug.print(
-            "{s}: {d} operations, {d} logical scalar slots, {d} shared nodes; " ++
+            "{s}: {d} operations, {d} logical scalar slots ({d} peak live), {d} shared nodes; " ++
                 "{d}/{d} structurally nonzero Jacobian entries\n" ++
                 "  estimated direct/symbolic operations: {d}/{d}\n",
             .{
-                @tagName(info.method),            info.operations,                    info.temporary_scalars,
-                info.shared_nodes,                info.structural_nonzeros,           info.jacobian_entries,
-                info.estimated_direct_operations, info.estimated_symbolic_operations,
+                @tagName(info.method),              info.operations,          info.temporary_scalars, info.peak_live_values,
+                info.shared_nodes,                  info.structural_nonzeros, info.jacobian_entries,  info.estimated_direct_operations,
+                info.estimated_symbolic_operations,
             },
         );
     }

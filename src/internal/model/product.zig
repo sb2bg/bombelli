@@ -28,6 +28,8 @@ pub const Inspection = struct {
     shared_nodes: usize,
     /// Logical evaluator slots, before backend optimization/register allocation.
     temporary_scalars: usize,
+    /// Maximum simultaneously live logical values, including retained outputs.
+    peak_live_values: usize,
     construction_peak_nodes: usize,
 };
 
@@ -100,6 +102,7 @@ pub fn compile(comptime kind: Kind, comptime model: anytype, comptime options: O
     inspection.node_count = metrics.node_count;
     inspection.shared_nodes = sharedNodeCount(expression);
     inspection.temporary_scalars = metrics.node_count;
+    inspection.peak_live_values = metrics.peak_live_values;
     inspection.construction_peak_nodes = metrics.construction_peak_nodes;
     return Program(R, S){
         .expression = expression,
@@ -389,6 +392,7 @@ fn estimate(comptime kind: Kind, comptime model: anytype, comptime dependencies:
         .node_count = 0,
         .shared_nodes = 0,
         .temporary_scalars = 0,
+        .peak_live_values = 0,
         .construction_peak_nodes = 0,
     };
 }
