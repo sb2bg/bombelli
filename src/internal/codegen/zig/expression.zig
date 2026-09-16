@@ -1,8 +1,8 @@
+const Text = @import("../text.zig").Text;
 const std = @import("std");
 const ast = @import("../../../expression.zig");
 const support = @import("support.zig");
 
-const append = support.append;
 const emitNodes = support.emitNodes;
 const prelude = support.prelude;
 const validateOptions = support.validateOptions;
@@ -12,17 +12,17 @@ pub fn emitExpr(
     comptime options: anytype,
 ) []const u8 {
     const name = validateOptions(options);
-    var source: []const u8 = prelude();
-    source = append(source, std.fmt.comptimePrint(
+    var source = Text.init(prelude());
+    source.append(std.fmt.comptimePrint(
         "\npub fn {s}(inputs: anytype, output: *f64) void {{\n",
         .{name},
     ));
-    source = append(source, emitNodes(expression.nodes, "n", &.{}));
-    source = append(source, std.fmt.comptimePrint(
+    source.append(emitNodes(expression.nodes, "n", &.{}));
+    source.append(std.fmt.comptimePrint(
         "    output.* = n{d};\n}}\n",
         .{expression.root},
     ));
-    return support.applyScalar(source, support.scalarOption(options), name);
+    return support.applyScalar(source.finish(), support.scalarOption(options), name);
 }
 
 pub fn emitVector(
@@ -31,20 +31,20 @@ pub fn emitVector(
     comptime options: anytype,
 ) []const u8 {
     const name = validateOptions(options);
-    var source: []const u8 = prelude();
-    source = append(source, std.fmt.comptimePrint(
+    var source = Text.init(prelude());
+    source.append(std.fmt.comptimePrint(
         "\npub fn {s}(inputs: anytype, output: *[{d}]f64) void {{\n",
         .{ name, N },
     ));
-    source = append(source, emitNodes(expression.nodes, "n", &.{}));
+    source.append(emitNodes(expression.nodes, "n", &.{}));
     inline for (expression.roots, 0..) |root, index| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    output[{d}] = n{d};\n",
             .{ index, root },
         ));
     }
-    source = append(source, "}\n");
-    return support.applyScalar(source, support.scalarOption(options), name);
+    source.append("}\n");
+    return support.applyScalar(source.finish(), support.scalarOption(options), name);
 }
 
 pub fn emitMatrix(
@@ -54,20 +54,20 @@ pub fn emitMatrix(
     comptime options: anytype,
 ) []const u8 {
     const name = validateOptions(options);
-    var source: []const u8 = prelude();
-    source = append(source, std.fmt.comptimePrint(
+    var source = Text.init(prelude());
+    source.append(std.fmt.comptimePrint(
         "\npub fn {s}(inputs: anytype, output: *[{d}][{d}]f64) void {{\n",
         .{ name, R, C },
     ));
-    source = append(source, emitNodes(expression.nodes, "n", &.{}));
+    source.append(emitNodes(expression.nodes, "n", &.{}));
     inline for (expression.roots, 0..) |row, row_index| {
         inline for (row, 0..) |root, column_index| {
-            source = append(source, std.fmt.comptimePrint(
+            source.append(std.fmt.comptimePrint(
                 "    output[{d}][{d}] = n{d};\n",
                 .{ row_index, column_index, root },
             ));
         }
     }
-    source = append(source, "}\n");
-    return support.applyScalar(source, support.scalarOption(options), name);
+    source.append("}\n");
+    return support.applyScalar(source.finish(), support.scalarOption(options), name);
 }

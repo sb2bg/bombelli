@@ -1,7 +1,7 @@
+const Text = @import("../text.zig").Text;
 const std = @import("std");
 const support = @import("support.zig");
 
-const append = support.append;
 const emitNodesAtIndent = support.emitNodesAtIndent;
 const fill = support.fill;
 const floatSource = support.floatSource;
@@ -35,45 +35,45 @@ pub fn emitRowLeastSquares(
         .{ "@maximum@", floatSource(std.math.floatMax(f64)) },
     };
 
-    var source: []const u8 = prelude();
-    source = append(source, "#include <stddef.h>\n");
-    source = append(source, inputsSource(name, solver));
-    source = append(source, fill(public_types, slots));
-    source = append(source, configSource(name, solver));
-    source = append(source, fill(runtime_support, slots));
-    source = append(source, linearizationSource(name, solver));
-    source = append(source, objectiveSource(name, solver));
-    source = append(source, entrypointSource(name, solver, slots));
-    return support.instantiate(source, .f64);
+    var source = Text.init(prelude());
+    source.append("#include <stddef.h>\n");
+    source.append(inputsSource(name, solver));
+    source.append(fill(public_types, slots));
+    source.append(configSource(name, solver));
+    source.append(fill(runtime_support, slots));
+    source.append(linearizationSource(name, solver));
+    source.append(objectiveSource(name, solver));
+    source.append(entrypointSource(name, solver, slots));
+    return support.instantiate(source.finish(), .f64);
 }
 
 fn inputsSource(
     comptime name: []const u8,
     comptime solver: anytype,
 ) []const u8 {
-    var source: []const u8 = std.fmt.comptimePrint(
+    var source = Text.init(std.fmt.comptimePrint(
         "\ntypedef struct {s}_initial {{\n",
         .{name},
-    );
+    ));
     inline for (solver.variables) |variable| {
         validateIdentifier(variable, "input name");
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    @scalar@ {s};\n",
             .{variable},
         ));
     }
-    source = append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         "}} {s}_initial;\n\ntypedef struct {s}_observation {{\n",
         .{ name, name },
     ));
     inline for (solver.data) |field| {
         validateIdentifier(field, "input name");
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    @scalar@ {s};\n",
             .{field},
         ));
     }
-    return append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         \\}} {s}_observation;
         \\
         \\typedef struct {s}_inputs {{
@@ -83,13 +83,14 @@ fn inputsSource(
         \\}} {s}_inputs;
         \\
     , .{ name, name, name, name, name }));
+    return source.finish();
 }
 
 fn configSource(
     comptime name: []const u8,
     comptime solver: anytype,
 ) []const u8 {
-    var source: []const u8 = std.fmt.comptimePrint(
+    var source = Text.init(std.fmt.comptimePrint(
         \\
         \\static const {s}_loss {s}_config_loss = {{ {s}_{s}, {s} }};
         \\static const {s}_scaling {s}_config_scaling = {s}_{s};
@@ -111,28 +112,28 @@ fn configSource(
         @tagName(solver.initial_bounds_policy),
         name,
         solver.variables.len,
-    });
+    }));
     inline for (solver.parameter_scales, 0..) |value, index| {
-        if (index != 0) source = append(source, ", ");
-        source = append(source, floatSource(value));
+        if (index != 0) source.append(", ");
+        source.append(floatSource(value));
     }
-    source = append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         " }};\nstatic const @scalar@ {s}_config_lower[{d}] = {{ ",
         .{ name, solver.variables.len },
     ));
     inline for (solver.bounds.lower, 0..) |value, index| {
-        if (index != 0) source = append(source, ", ");
-        source = append(source, boundSource(value));
+        if (index != 0) source.append(", ");
+        source.append(boundSource(value));
     }
-    source = append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         " }};\nstatic const @scalar@ {s}_config_upper[{d}] = {{ ",
         .{ name, solver.variables.len },
     ));
     inline for (solver.bounds.upper, 0..) |value, index| {
-        if (index != 0) source = append(source, ", ");
-        source = append(source, boundSource(value));
+        if (index != 0) source.append(", ");
+        source.append(boundSource(value));
     }
-    source = append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         \\ }};
         \\static const @scalar@ {s}_config_function_tolerance = {s};
         \\static const @scalar@ {s}_config_gradient_tolerance = {s};
@@ -182,7 +183,7 @@ fn configSource(
         name,
         solver.max_invalid_steps,
     }));
-    return source;
+    return source.finish();
 }
 
 fn boundSource(comptime value: f64) []const u8 {
@@ -220,8 +221,8 @@ fn linearizationSource(
         .{ "@n@", std.fmt.comptimePrint("{d}", .{N}) },
         .{ "@r@", std.fmt.comptimePrint("{d}", .{R}) },
     };
-    var source: []const u8 = fill(linearization_prefix, slots);
-    source = append(source, emitNodesAtIndent(
+    var source = Text.init(fill(linearization_prefix, slots));
+    source.append(emitNodesAtIndent(
         solver.linearization_program.combined.nodes,
         "linear_n",
         &bindings,
@@ -229,7 +230,7 @@ fn linearizationSource(
     ));
     inline for (0..R) |row| {
         const residual_root = solver.linearization_program.combined.roots[row];
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "        residuals[{d}] = linear_n{d};\n",
             .{ row, residual_root },
         ));
@@ -237,14 +238,14 @@ fn linearizationSource(
             const root = solver.linearization_program.combined.roots[
                 R + row * N + column
             ];
-            source = append(source, std.fmt.comptimePrint(
+            source.append(std.fmt.comptimePrint(
                 "        jacobian[{d}][{d}] = linear_n{d};\n",
                 .{ row, column, root },
             ));
         }
     }
-    source = append(source, fill(linearization_body, slots));
-    return source;
+    source.append(fill(linearization_body, slots));
+    return source.finish();
 }
 
 fn objectiveSource(
@@ -258,21 +259,21 @@ fn objectiveSource(
         .{ "@n@", std.fmt.comptimePrint("{d}", .{solver.variables.len}) },
         .{ "@r@", std.fmt.comptimePrint("{d}", .{R}) },
     };
-    var source: []const u8 = fill(objective_prefix, slots);
-    source = append(source, emitNodesAtIndent(
+    var source = Text.init(fill(objective_prefix, slots));
+    source.append(emitNodesAtIndent(
         solver.residuals.nodes,
         "objective_n",
         &bindings,
         "        ",
     ));
     inline for (solver.residuals.roots, 0..) |root, row| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "        residuals[{d}] = objective_n{d};\n",
             .{ row, root },
         ));
     }
-    source = append(source, fill(objective_body, slots));
-    return source;
+    source.append(fill(objective_body, slots));
+    return source.finish();
 }
 
 fn entrypointSource(
@@ -280,23 +281,23 @@ fn entrypointSource(
     comptime solver: anytype,
     comptime slots: anytype,
 ) []const u8 {
-    var source: []const u8 = fill(entrypoint_prefix, slots);
+    var source = Text.init(fill(entrypoint_prefix, slots));
     inline for (solver.variables, 0..) |variable, index| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    values[{d}] = inputs->initial.{s};\n",
             .{ index, variable },
         ));
     }
-    source = append(source, fill(entrypoint_after_initial, slots));
+    source.append(fill(entrypoint_after_initial, slots));
     inline for (solver.data) |field| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "        observation_finite = observation_finite && isfinite(observations[observation_index].{s});\n",
             .{field},
         ));
     }
-    source = append(source, fill(entrypoint_after_validation, slots));
+    source.append(fill(entrypoint_after_validation, slots));
     _ = name;
-    return source;
+    return source.finish();
 }
 
 const entrypoint_prefix =

@@ -1,7 +1,7 @@
+const Text = @import("../text.zig").Text;
 const std = @import("std");
 const support = @import("support.zig");
 
-const append = support.append;
 const emitNodesAtIndent = support.emitNodesAtIndent;
 const fill = support.fill;
 const floatSource = support.floatSource;
@@ -35,12 +35,12 @@ pub fn emitNewton(
         .{ "@pivot@", floatSource(solver.pivot_tolerance) },
     };
 
-    var source: []const u8 = prelude();
-    source = append(source, "#include <stddef.h>\n");
-    source = append(source, inputsStruct(name, &solver.unknowns, parameters));
-    source = append(source, fill(types, slots));
-    source = append(source, fill(helpers, slots));
-    source = append(source, fill(
+    var source = Text.init(prelude());
+    source.append("#include <stddef.h>\n");
+    source.append(inputsStruct(name, &solver.unknowns, parameters));
+    source.append(fill(types, slots));
+    source.append(fill(helpers, slots));
+    source.append(fill(
         \\
         \\void @name@(const @name@_inputs *inputs, @name@_result *output);
         \\
@@ -53,24 +53,24 @@ pub fn emitNewton(
         \\
     , slots));
     inline for (solver.unknowns, 0..) |unknown, index| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    values[{d}] = inputs->initial.{s};\n",
             .{ index, unknown },
         ));
     }
-    source = append(source, emitNodesAtIndent(
+    source.append(emitNodesAtIndent(
         solver.residuals.nodes,
         "initial_n",
         &bindings,
         "    ",
     ));
     inline for (solver.residuals.roots, 0..) |root, index| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    residual[{d}] = initial_n{d};\n",
             .{ index, root },
         ));
     }
-    source = append(source, fill(
+    source.append(fill(
         \\    residual_norm = @name@_infinity_norm(residual, @n@);
         \\    if (!@name@_finite_vector(values, @n@) ||
         \\        !@name@_finite_vector(residual, @n@) ||
@@ -95,7 +95,7 @@ pub fn emitNewton(
         \\        size_t index;
         \\
     , slots));
-    source = append(source, emitNodesAtIndent(
+    source.append(emitNodesAtIndent(
         solver.jacobian_program.nodes,
         "jacobian_n",
         &bindings,
@@ -103,13 +103,13 @@ pub fn emitNewton(
     ));
     inline for (solver.jacobian_program.roots, 0..) |row, row_index| {
         inline for (row, 0..) |root, column_index| {
-            source = append(source, std.fmt.comptimePrint(
+            source.append(std.fmt.comptimePrint(
                 "        jacobian[{d}][{d}] = jacobian_n{d};\n",
                 .{ row_index, column_index, root },
             ));
         }
     }
-    source = append(source, fill(
+    source.append(fill(
         \\        if (!@name@_finite_matrix(jacobian)) {
         \\            @name@_finish(
         \\                output, values, residual, iteration, residual_norm,
@@ -133,19 +133,19 @@ pub fn emitNewton(
         \\        }
         \\
     , slots));
-    source = append(source, emitNodesAtIndent(
+    source.append(emitNodesAtIndent(
         solver.residuals.nodes,
         "next_n",
         &bindings,
         "        ",
     ));
     inline for (solver.residuals.roots, 0..) |root, index| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "        residual[{d}] = next_n{d};\n",
             .{ index, root },
         ));
     }
-    source = append(source, fill(
+    source.append(fill(
         \\        residual_norm = @name@_infinity_norm(residual, @n@);
         \\        if (!@name@_finite_vector(values, @n@) ||
         \\            !@name@_finite_vector(residual, @n@) ||
@@ -172,7 +172,7 @@ pub fn emitNewton(
         \\}
         \\
     , slots));
-    return support.instantiate(source, support.scalarOption(options));
+    return support.instantiate(source.finish(), support.scalarOption(options));
 }
 
 /// The initial iterate is nested so that a parameter and an unknown may share
@@ -182,32 +182,33 @@ fn inputsStruct(
     comptime unknowns: []const []const u8,
     comptime parameters: []const []const u8,
 ) []const u8 {
-    var source: []const u8 = std.fmt.comptimePrint(
+    var source = Text.init(std.fmt.comptimePrint(
         "\ntypedef struct {s}_initial {{\n",
         .{name},
-    );
+    ));
     inline for (unknowns) |unknown| {
         validateIdentifier(unknown, "input name");
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    @scalar@ {s};\n",
             .{unknown},
         ));
     }
-    source = append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         "}} {s}_initial;\n\ntypedef struct {s}_inputs {{\n    {s}_initial initial;\n",
         .{ name, name, name },
     ));
     inline for (parameters) |parameter| {
         validateIdentifier(parameter, "input name");
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    @scalar@ {s};\n",
             .{parameter},
         ));
     }
-    return append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         "}} {s}_inputs;\n",
         .{name},
     ));
+    return source.finish();
 }
 
 const types =

@@ -1,7 +1,7 @@
+const Text = @import("../text.zig").Text;
 const std = @import("std");
 const support = @import("support.zig");
 
-const append = support.append;
 const emitNodes = support.emitNodes;
 const floatSource = support.floatSource;
 const prelude = support.prelude;
@@ -13,8 +13,8 @@ pub fn emitFixedQuadrature(
 ) []const u8 {
     const name = validateOptions(options);
     const selected = @TypeOf(rule).selected_table;
-    var source: []const u8 = prelude();
-    source = append(source, std.fmt.comptimePrint(
+    var source = Text.init(prelude());
+    source.append(std.fmt.comptimePrint(
         \\
         \\pub fn {s}(inputs: anytype, output: *f64) void {{
         \\    const from = bombelliNumber(inputs.from);
@@ -26,25 +26,25 @@ pub fn emitFixedQuadrature(
     , .{name}));
     inline for (selected.nodes, selected.weights, 0..) |node, weight, index| {
         const point_name = std.fmt.comptimePrint("point_{d}", .{index});
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    const {s}: f64 = midpoint + half_width * {s};\n",
             .{ point_name, floatSource(node) },
         ));
         const prefix = std.fmt.comptimePrint("q{d}_n", .{index});
-        source = append(source, emitNodes(
+        source.append(emitNodes(
             rule.integrand.nodes,
             prefix,
             &.{.{ .symbol = rule.variable, .source = point_name }},
         ));
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    weighted_sum += {s} * {s}{d};\n",
             .{ floatSource(weight), prefix, rule.integrand.root },
         ));
     }
-    source = append(source,
+    source.append(
         \\    output.* = half_width * weighted_sum;
         \\}
         \\
     );
-    return support.applyScalar(source, support.scalarOption(options), name);
+    return support.applyScalar(source.finish(), support.scalarOption(options), name);
 }

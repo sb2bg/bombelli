@@ -1,7 +1,7 @@
+const Text = @import("../text.zig").Text;
 const std = @import("std");
 const support = @import("support.zig");
 
-const append = support.append;
 const emitNodesAtIndent = support.emitNodesAtIndent;
 const floatSource = support.floatSource;
 const newtonPrelude = support.newtonPrelude;
@@ -22,9 +22,9 @@ pub fn emitNewton(
     const finish_name = std.fmt.comptimePrint("{s}Finish", .{name});
     const bindings = variableBindings(&solver.unknowns);
 
-    var source: []const u8 = prelude();
-    source = append(source, newtonPrelude());
-    source = append(source, std.fmt.comptimePrint(
+    var source = Text.init(prelude());
+    source.append(newtonPrelude());
+    source.append(std.fmt.comptimePrint(
         \\
         \\pub const {s} = enum(u8) {{
         \\    converged,
@@ -76,31 +76,31 @@ pub fn emitNewton(
         name,
         result_name,
     }));
-    source = append(source, "    var values = [_]f64{\n");
+    source.append("    var values = [_]f64{\n");
     inline for (solver.unknowns) |unknown| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "        bombelliNumber(inputs.initial.{s}),\n",
             .{unknown},
         ));
     }
-    source = append(source, "    };\n    var residual: [");
-    source = append(source, std.fmt.comptimePrint(
+    source.append("    };\n    var residual: [");
+    source.append(std.fmt.comptimePrint(
         "{d}]f64 = undefined;\n",
         .{N},
     ));
-    source = append(source, emitNodesAtIndent(
+    source.append(emitNodesAtIndent(
         solver.residuals.nodes,
         "initial_n",
         &bindings,
         "    ",
     ));
     inline for (solver.residuals.roots, 0..) |root, index| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    residual[{d}] = initial_n{d};\n",
             .{ index, root },
         ));
     }
-    source = append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         \\    var residual_norm = bombelliInfinityNorm({d}, residual);
         \\    if (!bombelliFiniteVector({d}, values) or
         \\        !bombelliFiniteVector({d}, residual) or
@@ -142,7 +142,7 @@ pub fn emitNewton(
         N,
         N,
     }));
-    source = append(source, emitNodesAtIndent(
+    source.append(emitNodesAtIndent(
         solver.jacobian_program.nodes,
         "jacobian_n",
         &bindings,
@@ -150,13 +150,13 @@ pub fn emitNewton(
     ));
     inline for (solver.jacobian_program.roots, 0..) |row, row_index| {
         inline for (row, 0..) |root, column_index| {
-            source = append(source, std.fmt.comptimePrint(
+            source.append(std.fmt.comptimePrint(
                 "        jacobian[{d}][{d}] = jacobian_n{d};\n",
                 .{ row_index, column_index, root },
             ));
         }
     }
-    source = append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         \\        if (!bombelliFiniteMatrix({d}, jacobian)) {{
         \\            output.* = {s}(
         \\                values,
@@ -200,19 +200,19 @@ pub fn emitNewton(
         finish_name,
         N,
     }));
-    source = append(source, emitNodesAtIndent(
+    source.append(emitNodesAtIndent(
         solver.residuals.nodes,
         "next_n",
         &bindings,
         "        ",
     ));
     inline for (solver.residuals.roots, 0..) |root, index| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "        residual[{d}] = next_n{d};\n",
             .{ index, root },
         ));
     }
-    source = append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         \\        residual_norm = bombelliInfinityNorm({d}, residual);
         \\        if (!bombelliFiniteVector({d}, values) or
         \\            !bombelliFiniteVector({d}, residual) or
@@ -261,5 +261,5 @@ pub fn emitNewton(
         finish_name,
         max_iterations,
     }));
-    return support.applyScalar(source, support.scalarOption(options), name);
+    return support.applyScalar(source.finish(), support.scalarOption(options), name);
 }

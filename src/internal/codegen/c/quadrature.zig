@@ -1,7 +1,7 @@
+const Text = @import("../text.zig").Text;
 const std = @import("std");
 const support = @import("support.zig");
 
-const append = support.append;
 const emitNodes = support.emitNodes;
 const floatSource = support.floatSource;
 const freeSymbols = support.freeSymbols;
@@ -23,10 +23,10 @@ pub fn emitFixedQuadrature(
         &(bounds ++ [_][]const u8{rule.variable}),
     );
 
-    var source: []const u8 = prelude();
-    source = append(source, "\n");
-    source = append(source, inputsStruct(name, symbols));
-    source = append(source, std.fmt.comptimePrint(
+    var source = Text.init(prelude());
+    source.append("\n");
+    source.append(inputsStruct(name, symbols));
+    source.append(std.fmt.comptimePrint(
         \\
         \\void {s}(const {s}_inputs *inputs, @scalar@ *output);
         \\
@@ -40,25 +40,25 @@ pub fn emitFixedQuadrature(
     , .{ name, name, name, name }));
     inline for (selected.nodes, selected.weights, 0..) |node, weight, index| {
         const point_name = std.fmt.comptimePrint("point_{d}", .{index});
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    const @scalar@ {s} = midpoint + half_width * {s};\n",
             .{ point_name, floatSource(node) },
         ));
         const prefix = std.fmt.comptimePrint("q{d}_n", .{index});
-        source = append(source, emitNodes(
+        source.append(emitNodes(
             rule.integrand.nodes,
             prefix,
             &.{.{ .symbol = rule.variable, .source = point_name }},
         ));
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    weighted_sum += {s} * {s}{d};\n",
             .{ floatSource(weight), prefix, rule.integrand.root },
         ));
     }
-    source = append(source,
+    source.append(
         \\    *output = half_width * weighted_sum;
         \\}
         \\
     );
-    return support.instantiate(source, support.scalarOption(options));
+    return support.instantiate(source.finish(), support.scalarOption(options));
 }

@@ -1,3 +1,4 @@
+const Text = @import("text.zig").Text;
 const std = @import("std");
 const ast = @import("../../expression.zig");
 
@@ -36,13 +37,15 @@ fn replace(
     comptime needle: []const u8,
     comptime replacement: []const u8,
 ) []const u8 {
-    var rewritten: []const u8 = "";
+    var rewritten = Text{};
     var index: usize = 0;
     while (std.mem.indexOfPos(u8, source, index, needle)) |found| {
-        rewritten = rewritten ++ source[index..found] ++ replacement;
+        rewritten.append(source[index..found]);
+        rewritten.append(replacement);
         index = found + needle.len;
     }
-    return rewritten ++ source[index..];
+    rewritten.append(source[index..]);
+    return rewritten.finish();
 }
 
 pub fn binarySource(
@@ -74,17 +77,17 @@ pub fn narySource(
     comptime identity: []const u8,
 ) []const u8 {
     if (operands.len == 0) return identity;
-    var source: []const u8 = std.fmt.comptimePrint(
+    var source = Text.init(std.fmt.comptimePrint(
         "{s}{d}",
         .{ prefix, operands[0] },
-    );
+    ));
     inline for (operands[1..]) |operand| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             " {s} {s}{d}",
             .{ operator, prefix, operand },
         ));
     }
-    return source;
+    return source.finish();
 }
 
 pub fn unarySource(

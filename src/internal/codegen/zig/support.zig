@@ -1,10 +1,10 @@
+const Text = @import("../text.zig").Text;
 const std = @import("std");
 const ast = @import("../../../expression.zig");
 const shared = @import("../support.zig");
 const scalar_options = @import("../scalar.zig");
 
 pub const Binding = shared.Binding;
-pub const append = shared.append;
 pub const fill = shared.fill;
 pub const variableBindings = shared.variableBindings;
 
@@ -27,14 +27,14 @@ pub fn emitNodesAtIndent(
     comptime bindings: []const Binding,
     comptime indent: []const u8,
 ) []const u8 {
-    var source: []const u8 = "";
+    var source = Text.init("");
     inline for (nodes, 0..) |node, index| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "{s}const {s}{d}: f64 = {s};\n",
             .{ indent, prefix, index, nodeSource(node, prefix, bindings) },
         ));
     }
-    return source;
+    return source.finish();
 }
 
 fn nodeSource(
@@ -155,13 +155,15 @@ pub fn applyScalar(
             "Bombelli emitted function name must not contain 'f64' when emitting another scalar type",
         );
     }
-    var rewritten: []const u8 = "";
+    var rewritten = Text{};
     var index: usize = 0;
     while (std.mem.indexOfPos(u8, source, index, "f64")) |found| {
-        rewritten = rewritten ++ source[index..found] ++ @tagName(scalar);
+        rewritten.append(source[index..found]);
+        rewritten.append(@tagName(scalar));
         index = found + "f64".len;
     }
-    return rewritten ++ source[index..];
+    rewritten.append(source[index..]);
+    return rewritten.finish();
 }
 
 fn validateIdentifier(comptime name: []const u8) void {

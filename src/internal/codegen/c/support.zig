@@ -1,3 +1,4 @@
+const Text = @import("../text.zig").Text;
 const std = @import("std");
 const ast = @import("../../../expression.zig");
 const shared = @import("../support.zig");
@@ -67,14 +68,14 @@ pub fn emitNodesAtIndent(
     comptime bindings: []const Binding,
     comptime indent: []const u8,
 ) []const u8 {
-    var source: []const u8 = "";
+    var source = Text.init("");
     inline for (nodes, 0..) |node, index| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "{s}const @scalar@ {s}{d} = {s};\n",
             .{ indent, prefix, index, nodeSource(node, prefix, bindings) },
         ));
     }
-    return source;
+    return source.finish();
 }
 
 fn nodeSource(
@@ -254,28 +255,28 @@ pub fn inputsStruct(
     comptime name: []const u8,
     comptime symbols: []const []const u8,
 ) []const u8 {
-    var source: []const u8 = std.fmt.comptimePrint(
+    var source = Text.init(std.fmt.comptimePrint(
         "typedef struct {s}_inputs {{\n",
         .{name},
-    );
+    ));
     if (symbols.len == 0) {
         // C forbids an empty struct, and this callable reads nothing.
-        source = append(
-            source,
+        source.append(
             "    char bombelli_unused;\n",
         );
     }
     inline for (symbols) |symbol| {
         validateIdentifier(symbol, "input name");
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "    @scalar@ {s};\n",
             .{symbol},
         ));
     }
-    return append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         "}} {s}_inputs;\n",
         .{name},
     ));
+    return source.finish();
 }
 
 /// Silences the unused parameter where a callable reads no inputs at all.

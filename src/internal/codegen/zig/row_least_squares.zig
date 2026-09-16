@@ -1,7 +1,7 @@
+const Text = @import("../text.zig").Text;
 const std = @import("std");
 const support = @import("support.zig");
 
-const append = support.append;
 const emitNodesAtIndent = support.emitNodesAtIndent;
 const fill = support.fill;
 const floatSource = support.floatSource;
@@ -32,45 +32,45 @@ pub fn emitRowLeastSquares(
         ) },
     };
 
-    var source: []const u8 = prelude();
-    source = append(source, fill(public_types, slots));
-    source = append(source, configSource(solver));
-    source = append(source, fill(runtime_support, slots));
-    source = append(source, linearizationSource(solver));
-    source = append(source, objectiveSource(solver));
-    source = append(source, entrypointSource(solver, slots));
-    return source;
+    var source = Text.init(prelude());
+    source.append(fill(public_types, slots));
+    source.append(configSource(solver));
+    source.append(fill(runtime_support, slots));
+    source.append(linearizationSource(solver));
+    source.append(objectiveSource(solver));
+    source.append(entrypointSource(solver, slots));
+    return source.finish();
 }
 
 fn configSource(comptime solver: anytype) []const u8 {
-    var source: []const u8 =
+    var source = Text.init(
         \\
         \\const bombelliConfig = struct {
-    ;
-    source = append(source, std.fmt.comptimePrint(
+    );
+    source.append(std.fmt.comptimePrint(
         "    const loss = bombelliLoss{{ .kind = .{s}, .scale = {s} }};\n",
         .{ @tagName(solver.loss.kind), floatSource(solver.loss.scale) },
     ));
-    source = append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         "    const scaling: bombelliScaling = .{s};\n",
         .{@tagName(solver.scaling)},
     ));
-    source = append(source, "    const parameter_scales = [_]f64{");
+    source.append("    const parameter_scales = [_]f64{");
     inline for (solver.parameter_scales, 0..) |value, index| {
-        if (index != 0) source = append(source, ", ");
-        source = append(source, floatSource(value));
+        if (index != 0) source.append(", ");
+        source.append(floatSource(value));
     }
-    source = append(source, "};\n    const lower = [_]f64{");
+    source.append("};\n    const lower = [_]f64{");
     inline for (solver.bounds.lower, 0..) |value, index| {
-        if (index != 0) source = append(source, ", ");
-        source = append(source, boundSource(value));
+        if (index != 0) source.append(", ");
+        source.append(boundSource(value));
     }
-    source = append(source, "};\n    const upper = [_]f64{");
+    source.append("};\n    const upper = [_]f64{");
     inline for (solver.bounds.upper, 0..) |value, index| {
-        if (index != 0) source = append(source, ", ");
-        source = append(source, boundSource(value));
+        if (index != 0) source.append(", ");
+        source.append(boundSource(value));
     }
-    source = append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         \\}};
         \\    const initial_bounds: bombelliInitialBounds = .{s};
         \\    const function_tolerance: f64 = {s};
@@ -108,7 +108,7 @@ fn configSource(comptime solver: anytype) []const u8 {
         solver.max_line_search_steps,
         solver.max_invalid_steps,
     }));
-    return source;
+    return source.finish();
 }
 
 fn boundSource(comptime value: f64) []const u8 {
@@ -141,7 +141,7 @@ fn linearizationSource(comptime solver: anytype) []const u8 {
     const N = solver.variables.len;
     const R = @TypeOf(solver).residuals_per_observation;
     const bindings = rowBindings(solver);
-    var source: []const u8 = std.fmt.comptimePrint(
+    var source = Text.init(std.fmt.comptimePrint(
         \\
         \\fn bombelliLinearize(
         \\    observations: anytype,
@@ -153,8 +153,8 @@ fn linearizationSource(comptime solver: anytype) []const u8 {
         \\        var residuals: [{d}]f64 = undefined;
         \\        var jacobian: [{d}][{d}]f64 = undefined;
         \\
-    , .{ N, R, R, N });
-    source = append(source, emitNodesAtIndent(
+    , .{ N, R, R, N }));
+    source.append(emitNodesAtIndent(
         solver.linearization_program.combined.nodes,
         "linear_n",
         &bindings,
@@ -162,7 +162,7 @@ fn linearizationSource(comptime solver: anytype) []const u8 {
     ));
     inline for (0..R) |row| {
         const residual_root = solver.linearization_program.combined.roots[row];
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "        residuals[{d}] = linear_n{d};\n",
             .{ row, residual_root },
         ));
@@ -170,13 +170,13 @@ fn linearizationSource(comptime solver: anytype) []const u8 {
             const root = solver.linearization_program.combined.roots[
                 R + row * N + column
             ];
-            source = append(source, std.fmt.comptimePrint(
+            source.append(std.fmt.comptimePrint(
                 "        jacobian[{d}][{d}] = linear_n{d};\n",
                 .{ row, column, root },
             ));
         }
     }
-    source = append(source, std.fmt.comptimePrint(
+    source.append(std.fmt.comptimePrint(
         \\        for (0..{d}) |row_index| {{
         \\            const residual = residuals[row_index];
         \\            if (!std.math.isFinite(residual)) {{
@@ -226,14 +226,14 @@ fn linearizationSource(comptime solver: anytype) []const u8 {
         \\}}
         \\
     , .{ R, N, N }));
-    return source;
+    return source.finish();
 }
 
 fn objectiveSource(comptime solver: anytype) []const u8 {
     const N = solver.variables.len;
     const R = @TypeOf(solver).residuals_per_observation;
     const bindings = rowBindings(solver);
-    var source: []const u8 = std.fmt.comptimePrint(
+    var source = Text.init(std.fmt.comptimePrint(
         \\
         \\fn bombelliObjective(
         \\    observations: anytype,
@@ -244,20 +244,20 @@ fn objectiveSource(comptime solver: anytype) []const u8 {
         \\        result.visited += 1;
         \\        var residuals: [{d}]f64 = undefined;
         \\
-    , .{ N, R });
-    source = append(source, emitNodesAtIndent(
+    , .{ N, R }));
+    source.append(emitNodesAtIndent(
         solver.residuals.nodes,
         "objective_n",
         &bindings,
         "        ",
     ));
     inline for (solver.residuals.roots, 0..) |root, row| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "        residuals[{d}] = objective_n{d};\n",
             .{ row, root },
         ));
     }
-    source = append(source,
+    source.append(
         \\        for (residuals) |residual| {
         \\            if (!std.math.isFinite(residual)) {
         \\                result.valid = false;
@@ -277,26 +277,26 @@ fn objectiveSource(comptime solver: anytype) []const u8 {
         \\}
         \\
     );
-    return source;
+    return source.finish();
 }
 
 fn entrypointSource(comptime solver: anytype, comptime slots: anytype) []const u8 {
-    var source: []const u8 = fill(solver_entrypoint_prefix, slots);
+    var source = Text.init(fill(solver_entrypoint_prefix, slots));
     inline for (solver.variables) |variable| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "        bombelliNumber(inputs.initial.{s}),\n",
             .{variable},
         ));
     }
-    source = append(source, fill(solver_entrypoint_after_initial, slots));
+    source.append(fill(solver_entrypoint_after_initial, slots));
     inline for (solver.data) |field| {
-        source = append(source, std.fmt.comptimePrint(
+        source.append(std.fmt.comptimePrint(
             "        observation_finite = observation_finite and std.math.isFinite(bombelliNumber(observation.{s}));\n",
             .{field},
         ));
     }
-    source = append(source, fill(solver_entrypoint_after_validation, slots));
-    return source;
+    source.append(fill(solver_entrypoint_after_validation, slots));
+    return source.finish();
 }
 
 const public_types =
