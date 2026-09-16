@@ -55,9 +55,10 @@ and compiler, rather than a guarantee for every backend or build mode.
 
 ## Correctness coverage
 
-- A configured 4,097-node workspace builds a 32-variable explicit Jacobian
-  whose construction exceeds the default 1,024-node limit. Its entries are
-  checked against an analytic oracle at a point with distinct coordinates.
+- A configured 1,031-node workspace builds a balanced 1,025-node expression,
+  crossing the default 1,024-node limit. The fixture checks exact node counts
+  and headroom, plus evaluation, simplification, and differentiation against
+  independent formulas at three points.
 - Compile-fail fixtures cover zero and exhausted construction limits,
   invalid child/root IDs, cyclic references, duplicate nodes, and unreachable
   nodes at evaluation, metrics, and emission boundaries.
@@ -74,6 +75,13 @@ plus the configured-capacity executable and compile-fail diagnostics. SymPy
 seeded batches. Standalone emission validation compiled and executed all
 eight callable types in both targets (148,048 generated source bytes total).
 Formatting, examples, and API documentation generation also passed.
+
+The original capacity regression built a dense 32-variable Jacobian in a
+4,097-node workspace. It passed on macOS but exceeded 6 GiB and was OOM-killed
+in a Linux arm64 container with Zig 0.16.0. The balanced boundary fixture
+preserves the capacity checks and passed in the same Linux environment in
+6.8 seconds with a 566.5 MiB container peak and no OOM events. CI limits build
+parallelism to two jobs to bound simultaneous compiler work.
 
 ## Reproduction
 

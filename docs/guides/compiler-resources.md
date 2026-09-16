@@ -23,8 +23,9 @@ Construction limits are read from Zig's `@import("root")`. For `zig test`,
 that root is the test runner, not the test source file. Set the option in a
 custom test runner when required, or use an executable regression fixture
 as in `tests/configured.zig`. `zig build test-configured` compiles and runs
-a 32-variable explicit Jacobian with a non-power-of-two limit of 4,097.
-Its 1,024 numerical entries are checked against an analytic formula.
+a balanced 1,025-node expression with a non-power-of-two limit of 1,031.
+It checks exact construction headroom and evaluates the original expression,
+its simplification, and its derivative against independent formulas.
 
 ## Logical lifetimes
 
