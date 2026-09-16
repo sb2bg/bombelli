@@ -19,6 +19,10 @@ pub fn main(init: std.process.Init) !void {
     const gradient = cases.gradient.eval(cases.gradient_inputs);
     try out.print("gradient_x {d:.17}\n", .{gradient[0]});
     try out.print("gradient_y {d:.17}\n", .{gradient[1]});
+    const jvp = cases.jvp.eval(cases.product_inputs, cases.product_seed);
+    const vjp = cases.vjp.eval(cases.product_inputs, cases.product_seed);
+    try out.print("jvp_0 {d:.17}\njvp_1 {d:.17}\n", .{ jvp[0], jvp[1] });
+    try out.print("vjp_0 {d:.17}\nvjp_1 {d:.17}\n", .{ vjp[0], vjp[1] });
 
     try out.print("quadrature {d:.17}\n", .{
         cases.rule.eval(cases.rule_inputs),

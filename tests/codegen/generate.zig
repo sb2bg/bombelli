@@ -21,6 +21,10 @@ const newton_zig = emit(cases.solver, .zig, "generated_newton");
 const newton_c = emit(cases.solver, .c, "generated_newton");
 const fitter_zig = emit(cases.fitter, .zig, "generated_fitter");
 const fitter_c = emit(cases.fitter, .c, "generated_fitter");
+const jvp_zig = emit(cases.jvp, .zig, "generated_jvp");
+const jvp_c = emit(cases.jvp, .c, "generated_jvp");
+const vjp_zig = emit(cases.vjp, .zig, "generated_vjp");
+const vjp_c = emit(cases.vjp, .c, "generated_vjp");
 
 fn emit(comptime value: anytype, comptime target: anytype, comptime name: []const u8) []const u8 {
     return value.emit(.{ .target = target, .name = name });
@@ -54,5 +58,7 @@ fn generatedSource(case: []const u8, target: []const u8) ?[]const u8 {
     if (std.mem.eql(u8, case, "quadrature")) return if (zig) quadrature_zig else quadrature_c;
     if (std.mem.eql(u8, case, "newton")) return if (zig) newton_zig else newton_c;
     if (std.mem.eql(u8, case, "fitter")) return if (zig) fitter_zig else fitter_c;
+    if (std.mem.eql(u8, case, "jvp")) return if (zig) jvp_zig else jvp_c;
+    if (std.mem.eql(u8, case, "vjp")) return if (zig) vjp_zig else vjp_c;
     return null;
 }

@@ -92,6 +92,7 @@ pub fn build(b: *std.Build) void {
     inline for ([_]Example{
         .{ .name = "bombelli-example", .source = "examples/flagship.zig", .run_name = "run", .description = "Run the Bombelli example", .install = true },
         .{ .name = "bombelli-curve-fit", .source = "examples/curve_fit.zig", .run_name = "run-curve-fit", .description = "Fit an exponential curve to runtime observations" },
+        .{ .name = "bombelli-derivative-products", .source = "examples/derivative_products.zig", .run_name = "run-products", .description = "Inspect compiled Jacobian products" },
         .{ .name = "bombelli-jacobian-counterexample", .source = "examples/jacobian_counterexample.zig", .run_name = "run-jacobian", .description = "Check the Jacobian conjecture counterexample at compile time" },
     }) |example| context.addExample(examples_step, example);
     check_step.dependOn(examples_step);

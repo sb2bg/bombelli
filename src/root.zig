@@ -43,6 +43,12 @@ pub const ResidualModel = residual_model_module.ResidualModel;
 pub const Linearization = model_linearization.Program;
 /// Returns the result type from fused value-and-Jacobian evaluation.
 pub const LinearizationResult = model_linearization.Result;
+/// Construction strategy for compiled Jacobian products.
+pub const DerivativeProductStrategy = @import("internal/model/product.zig").Strategy;
+/// Compile-time choices for Jacobian-vector and transposed-Jacobian products.
+pub const DerivativeProductOptions = @import("internal/model/product.zig").Options;
+/// Selected derivative method and structural operation/storage measurements.
+pub const DerivativeProductInspection = @import("internal/model/product.zig").Inspection;
 /// Structural and construction measurements for a compiled expression.
 pub const Metrics = @import("internal/core/metrics.zig").Metrics;
 /// Runtime validation errors produced by batch evaluation.

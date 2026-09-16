@@ -11,6 +11,7 @@ const domain = @import("internal/core/domain.zig");
 const linearization = @import("internal/model/linearization.zig");
 const limits = @import("internal/core/limits.zig");
 const program = @import("internal/model/program.zig");
+const product = @import("internal/model/product.zig");
 
 /// Resolves the model type produced by a source tuple and option struct.
 pub fn ModelType(comptime Sources: type, comptime Options: type) type {
@@ -121,6 +122,28 @@ pub fn Model(
             return program.linearize(M, N, self.outputs, self.variable_tags);
         }
 
+        /// Compiles a Jacobian-vector product without storing an M-by-N matrix.
+        /// The seed vector follows declared variable order.
+        pub fn compileJvp(comptime self: Self, comptime options: product.Options) product.Program(M, N) {
+            return product.compile(.jvp, self, options);
+        }
+
+        /// Compiles a transposed Jacobian product. Seeds follow output order;
+        /// the result follows declared variable order.
+        pub fn compileVjp(comptime self: Self, comptime options: product.Options) product.Program(N, M) {
+            return product.compile(.vjp, self, options);
+        }
+
+        pub inline fn jvp(comptime self: Self, inputs: anytype, tangent: [N]f64) [M]f64 {
+            const compiled = comptime self.compileJvp(.{});
+            return compiled.eval(inputs, tangent);
+        }
+
+        pub inline fn vjp(comptime self: Self, inputs: anytype, cotangent: [M]f64) [N]f64 {
+            const compiled = comptime self.compileVjp(.{});
+            return compiled.eval(inputs, cotangent);
+        }
+
         /// Evaluates values and their Jacobian in one shared DAG pass.
         pub inline fn valueAndJacobian(
             comptime self: Self,
@@ -217,6 +240,7 @@ pub fn make(
     comptime sources: anytype,
     comptime options: anytype,
 ) ModelType(@TypeOf(sources), @TypeOf(options)) {
+    @setEvalBranchQuota(limits.eval_branch.local_transform);
     const M = ast.tupleLength(@TypeOf(sources));
     const N = ast.tupleLength(@TypeOf(options.variables));
     if (M == 0) @compileError("Bombelli model requires at least one output");

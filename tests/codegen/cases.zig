@@ -76,3 +76,18 @@ pub const fitter_inputs = .{
     .initial = .{ .offset = 0.5, .slope = 0.5 },
     .observations = fit_observations[0..],
 };
+
+pub const product_model = bombelli.model(.{
+    "sin(x*y)+x^2",
+    "sin(x*y)+y^2",
+}, .{ .variables = .{ .x, .y } });
+pub const jvp = product_model.compileJvp(.{ .strategy = .direct });
+pub const vjp = product_model.compileVjp(.{ .strategy = .direct });
+pub const product_inputs = .{ .x = 0.6, .y = -1.3 };
+pub const product_seed = [2]f64{ 0.7, -0.2 };
+pub const emitted_product_inputs = .{
+    .x = product_inputs.x,
+    .y = product_inputs.y,
+    .bombelli_seed_0 = product_seed[0],
+    .bombelli_seed_1 = product_seed[1],
+};

@@ -4,3 +4,5 @@ gradient
 quadrature
 newton
 fitter
+jvp
+vjp
